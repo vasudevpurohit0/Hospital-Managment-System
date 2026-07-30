@@ -17,6 +17,10 @@ const DEV_DEPARTMENTS_STORE: any[] = SEED_DEPARTMENTS.map((d, i) => ({
   createdAt: new Date().toISOString(),
 }));
 
+const isUuid = (str: string) =>
+  typeof str === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 @Injectable()
 export class DepartmentService implements OnModuleInit {
   private readonly logger = new Logger(DepartmentService.name);
@@ -51,11 +55,30 @@ export class DepartmentService implements OnModuleInit {
 
   async findById(id: string) {
     try {
-      const dept = await this.prisma.department.findUnique({ where: { id } });
-      if (dept) return dept;
+      if (isUuid(id)) {
+        const dept = await this.prisma.department.findUnique({ where: { id } });
+        if (dept) return dept;
+      }
+      const normalizedCode = id.replace(/^dept-/, '').replace(/_/g, '').toUpperCase();
+      const deptByCode = await this.prisma.department.findFirst({
+        where: {
+          OR: [
+            { code: { equals: normalizedCode, mode: 'insensitive' } },
+            { code: { contains: normalizedCode.slice(0, 4), mode: 'insensitive' } },
+          ],
+        },
+      });
+      if (deptByCode) return deptByCode;
     } catch {
       // Fall through
     }
-    return DEV_DEPARTMENTS_STORE.find((d) => d.id === id || d.code === id) || null;
+    return (
+      DEV_DEPARTMENTS_STORE.find(
+        (d) =>
+          d.id === id ||
+          d.code === id ||
+          d.code.replace(/_/g, '').toUpperCase() === id.replace(/^dept-/, '').replace(/_/g, '').toUpperCase(),
+      ) || null
+    );
   }
 }

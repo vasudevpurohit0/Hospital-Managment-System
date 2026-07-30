@@ -433,7 +433,7 @@ export async function main() {
   // Seed FacilityEligibilityRules mapping Post -> Category -> Ward -> Room -> Facility level
   const rules = [
     {
-      id: 'rule-senior-officer',
+      id: '00000000-0000-0000-0000-000000000401',
       postId: seniorOfficerPost.id,
       category: FacilityCategory.A,
       wardEligibility: 'Private Ward',
@@ -441,7 +441,7 @@ export async function main() {
       facilityLevel: 'Premium',
     },
     {
-      id: 'rule-officer',
+      id: '00000000-0000-0000-0000-000000000402',
       postId: officerPost.id,
       category: FacilityCategory.B,
       wardEligibility: 'Semi-Private',
@@ -449,7 +449,7 @@ export async function main() {
       facilityLevel: 'Enhanced',
     },
     {
-      id: 'rule-clerk',
+      id: '00000000-0000-0000-0000-000000000403',
       postId: clerkPost.id,
       category: FacilityCategory.C,
       wardEligibility: 'General Ward',
@@ -457,7 +457,7 @@ export async function main() {
       facilityLevel: 'Standard',
     },
     {
-      id: 'rule-assistant',
+      id: '00000000-0000-0000-0000-000000000404',
       postId: assistantPost.id,
       category: FacilityCategory.C,
       wardEligibility: 'General Ward',
@@ -465,7 +465,7 @@ export async function main() {
       facilityLevel: 'Standard',
     },
     {
-      id: 'rule-support-staff',
+      id: '00000000-0000-0000-0000-000000000405',
       postId: supportStaffPost.id,
       category: FacilityCategory.D,
       wardEligibility: 'General Ward',
@@ -473,7 +473,7 @@ export async function main() {
       facilityLevel: 'Standard',
     },
     {
-      id: 'rule-contractual',
+      id: '00000000-0000-0000-0000-000000000406',
       postId: contractWorkerPost.id,
       category: FacilityCategory.CONTRACTUAL,
       wardEligibility: 'Policy Based',
@@ -577,6 +577,81 @@ export async function main() {
   });
 
   console.log(`  ✓ Seeded AdmissionDesk user: admission@esic.gov.in (${admissionUser.id})`);
+
+  // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
+  const genMedDept = await prisma.department.findUnique({ where: { code: 'GENMED' } });
+  if (genMedDept) {
+    const samplePatients = [
+      {
+        id: '00000000-0000-0000-0000-000000000501',
+        empId: 'EMP-1001',
+        name: 'Suresh Patel',
+        visitId: '00000000-0000-0000-0000-000000000601',
+        opdId: '00000000-0000-0000-0000-000000000701',
+        token: 'GENMED-001',
+        calledAt: new Date(Date.now() - 300000),
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000502',
+        empId: 'EMP-1002',
+        name: 'Priya Devi',
+        visitId: '00000000-0000-0000-0000-000000000602',
+        opdId: '00000000-0000-0000-0000-000000000702',
+        token: 'GENMED-002',
+        calledAt: null,
+      },
+      {
+        id: '00000000-0000-0000-0000-000000000503',
+        empId: 'EMP-1003',
+        name: 'Rahul Kumar',
+        visitId: '00000000-0000-0000-0000-000000000603',
+        opdId: '00000000-0000-0000-0000-000000000703',
+        token: 'GENMED-003',
+        calledAt: null,
+      },
+    ];
+
+    for (const p of samplePatients) {
+      const emp = await prisma.employee.upsert({
+        where: { employeeId: p.empId },
+        update: {},
+        create: {
+          id: p.id,
+          employeeId: p.empId,
+          name: p.name,
+          department: 'General Dept',
+          postId: clerkPost.id,
+          gradeId: grade4.id,
+          employmentTypeId: permanentType.id,
+        },
+      });
+
+      const visit = await prisma.visit.upsert({
+        where: { id: p.visitId },
+        update: {},
+        create: {
+          id: p.visitId,
+          employeeId: emp.id,
+          type: 'OPD',
+          status: 'OPEN',
+        },
+      });
+
+      await prisma.oPDVisit.upsert({
+        where: { id: p.opdId },
+        update: {},
+        create: {
+          id: p.opdId,
+          visitId: visit.id,
+          departmentId: genMedDept.id,
+          tokenNumber: p.token,
+          calledAt: p.calledAt,
+        },
+      });
+    }
+    console.log(`  ✓ Seeded sample Patients & OPD Visits for General Medicine`);
+  }
+
   console.log('✅ Seed completed successfully!');
 }
 
