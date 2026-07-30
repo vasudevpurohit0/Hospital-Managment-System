@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   fetchMedicines,
   createMedicine,
@@ -47,7 +47,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
   const [batchReorderLevel, setBatchReorderLevel] = useState('100');
   const [batchStorageLoc, setBatchStorageLoc] = useState('Rack A-01');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -62,11 +62,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeToken]);
 
   useEffect(() => {
     loadData();
-  }, [activeToken]);
+  }, [loadData]);
 
   const handleCreateMedicine = async (e: React.FormEvent) => {
     e.preventDefault();

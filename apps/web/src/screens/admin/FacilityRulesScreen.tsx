@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   fetchFacilityRules,
   updateFacilityRule,
@@ -22,7 +22,7 @@ export const FacilityRulesScreen: React.FC<FacilityRulesScreenProps> = ({ authTo
   const [facilityLevel, setFacilityLevel] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const loadRules = async () => {
+  const loadRules = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -34,13 +34,13 @@ export const FacilityRulesScreen: React.FC<FacilityRulesScreenProps> = ({ authTo
     } finally {
       setLoading(false);
     }
-  };
+  }, [authToken]);
 
   useEffect(() => {
     if (authToken) {
       loadRules();
     }
-  }, [authToken]);
+  }, [authToken, loadRules]);
 
   const handleEditClick = (rule: FacilityEligibilityRuleRecord) => {
     setEditingRule(rule);

@@ -69,9 +69,27 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
 
   // Mock notifications
   const notifications = [
-    { id: '1', type: 'danger' as const, title: 'Critical: Low stock alert', desc: 'Paracetamol 500mg below minimum', time: '2 min ago' },
-    { id: '2', type: 'warning' as const, title: 'Medicine expiry warning', desc: '3 batches expiring in 30 days', time: '15 min ago' },
-    { id: '3', type: 'info' as const, title: 'New admission', desc: 'Patient Rahul Kumar admitted to Ward A', time: '1 hr ago' },
+    {
+      id: '1',
+      type: 'danger' as const,
+      title: 'Critical: Low stock alert',
+      desc: 'Paracetamol 500mg below minimum',
+      time: '2 min ago',
+    },
+    {
+      id: '2',
+      type: 'warning' as const,
+      title: 'Medicine expiry warning',
+      desc: '3 batches expiring in 30 days',
+      time: '15 min ago',
+    },
+    {
+      id: '3',
+      type: 'info' as const,
+      title: 'New admission',
+      desc: 'Patient Rahul Kumar admitted to Ward A',
+      time: '1 hr ago',
+    },
   ];
 
   const unreadCount = notifications.length;
@@ -117,18 +135,17 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
         </button>
 
         {/* Theme Toggle */}
-        <button
-          onClick={cycleTheme}
-          className="btn btn-ghost btn-icon"
-          title={`Theme: ${theme}`}
-        >
+        <button onClick={cycleTheme} className="btn btn-ghost btn-icon" title={`Theme: ${theme}`}>
           <ThemeIcon className="w-4 h-4 text-[var(--color-text-secondary)]" />
         </button>
 
         {/* Notifications */}
         <div ref={notificationRef} className="relative">
           <button
-            onClick={() => { setNotificationOpen(!notificationOpen); setProfileOpen(false); }}
+            onClick={() => {
+              setNotificationOpen(!notificationOpen);
+              setProfileOpen(false);
+            }}
             className="btn btn-ghost btn-icon relative"
             title="Notifications"
           >
@@ -151,7 +168,9 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                 style={{ zIndex: 'var(--z-notification)' as unknown as number }}
               >
                 <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Notifications</h3>
+                  <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
+                    Notifications
+                  </h3>
                   <button className="text-xs text-primary-500 hover:text-primary-600 font-medium">
                     Mark all read
                   </button>
@@ -163,15 +182,25 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                       className="px-4 py-3 hover:bg-[var(--color-surface-hover)] transition-colors border-b border-[var(--color-border)] last:border-0 cursor-pointer"
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                          n.type === 'danger' ? 'bg-danger-500' :
-                          n.type === 'warning' ? 'bg-warning-500' :
-                          'bg-primary-400'
-                        }`} />
+                        <div
+                          className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                            n.type === 'danger'
+                              ? 'bg-danger-500'
+                              : n.type === 'warning'
+                                ? 'bg-warning-500'
+                                : 'bg-primary-400'
+                          }`}
+                        />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{n.title}</p>
-                          <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{n.desc}</p>
-                          <p className="text-[10px] text-[var(--color-text-tertiary)] mt-1">{n.time}</p>
+                          <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                            {n.title}
+                          </p>
+                          <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                            {n.desc}
+                          </p>
+                          <p className="text-[10px] text-[var(--color-text-tertiary)] mt-1">
+                            {n.time}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -188,7 +217,10 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
         {/* Profile Dropdown */}
         <div ref={profileRef} className="relative">
           <button
-            onClick={() => { setProfileOpen(!profileOpen); setNotificationOpen(false); }}
+            onClick={() => {
+              setProfileOpen(!profileOpen);
+              setNotificationOpen(false);
+            }}
             className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--color-surface-hover)] transition-colors"
           >
             <div className="w-7 h-7 rounded-full bg-primary-500/10 flex items-center justify-center text-xs font-bold text-primary-500 flex-shrink-0">
@@ -216,7 +248,9 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                 style={{ zIndex: 'var(--z-dropdown)' as unknown as number }}
               >
                 <div className="px-4 py-3 border-b border-[var(--color-border)]">
-                  <p className="text-sm font-medium text-[var(--color-text-primary)]">{user?.name}</p>
+                  <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                    {user?.name}
+                  </p>
                   <p className="text-xs text-[var(--color-text-secondary)]">{user?.email}</p>
                 </div>
                 <div className="py-1">
@@ -226,7 +260,10 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                   ].map((item) => (
                     <button
                       key={item.label}
-                      onClick={() => { item.action(); setProfileOpen(false); }}
+                      onClick={() => {
+                        item.action();
+                        setProfileOpen(false);
+                      }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)] transition-colors"
                     >
                       <item.icon className="w-4 h-4" />
@@ -236,7 +273,10 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                 </div>
                 <div className="border-t border-[var(--color-border)] py-1">
                   <button
-                    onClick={() => { logout(); setProfileOpen(false); }}
+                    onClick={() => {
+                      logout();
+                      setProfileOpen(false);
+                    }}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-danger-500 hover:bg-danger-50 transition-colors"
                   >
                     <LogOut className="w-4 h-4" />

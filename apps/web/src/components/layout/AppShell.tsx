@@ -29,39 +29,39 @@ import { useAuth } from '../../hooks/useAuth';
    ═══════════════════════════════════════════════════════════ */
 
 const PAGE_LABELS: Record<PageId, string> = {
-  'dashboard': 'Dashboard',
+  dashboard: 'Dashboard',
   'patient-search': 'Patient Search',
-  'registration': 'Registration',
+  registration: 'Registration',
   'opd-queue': 'OPD Queue',
-  'consultations': 'Consultations',
+  consultations: 'Consultations',
   'ipd-admissions': 'IPD / Admissions',
   'ward-console': 'Ward Console',
-  'pharmacy': 'Dispensing',
-  'inventory': 'Inventory',
+  pharmacy: 'Dispensing',
+  inventory: 'Inventory',
   'expiry-fefo': 'Expiry & FEFO',
   'supply-chain': 'Supply Chain',
-  'billing': 'Billing',
+  billing: 'Billing',
   'facility-rules': 'Facility Rules',
-  'analytics': 'Analytics',
+  analytics: 'Analytics',
   'system-config': 'System Config',
   'system-status': 'System Status',
 };
 
 const PAGE_GROUP: Record<PageId, string> = {
-  'dashboard': 'Overview',
+  dashboard: 'Overview',
   'patient-search': 'Clinical',
-  'registration': 'Clinical',
+  registration: 'Clinical',
   'opd-queue': 'Clinical',
-  'consultations': 'Clinical',
+  consultations: 'Clinical',
   'ipd-admissions': 'Clinical',
   'ward-console': 'Clinical',
-  'pharmacy': 'Pharmacy & Inventory',
-  'inventory': 'Pharmacy & Inventory',
+  pharmacy: 'Pharmacy & Inventory',
+  inventory: 'Pharmacy & Inventory',
   'expiry-fefo': 'Pharmacy & Inventory',
   'supply-chain': 'Pharmacy & Inventory',
-  'billing': 'Finance',
+  billing: 'Finance',
   'facility-rules': 'Administration',
-  'analytics': 'Administration',
+  analytics: 'Administration',
   'system-config': 'Administration',
   'system-status': 'System',
 };
@@ -123,7 +123,9 @@ export const AppShell: React.FC = () => {
   }, [activePage]);
 
   useEffect(() => {
-    const width = sidebarCollapsed ? 'var(--sidebar-width-collapsed)' : 'var(--sidebar-width-expanded)';
+    const width = sidebarCollapsed
+      ? 'var(--sidebar-width-collapsed)'
+      : 'var(--sidebar-width-expanded)';
     document.documentElement.style.setProperty('--current-sidebar-width', width);
   }, [sidebarCollapsed]);
 
@@ -175,10 +177,7 @@ export const AppShell: React.FC = () => {
       />
 
       {/* TopNav */}
-      <TopNav
-        breadcrumbs={breadcrumbs}
-        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
-      />
+      <TopNav breadcrumbs={breadcrumbs} onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
 
       {/* Command Palette Overlay */}
       <AnimatePresence>
@@ -197,7 +196,9 @@ export const AppShell: React.FC = () => {
       <main
         className="transition-[margin] duration-[400ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
-          marginLeft: sidebarCollapsed ? 'var(--sidebar-width-collapsed)' : 'var(--sidebar-width-expanded)',
+          marginLeft: sidebarCollapsed
+            ? 'var(--sidebar-width-collapsed)'
+            : 'var(--sidebar-width-expanded)',
           paddingTop: 'var(--topnav-height)',
         }}
       >
@@ -231,21 +232,96 @@ interface CommandPaletteOverlayProps {
 }
 
 const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: string[] }[] = [
-  { id: 'dashboard', label: 'Dashboard', group: 'Overview', keywords: ['home', 'main', 'overview'] },
-  { id: 'patient-search', label: 'Patient Search', group: 'Clinical', keywords: ['find', 'lookup', 'patient', 'search', 'uid'] },
-  { id: 'registration', label: 'Registration', group: 'Clinical', keywords: ['register', 'new patient', 'employee', 'uid'] },
-  { id: 'opd-queue', label: 'OPD Queue', group: 'Clinical', keywords: ['outpatient', 'queue', 'token', 'waiting'] },
-  { id: 'consultations', label: 'Consultations', group: 'Clinical', keywords: ['doctor', 'prescription', 'diagnosis', 'rx'] },
-  { id: 'ipd-admissions', label: 'IPD / Admissions', group: 'Clinical', keywords: ['inpatient', 'admission', 'bed', 'ward'] },
-  { id: 'ward-console', label: 'Ward Console', group: 'Clinical', keywords: ['ward', 'bed', 'nurse', 'nursing'] },
-  { id: 'pharmacy', label: 'Dispensing', group: 'Pharmacy', keywords: ['pharmacy', 'medicine', 'dispense', 'rx'] },
-  { id: 'inventory', label: 'Inventory', group: 'Inventory', keywords: ['stock', 'medicine', 'batch', 'store'] },
-  { id: 'expiry-fefo', label: 'Expiry & FEFO', group: 'Inventory', keywords: ['expiry', 'expired', 'quarantine', 'fefo'] },
-  { id: 'supply-chain', label: 'Supply Chain', group: 'Supply', keywords: ['procurement', 'purchase', 'order', 'grn'] },
-  { id: 'billing', label: 'Billing', group: 'Finance', keywords: ['bill', 'receipt', 'payment', 'revenue'] },
-  { id: 'analytics', label: 'Analytics', group: 'Admin', keywords: ['analytics', 'report', 'chart', 'statistics'] },
-  { id: 'facility-rules', label: 'Facility Rules', group: 'Admin', keywords: ['rules', 'eligibility', 'facility'] },
-  { id: 'system-config', label: 'System Config', group: 'Admin', keywords: ['settings', 'configuration', 'system'] },
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    group: 'Overview',
+    keywords: ['home', 'main', 'overview'],
+  },
+  {
+    id: 'patient-search',
+    label: 'Patient Search',
+    group: 'Clinical',
+    keywords: ['find', 'lookup', 'patient', 'search', 'uid'],
+  },
+  {
+    id: 'registration',
+    label: 'Registration',
+    group: 'Clinical',
+    keywords: ['register', 'new patient', 'employee', 'uid'],
+  },
+  {
+    id: 'opd-queue',
+    label: 'OPD Queue',
+    group: 'Clinical',
+    keywords: ['outpatient', 'queue', 'token', 'waiting'],
+  },
+  {
+    id: 'consultations',
+    label: 'Consultations',
+    group: 'Clinical',
+    keywords: ['doctor', 'prescription', 'diagnosis', 'rx'],
+  },
+  {
+    id: 'ipd-admissions',
+    label: 'IPD / Admissions',
+    group: 'Clinical',
+    keywords: ['inpatient', 'admission', 'bed', 'ward'],
+  },
+  {
+    id: 'ward-console',
+    label: 'Ward Console',
+    group: 'Clinical',
+    keywords: ['ward', 'bed', 'nurse', 'nursing'],
+  },
+  {
+    id: 'pharmacy',
+    label: 'Dispensing',
+    group: 'Pharmacy',
+    keywords: ['pharmacy', 'medicine', 'dispense', 'rx'],
+  },
+  {
+    id: 'inventory',
+    label: 'Inventory',
+    group: 'Inventory',
+    keywords: ['stock', 'medicine', 'batch', 'store'],
+  },
+  {
+    id: 'expiry-fefo',
+    label: 'Expiry & FEFO',
+    group: 'Inventory',
+    keywords: ['expiry', 'expired', 'quarantine', 'fefo'],
+  },
+  {
+    id: 'supply-chain',
+    label: 'Supply Chain',
+    group: 'Supply',
+    keywords: ['procurement', 'purchase', 'order', 'grn'],
+  },
+  {
+    id: 'billing',
+    label: 'Billing',
+    group: 'Finance',
+    keywords: ['bill', 'receipt', 'payment', 'revenue'],
+  },
+  {
+    id: 'analytics',
+    label: 'Analytics',
+    group: 'Admin',
+    keywords: ['analytics', 'report', 'chart', 'statistics'],
+  },
+  {
+    id: 'facility-rules',
+    label: 'Facility Rules',
+    group: 'Admin',
+    keywords: ['rules', 'eligibility', 'facility'],
+  },
+  {
+    id: 'system-config',
+    label: 'System Config',
+    group: 'Admin',
+    keywords: ['settings', 'configuration', 'system'],
+  },
 ];
 
 const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, onNavigate }) => {
@@ -264,7 +340,7 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
       (page) =>
         page.label.toLowerCase().includes(q) ||
         page.group.toLowerCase().includes(q) ||
-        page.keywords.some((kw) => kw.includes(q))
+        page.keywords.some((kw) => kw.includes(q)),
     );
   }, [query]);
 
@@ -317,7 +393,10 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
             placeholder="Search pages, patients, medicines..."
             className="flex-1 py-3.5 text-sm bg-transparent border-none outline-none text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]"
           />
-          <button onClick={onClose} className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+          <button
+            onClick={onClose}
+            className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -340,7 +419,9 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
                 }`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{page.label}</p>
+                  <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                    {page.label}
+                  </p>
                   <p className="text-xs text-[var(--color-text-tertiary)]">{page.group}</p>
                 </div>
                 {index === selectedIndex && (
@@ -354,15 +435,21 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
         {/* Footer */}
         <div className="px-4 py-2 border-t border-[var(--color-border)] flex items-center gap-4 text-[10px] text-[var(--color-text-tertiary)]">
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono">↑↓</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono">
+              ↑↓
+            </kbd>
             Navigate
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono">↵</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono">
+              ↵
+            </kbd>
             Open
           </span>
           <span className="flex items-center gap-1">
-            <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono">esc</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono">
+              esc
+            </kbd>
             Close
           </span>
         </div>

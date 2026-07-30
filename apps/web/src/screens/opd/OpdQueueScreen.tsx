@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   fetchDepartments,
   fetchOpdQueue,
@@ -97,7 +97,7 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     loadDepts();
   }, [authToken]);
 
-  const loadQueue = async () => {
+  const loadQueue = useCallback(async () => {
     if (!selectedDeptId) return;
     try {
       const q = await fetchOpdQueue(selectedDeptId, authToken);
@@ -109,13 +109,13 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     } catch {
       setQueue(MOCK_QUEUE);
     }
-  };
+  }, [selectedDeptId, authToken]);
 
   useEffect(() => {
     loadQueue();
     const interval = setInterval(loadQueue, 5000);
     return () => clearInterval(interval);
-  }, [selectedDeptId, authToken]);
+  }, [loadQueue]);
 
   const currentCalledToken = queue.find((o) => o.calledAt && !o.closedAt);
   const nextWaitingTokens = queue.filter((o) => !o.calledAt && !o.closedAt);
@@ -138,7 +138,9 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
         return item;
       });
       setQueue(updatedQueue);
-      setActionMessage(`📢 Called Token ${nextItem.tokenNumber} (${nextItem.visit?.employee?.name}) for consultation!`);
+      setActionMessage(
+        `📢 Called Token ${nextItem.tokenNumber} (${nextItem.visit?.employee?.name}) for consultation!`,
+      );
     }
   };
 
@@ -167,7 +169,9 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
           </div>
           <div>
             <h1 className="text-xl font-bold">Doctor OPD Consultation Queue</h1>
-            <p className="text-xs text-primary-200/80 mt-0.5">Real-time daily token caller station & waitlist monitor</p>
+            <p className="text-xs text-primary-200/80 mt-0.5">
+              Real-time daily token caller station & waitlist monitor
+            </p>
           </div>
         </div>
 
@@ -193,10 +197,15 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
       <div className="card p-6 bg-primary-900 text-white border-none space-y-6">
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="flex items-center gap-2">
-            <Badge variant="success" dot>Live Calling Station</Badge>
+            <Badge variant="success" dot>
+              Live Calling Station
+            </Badge>
             <span className="text-xs text-primary-200/80">• {selectedDept?.name}</span>
           </div>
-          <button onClick={loadQueue} className="btn btn-ghost btn-sm text-xs text-primary-200 hover:text-white gap-1">
+          <button
+            onClick={loadQueue}
+            className="btn btn-ghost btn-sm text-xs text-primary-200 hover:text-white gap-1"
+          >
             <RefreshCw className="w-3.5 h-3.5" /> Sync Queue
           </button>
         </div>
@@ -205,10 +214,18 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
         <div className="text-center py-6 space-y-3">
           {currentCalledToken ? (
             <div className="space-y-3 max-w-md mx-auto p-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md">
-              <span className="text-xs font-semibold uppercase tracking-wider text-secondary-300 block">Now Calling in Consultation Room</span>
-              <h2 className="text-4xl font-bold font-mono text-white tracking-tight">{currentCalledToken.tokenNumber}</h2>
-              <p className="text-base font-semibold text-primary-100">{currentCalledToken.visit?.employee?.name || 'Patient'}</p>
-              <p className="text-xs text-primary-300 font-mono">Visit ID: {currentCalledToken.visitId}</p>
+              <span className="text-xs font-semibold uppercase tracking-wider text-secondary-300 block">
+                Now Calling in Consultation Room
+              </span>
+              <h2 className="text-4xl font-bold font-mono text-white tracking-tight">
+                {currentCalledToken.tokenNumber}
+              </h2>
+              <p className="text-base font-semibold text-primary-100">
+                {currentCalledToken.visit?.employee?.name || 'Patient'}
+              </p>
+              <p className="text-xs text-primary-300 font-mono">
+                Visit ID: {currentCalledToken.visitId}
+              </p>
 
               <div className="pt-3">
                 <button
@@ -221,8 +238,12 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-base font-medium text-primary-200">No Patient Currently In Consultation Room</p>
-              <p className="text-xs text-primary-300 font-mono">{nextWaitingTokens.length} patient(s) waiting in queue</p>
+              <p className="text-base font-medium text-primary-200">
+                No Patient Currently In Consultation Room
+              </p>
+              <p className="text-xs text-primary-300 font-mono">
+                {nextWaitingTokens.length} patient(s) waiting in queue
+              </p>
             </div>
           )}
 
@@ -243,7 +264,9 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
       {/* Upcoming Waitlist Table */}
       <div className="card p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
-          <h3 className="text-sm font-bold text-[var(--color-text-primary)]">Upcoming Waiting Tokens ({nextWaitingTokens.length})</h3>
+          <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
+            Upcoming Waiting Tokens ({nextWaitingTokens.length})
+          </h3>
           <Badge variant="warning">OPD Queue</Badge>
         </div>
 
@@ -254,19 +277,32 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
             </div>
           ) : (
             nextWaitingTokens.map((item, index) => (
-              <div key={item.id} className="p-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs">
+              <div
+                key={item.id}
+                className="p-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs"
+              >
                 <div className="flex items-center gap-3">
                   <span className="w-7 h-7 rounded-lg bg-primary-100 dark:bg-primary-900/40 text-primary-600 font-bold flex items-center justify-center font-mono">
                     #{index + 1}
                   </span>
                   <div>
-                    <span className="font-mono font-bold text-sm text-[var(--color-text-primary)] block">{item.tokenNumber}</span>
-                    <span className="text-xs text-[var(--color-text-secondary)]">{item.visit?.employee?.name || 'Patient'}</span>
+                    <span className="font-mono font-bold text-sm text-[var(--color-text-primary)] block">
+                      {item.tokenNumber}
+                    </span>
+                    <span className="text-xs text-[var(--color-text-secondary)]">
+                      {item.visit?.employee?.name || 'Patient'}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-[var(--color-text-tertiary)] font-mono">Issued: {new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className="text-[11px] text-[var(--color-text-tertiary)] font-mono">
+                    Issued:{' '}
+                    {new Date(item.createdAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
                   <Badge variant="warning">WAITING</Badge>
                 </div>
               </div>

@@ -59,7 +59,7 @@ export function DataTable<T>({
       if (valA === valB) return 0;
       if (valA === null || valA === undefined) return 1;
       if (valB === null || valB === undefined) return -1;
-      
+
       const comp = String(valA).localeCompare(String(valB), undefined, { numeric: true });
       return sortDirection === 'asc' ? comp : -comp;
     });
@@ -89,8 +89,12 @@ export function DataTable<T>({
       {(title || searchPlaceholder || onExportCsv) && (
         <div className="p-4 sm:p-5 border-b border-[var(--color-border)] flex flex-col sm:flex-row justify-between sm:items-center gap-4">
           <div>
-            {title && <h3 className="text-base font-bold text-[var(--color-text-primary)]">{title}</h3>}
-            {subtitle && <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{subtitle}</p>}
+            {title && (
+              <h3 className="text-base font-bold text-[var(--color-text-primary)]">{title}</h3>
+            )}
+            {subtitle && (
+              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{subtitle}</p>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -99,7 +103,10 @@ export function DataTable<T>({
               <input
                 type="text"
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 placeholder={searchPlaceholder}
                 className="input input-with-icon py-1.5 text-xs"
               />
@@ -126,14 +133,22 @@ export function DataTable<T>({
                 <th
                   key={col.key}
                   onClick={() => col.sortable && handleSort(col.key)}
-                  className={col.sortable ? 'cursor-pointer select-none hover:bg-[var(--color-surface-hover)]' : ''}
+                  className={
+                    col.sortable
+                      ? 'cursor-pointer select-none hover:bg-[var(--color-surface-hover)]'
+                      : ''
+                  }
                 >
                   <div className="flex items-center gap-1.5">
                     <span>{col.header}</span>
                     {col.sortable && (
                       <span className="text-[var(--color-text-tertiary)]">
                         {sortKey === col.key ? (
-                          sortDirection === 'asc' ? <ChevronUp className="w-3.5 h-3.5 text-primary-500" /> : <ChevronDown className="w-3.5 h-3.5 text-primary-500" />
+                          sortDirection === 'asc' ? (
+                            <ChevronUp className="w-3.5 h-3.5 text-primary-500" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5 text-primary-500" />
+                          )
                         ) : (
                           <ChevronsUpDown className="w-3.5 h-3.5" />
                         )}
@@ -148,7 +163,10 @@ export function DataTable<T>({
           <tbody>
             {paginatedData.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + (actions ? 1 : 0)} className="text-center py-8 text-sm text-[var(--color-text-tertiary)]">
+                <td
+                  colSpan={columns.length + (actions ? 1 : 0)}
+                  className="text-center py-8 text-sm text-[var(--color-text-tertiary)]"
+                >
                   No records matching your search criteria.
                 </td>
               </tr>
@@ -157,14 +175,12 @@ export function DataTable<T>({
                 <tr key={keyExtractor(item)}>
                   {columns.map((col) => (
                     <td key={col.key}>
-                      {col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '')}
+                      {col.render
+                        ? col.render(item)
+                        : String((item as Record<string, unknown>)[col.key] ?? '')}
                     </td>
                   ))}
-                  {actions && (
-                    <td className="text-right whitespace-nowrap">
-                      {actions(item)}
-                    </td>
-                  )}
+                  {actions && <td className="text-right whitespace-nowrap">{actions(item)}</td>}
                 </tr>
               ))
             )}
@@ -174,7 +190,8 @@ export function DataTable<T>({
 
       <div className="p-3 sm:px-5 border-t border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
         <div>
-          Showing {sortedData.length > 0 ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, sortedData.length)} of {sortedData.length} entries
+          Showing {sortedData.length > 0 ? (page - 1) * pageSize + 1 : 0} to{' '}
+          {Math.min(page * pageSize, sortedData.length)} of {sortedData.length} entries
         </div>
 
         <div className="flex items-center gap-1">

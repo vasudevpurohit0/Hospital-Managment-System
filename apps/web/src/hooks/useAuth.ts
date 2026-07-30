@@ -135,38 +135,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = useCallback(async (identifier: string, password: string) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
+    let res: Response;
     try {
-      const res = await fetch('/api/auth/login', {
+      res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, password }),
       });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(
-          errorData.message || `Authentication failed (${res.status})`
-        );
-      }
-
-      const data = await res.json();
-      const token = data.accessToken;
-      const roleName = data.user?.role || data.role || 'Doctor';
-      const user = buildUserFromRole(roleName, identifier);
-
-      if (data.user?.name) user.name = data.user.name;
-      if (data.user?.id) user.id = data.user.id;
-      if (data.user?.department) user.department = data.user.department;
-
-      storeAuth(token, user);
-      setState({
-        token,
-        user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      });
-    } catch (err: unknown) {
+    } catch {
+      // Backend unreachable (e.g. offline/demo environment) — fall back to a local demo session.
       const roleName = inferRoleFromIdentifier(identifier);
       const user = buildUserFromRole(roleName, identifier);
       user.name = getRoleFullName(roleName);
@@ -179,7 +156,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading: false,
         error: null,
       });
+      return;
     }
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: errorData.message || `Authentication failed (${res.status})`,
+      }));
+      return;
+    }
+
+    const data = await res.json();
+    const token = data.accessToken;
+    const roleName = data.user?.role || data.role || 'Doctor';
+    const user = buildUserFromRole(roleName, identifier);
+
+    if (data.user?.name) user.name = data.user.name;
+    if (data.user?.id) user.id = data.user.id;
+    if (data.user?.department) user.department = data.user.department;
+
+    storeAuth(token, user);
+    setState({
+      token,
+      user,
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
   }, []);
 
   const logout = useCallback(() => {
@@ -210,7 +216,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return React.createElement(
     AuthContext.Provider,
     { value: { ...state, login, logout, clearError } },
-    children
+    children,
   );
 };
 

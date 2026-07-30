@@ -150,7 +150,7 @@ describe('PharmacyService', () => {
       status: 'CLOSED',
     });
 
-    const res = await service.dispense(
+    await service.dispense(
       {
         prescriptionId: 'rx-1',
         items: [{ prescriptionItemId: 'item-1', medicineBatchId: 'b-1', dispenseQuantity: 2 }],

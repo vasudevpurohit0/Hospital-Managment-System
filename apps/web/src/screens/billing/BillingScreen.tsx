@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   fetchBillingTransactions,
   fetchReceipt,
@@ -22,7 +22,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -33,11 +33,11 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeToken]);
 
   useEffect(() => {
     loadData();
-  }, [activeToken]);
+  }, [loadData]);
 
   const handleOpenReceipt = async (txId: string) => {
     setLoadingReceipt(true);

@@ -248,7 +248,7 @@ export class AdmissionService implements OnModuleInit {
    * Allocate a specific Bed to an Admission transactionally (Spec §8.1 & FR-ADM-03)
    * Enforces database-level concurrency safeguards.
    */
-  async allocateBed(id: string, dto: AllocateBedDto, userId?: string) {
+  async allocateBed(id: string, dto: AllocateBedDto, _userId?: string) {
     const admission = await this.findOne(id);
 
     try {
@@ -407,7 +407,7 @@ export class AdmissionService implements OnModuleInit {
     try {
       return await this.prisma.$transaction(async (tx) => {
         // 1. Generate Discharge Summary
-        const summary = await tx.dischargeSummary.create({
+        await tx.dischargeSummary.create({
           data: {
             admissionId: id,
             approvedBy: userId,

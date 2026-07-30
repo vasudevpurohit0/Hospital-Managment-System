@@ -15,11 +15,16 @@ interface StatCardProps {
 }
 
 const variantStyles = {
-  primary: 'bg-primary-50 text-primary-600 border-primary-100 dark:bg-primary-950/30 dark:text-primary-400 dark:border-primary-900/50',
-  secondary: 'bg-secondary-50 text-secondary-600 border-secondary-100 dark:bg-secondary-950/30 dark:text-secondary-400 dark:border-secondary-900/50',
-  success: 'bg-success-50 text-success-600 border-success-100 dark:bg-success-950/30 dark:text-success-400 dark:border-success-900/50',
-  warning: 'bg-warning-50 text-warning-600 border-warning-100 dark:bg-warning-950/30 dark:text-warning-400 dark:border-warning-900/50',
-  danger: 'bg-danger-50 text-danger-600 border-danger-100 dark:bg-danger-950/30 dark:text-danger-400 dark:border-danger-900/50',
+  primary:
+    'bg-primary-50 text-primary-600 border-primary-100 dark:bg-primary-950/30 dark:text-primary-400 dark:border-primary-900/50',
+  secondary:
+    'bg-secondary-50 text-secondary-600 border-secondary-100 dark:bg-secondary-950/30 dark:text-secondary-400 dark:border-secondary-900/50',
+  success:
+    'bg-success-50 text-success-600 border-success-100 dark:bg-success-950/30 dark:text-success-400 dark:border-success-900/50',
+  warning:
+    'bg-warning-50 text-warning-600 border-warning-100 dark:bg-warning-950/30 dark:text-warning-400 dark:border-warning-900/50',
+  danger:
+    'bg-danger-50 text-danger-600 border-danger-100 dark:bg-danger-950/30 dark:text-danger-400 dark:border-danger-900/50',
   info: 'bg-info-50 text-info-500 border-info-100 dark:bg-info-950/30 dark:text-info-400 dark:border-info-900/50',
 };
 
@@ -50,16 +55,22 @@ export const StatCard: React.FC<StatCardProps> = ({
       {(subtitle || trend) && (
         <div className="mt-4 pt-3 border-t border-[var(--color-border)] flex items-center justify-between text-xs">
           {trend && (
-            <div className={`flex items-center gap-1 font-semibold ${
-              trend.direction === 'up' ? 'text-success-600' :
-              trend.direction === 'down' ? 'text-danger-600' :
-              'text-[var(--color-text-tertiary)]'
-            }`}>
+            <div
+              className={`flex items-center gap-1 font-semibold ${
+                trend.direction === 'up'
+                  ? 'text-success-600'
+                  : trend.direction === 'down'
+                    ? 'text-danger-600'
+                    : 'text-[var(--color-text-tertiary)]'
+              }`}
+            >
               {trend.direction === 'up' && <TrendingUp className="w-3.5 h-3.5" />}
               {trend.direction === 'down' && <TrendingDown className="w-3.5 h-3.5" />}
               {trend.direction === 'neutral' && <Minus className="w-3.5 h-3.5" />}
               <span>{trend.value}</span>
-              {trend.label && <span className="font-normal text-[var(--color-text-tertiary)]">{trend.label}</span>}
+              {trend.label && (
+                <span className="font-normal text-[var(--color-text-tertiary)]">{trend.label}</span>
+              )}
             </div>
           )}
           {subtitle && !trend && (

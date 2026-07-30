@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   fetchRequisitions,
   createRequisition,
@@ -52,7 +52,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [transferBatchId, setTransferBatchId] = useState('batch-p-500-01');
   const [transferQty, setTransferQty] = useState('100');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -65,11 +65,11 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeToken]);
 
   useEffect(() => {
     loadData();
-  }, [activeToken]);
+  }, [loadData]);
 
   const handleCreateRequisition = async (e: React.FormEvent) => {
     e.preventDefault();

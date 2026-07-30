@@ -50,16 +50,26 @@ export const DashboardPage: React.FC = () => {
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-primary-200 mb-3 border border-white/10">
             <ShieldCheck className="w-3.5 h-3.5 text-secondary-400" />
-            ESIC Hospital Operations Console • {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            ESIC Hospital Operations Console •{' '}
+            {new Date().toLocaleDateString('en-IN', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Welcome back, {user?.name || 'Doctor'}
           </h1>
           <p className="text-sm text-primary-200/80 mt-1.5 leading-relaxed">
-            {role === 'Doctor' && "You have 8 patients waiting in your OPD queue today. 2 critical lab results require your immediate review."}
-            {role === 'Pharmacist' && "Pharmacy Queue has 14 pending prescriptions for FEFO batch allocation. Stock level is healthy."}
-            {role === 'StoreManager' && "Inventory summary: 3 purchase orders pending approval. 2 medicine batches near quarantine threshold."}
-            {(role === 'SuperAdmin' || role === 'Administrator') && "Hospital operational summary: OPD flow running smoothly. Bed occupancy at 76%. Financial ledger balanced."}
+            {role === 'Doctor' &&
+              'You have 8 patients waiting in your OPD queue today. 2 critical lab results require your immediate review.'}
+            {role === 'Pharmacist' &&
+              'Pharmacy Queue has 14 pending prescriptions for FEFO batch allocation. Stock level is healthy.'}
+            {role === 'StoreManager' &&
+              'Inventory summary: 3 purchase orders pending approval. 2 medicine batches near quarantine threshold.'}
+            {(role === 'SuperAdmin' || role === 'Administrator') &&
+              'Hospital operational summary: OPD flow running smoothly. Bed occupancy at 76%. Financial ledger balanced.'}
           </p>
         </div>
       </div>
@@ -68,24 +78,94 @@ export const DashboardPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {role === 'Doctor' ? (
           <>
-            <StatCard title="Today's Consultations" value={metrics?.opd.totalVisits ?? 24} icon={Stethoscope} variant="primary" trend={{ value: '+12%', direction: 'up', label: 'vs yesterday' }} />
-            <StatCard title="Waiting Queue" value={`${metrics?.opd.waitingQueue ?? 8} Patients`} icon={Clock} variant="warning" subtitle="Avg wait: 14 mins" />
-            <StatCard title="Critical Lab Alerts" value="2 Pending" icon={AlertTriangle} variant="danger" subtitle="Requires immediate action" />
-            <StatCard title="Signed Prescriptions" value={metrics?.billing.totalTransactions ?? 18} icon={CheckCircle2} variant="success" subtitle="100% digital sign rate" />
+            <StatCard
+              title="Today's Consultations"
+              value={metrics?.opd?.totalVisits ?? 24}
+              icon={Stethoscope}
+              variant="primary"
+              trend={{ value: '+12%', direction: 'up', label: 'vs yesterday' }}
+            />
+            <StatCard
+              title="Waiting Queue"
+              value={`${metrics?.opd?.waitingQueue ?? 8} Patients`}
+              icon={Clock}
+              variant="warning"
+              subtitle="Avg wait: 14 mins"
+            />
+            <StatCard
+              title="Critical Lab Alerts"
+              value="2 Pending"
+              icon={AlertTriangle}
+              variant="danger"
+              subtitle="Requires immediate action"
+            />
+            <StatCard
+              title="Signed Prescriptions"
+              value={metrics?.billing?.totalTransactions ?? 18}
+              icon={CheckCircle2}
+              variant="success"
+              subtitle="100% digital sign rate"
+            />
           </>
         ) : role === 'Pharmacist' ? (
           <>
-            <StatCard title="Prescriptions Received" value={metrics?.billing.totalTransactions ?? 32} icon={Pill} variant="primary" />
-            <StatCard title="Pending Dispense" value="6 Rx" icon={Clock} variant="warning" subtitle="FEFO pre-allocated" />
-            <StatCard title="Low Stock Alerts" value={metrics?.inventory.lowStockAlerts ?? 3} icon={AlertTriangle} variant="danger" subtitle="Action required in Inventory" />
-            <StatCard title="Revenue Paid Tx" value={metrics?.billing.paidTransactions ?? 12} icon={DollarSign} variant="success" />
+            <StatCard
+              title="Prescriptions Received"
+              value={metrics?.billing?.totalTransactions ?? 32}
+              icon={Pill}
+              variant="primary"
+            />
+            <StatCard
+              title="Pending Dispense"
+              value="6 Rx"
+              icon={Clock}
+              variant="warning"
+              subtitle="FEFO pre-allocated"
+            />
+            <StatCard
+              title="Low Stock Alerts"
+              value={metrics?.inventory?.lowStockAlerts ?? 3}
+              icon={AlertTriangle}
+              variant="danger"
+              subtitle="Action required in Inventory"
+            />
+            <StatCard
+              title="Revenue Paid Tx"
+              value={metrics?.billing?.paidTransactions ?? 12}
+              icon={DollarSign}
+              variant="success"
+            />
           </>
         ) : (
           <>
-            <StatCard title="Total OPD Visits" value={metrics?.opd.totalVisits ?? 142} icon={Users} variant="primary" trend={{ value: '+8%', direction: 'up' }} />
-            <StatCard title="Active Admissions" value={metrics?.ipd.activeAdmissions ?? 48} icon={Building} variant="info" subtitle={`${metrics?.ipd.bedOccupancyRate ?? 76}% bed occupancy`} />
-            <StatCard title="Low Stock Items" value={metrics?.inventory.lowStockAlerts ?? 3} icon={AlertTriangle} variant="danger" subtitle="Reorder required" />
-            <StatCard title="Paid Ledger Tx" value={metrics?.billing.paidTransactions ?? 45} icon={TrendingUp} variant="success" trend={{ value: '+15%', direction: 'up' }} />
+            <StatCard
+              title="Total OPD Visits"
+              value={metrics?.opd?.totalVisits ?? 142}
+              icon={Users}
+              variant="primary"
+              trend={{ value: '+8%', direction: 'up' }}
+            />
+            <StatCard
+              title="Active Admissions"
+              value={metrics?.ipd?.activeAdmissions ?? 48}
+              icon={Building}
+              variant="info"
+              subtitle={`${metrics?.ipd?.bedOccupancyRate ?? 76}% bed occupancy`}
+            />
+            <StatCard
+              title="Low Stock Items"
+              value={metrics?.inventory?.lowStockAlerts ?? 3}
+              icon={AlertTriangle}
+              variant="danger"
+              subtitle="Reorder required"
+            />
+            <StatCard
+              title="Paid Ledger Tx"
+              value={metrics?.billing?.paidTransactions ?? 45}
+              icon={TrendingUp}
+              variant="success"
+              trend={{ value: '+15%', direction: 'up' }}
+            />
           </>
         )}
       </div>
@@ -96,34 +176,57 @@ export const DashboardPage: React.FC = () => {
         <div className="card p-5 lg:col-span-2 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-base font-bold text-[var(--color-text-primary)]">OPD Patient Consultations Trend</h3>
-              <p className="text-xs text-[var(--color-text-secondary)]">Daily consultations volume over past week</p>
+              <h3 className="text-base font-bold text-[var(--color-text-primary)]">
+                OPD Patient Consultations Trend
+              </h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Daily consultations volume over past week
+              </p>
             </div>
             <Badge variant="neutral">Live Metrics</Badge>
           </div>
 
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={[
-                { day: 'Mon', visits: 110, rx: 85 },
-                { day: 'Tue', visits: 132, rx: 104 },
-                { day: 'Wed', visits: 142, rx: 118 },
-                { day: 'Thu', visits: 125, rx: 98 },
-                { day: 'Fri', visits: 156, rx: 130 },
-                { day: 'Sat', visits: 90, rx: 72 },
-                { day: 'Sun', visits: 45, rx: 38 },
-              ]}>
+              <AreaChart
+                data={[
+                  { day: 'Mon', visits: 110, rx: 85 },
+                  { day: 'Tue', visits: 132, rx: 104 },
+                  { day: 'Wed', visits: 142, rx: 118 },
+                  { day: 'Thu', visits: 125, rx: 98 },
+                  { day: 'Fri', visits: 156, rx: 130 },
+                  { day: 'Sat', visits: 90, rx: 72 },
+                  { day: 'Sun', visits: 45, rx: 38 },
+                ]}
+              >
                 <defs>
                   <linearGradient id="opdColor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0F4C81" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#0F4C81" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#0F4C81" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#0F4C81" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="var(--color-border)"
+                />
                 <XAxis dataKey="day" tick={{ fontSize: 12 }} stroke="var(--color-text-tertiary)" />
                 <YAxis tick={{ fontSize: 12 }} stroke="var(--color-text-tertiary)" />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)', borderRadius: '8px' }} />
-                <Area type="monotone" dataKey="visits" stroke="#0F4C81" strokeWidth={2.5} fillOpacity={1} fill="url(#opdColor)" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'var(--color-surface)',
+                    borderColor: 'var(--color-border)',
+                    borderRadius: '8px',
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="visits"
+                  stroke="#0F4C81"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#opdColor)"
+                />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -132,8 +235,12 @@ export const DashboardPage: React.FC = () => {
         {/* Side Panel — Department Distribution */}
         <div className="card p-5 flex flex-col justify-between">
           <div>
-            <h3 className="text-base font-bold text-[var(--color-text-primary)]">Department Distribution</h3>
-            <p className="text-xs text-[var(--color-text-secondary)]">Patient consultations by specialty</p>
+            <h3 className="text-base font-bold text-[var(--color-text-primary)]">
+              Department Distribution
+            </h3>
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Patient consultations by specialty
+            </p>
           </div>
 
           <div className="h-52 w-full my-2">
