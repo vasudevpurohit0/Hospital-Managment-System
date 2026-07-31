@@ -8,21 +8,17 @@ import {
 import { fetchDepartments, createOpdVisit, Department, OPDVisitRecord } from '../../api/opd.api';
 import { PatientWorkspace } from '../PatientWorkspace';
 import { Badge } from '../../components/ui/Badge';
-import {
-  Search,
-  User,
-  PlusCircle,
-  AlertTriangle,
-  Ticket,
-  UserPlus,
-} from 'lucide-react';
+import { Search, User, PlusCircle, AlertTriangle, Ticket, UserPlus } from 'lucide-react';
 
 interface PatientSearchPageProps {
   authToken: string;
   onNavigateToRegistration?: () => void;
 }
 
-export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({ authToken, onNavigateToRegistration }) => {
+export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({
+  authToken,
+  onNavigateToRegistration,
+}) => {
   const [searchInput, setSearchInput] = useState('EMP-1001');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +80,12 @@ export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({ authToken,
           employmentType: 'PERMANENT',
           eligibilityCategory: 'FULL_BENEFIT',
         },
-        lastVisit: { id: 'v-999', date: new Date(Date.now() - 86400000 * 3).toISOString(), type: 'OPD', status: 'CLOSED' },
+        lastVisit: {
+          id: 'v-999',
+          date: new Date(Date.now() - 86400000 * 3).toISOString(),
+          type: 'OPD',
+          status: 'CLOSED',
+        },
         openVisit: null,
         activeAdmission: null,
         openPrescriptions: [],
@@ -173,9 +174,16 @@ export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({ authToken,
         <div className="relative z-10 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <span className="text-xs font-semibold text-secondary-300 uppercase tracking-wider">Clinical Reception Desk</span>
-              <h1 className="text-2xl font-bold tracking-tight">Patient Search & Repeat Visit Entry</h1>
-              <p className="text-xs text-primary-200/80 mt-1">Scan QR code, enter Employee ID or Hospital UHID to load full longitudinal medical records</p>
+              <span className="text-xs font-semibold text-secondary-300 uppercase tracking-wider">
+                Clinical Reception Desk
+              </span>
+              <h1 className="text-2xl font-bold tracking-tight">
+                Patient Search & Repeat Visit Entry
+              </h1>
+              <p className="text-xs text-primary-200/80 mt-1">
+                Scan QR code, enter Employee ID or Hospital UHID to load full longitudinal medical
+                records
+              </p>
             </div>
 
             {onNavigateToRegistration && (
@@ -219,7 +227,10 @@ export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({ authToken,
                 <button
                   key={id}
                   type="button"
-                  onClick={() => { setSearchInput(id); performSearch(id); }}
+                  onClick={() => {
+                    setSearchInput(id);
+                    performSearch(id);
+                  }}
                   className="px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-xs font-mono text-white transition-colors"
                 >
                   {id}
@@ -255,13 +266,20 @@ export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({ authToken,
                 </div>
                 <div>
                   <div className="flex items-center gap-3">
-                    <h2 className="text-lg font-bold text-[var(--color-text-primary)]">{patientData.employee.name}</h2>
-                    <Badge variant={patientData.employee.employmentType === 'PERMANENT' ? 'success' : 'warning'}>
+                    <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+                      {patientData.employee.name}
+                    </h2>
+                    <Badge
+                      variant={
+                        patientData.employee.employmentType === 'PERMANENT' ? 'success' : 'warning'
+                      }
+                    >
                       {patientData.employee.employmentType} (ESIC Benefit)
                     </Badge>
                   </div>
                   <p className="text-xs text-[var(--color-text-secondary)] mt-0.5 font-mono">
-                    Employee ID: {patientData.employee.employeeId} • UHID: {patientData.employee.uid}
+                    Employee ID: {patientData.employee.employeeId} • UHID:{' '}
+                    {patientData.employee.uid}
                   </p>
                 </div>
               </div>
@@ -352,8 +370,12 @@ export const PatientSearchPage: React.FC<PatientSearchPageProps> = ({ authToken,
               {issuedOpdToken && (
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900">
                   <div className="space-y-1">
-                    <span className="font-bold uppercase tracking-wider text-[10px] text-emerald-700 block">Queue Token Issued</span>
-                    <p className="text-xl font-bold font-mono text-emerald-800">{issuedOpdToken.tokenNumber}</p>
+                    <span className="font-bold uppercase tracking-wider text-[10px] text-emerald-700 block">
+                      Queue Token Issued
+                    </span>
+                    <p className="text-xl font-bold font-mono text-emerald-800">
+                      {issuedOpdToken.tokenNumber}
+                    </p>
                     <p className="text-[11px] text-emerald-700">Status: WAITING IN QUEUE</p>
                   </div>
                   <Badge variant="success">Active Token Ticket</Badge>

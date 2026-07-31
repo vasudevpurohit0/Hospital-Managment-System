@@ -1,6 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { Lock, User, Eye, EyeOff, ShieldCheck, Loader2, AlertCircle, KeyRound, Building2 } from 'lucide-react';
+import {
+  Lock,
+  User,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Loader2,
+  AlertCircle,
+  KeyRound,
+  Building2,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /* ═══════════════════════════════════════════════════════════
@@ -161,9 +171,7 @@ export const LoginPage: React.FC = () => {
               <h2 className="text-2xl lg:text-3xl font-bold text-[#0B2545] font-serif tracking-tight">
                 Hospital Single Sign-On
               </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Authorized Personnel Login
-              </p>
+              <p className="text-xs text-slate-500 font-medium">Authorized Personnel Login</p>
             </div>
 
             {/* Error Alert */}
@@ -189,7 +197,10 @@ export const LoginPage: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-5 w-full">
               {/* Username Field */}
               <div className="space-y-1.5 w-full">
-                <label htmlFor="login-identifier" className="block text-xs font-bold text-slate-700">
+                <label
+                  htmlFor="login-identifier"
+                  className="block text-xs font-bold text-slate-700"
+                >
                   Government Email / User ID <span className="text-red-600">*</span>
                 </label>
                 <div className="relative w-full">
@@ -249,7 +260,10 @@ export const LoginPage: React.FC = () => {
                   />
                   <span className="text-xs text-slate-600 font-medium">Keep session active</span>
                 </label>
-                <button type="button" className="text-xs font-semibold text-[#800000] hover:underline">
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-[#800000] hover:underline"
+                >
                   Forgot Password?
                 </button>
               </div>
@@ -287,11 +301,17 @@ export const LoginPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-4 text-slate-300 text-[11px]">
-            <a href="#" className="hover:text-amber-400 transition-colors">Privacy Policy</a>
+            <a href="#" className="hover:text-amber-400 transition-colors">
+              Privacy Policy
+            </a>
             <span>•</span>
-            <a href="#" className="hover:text-amber-400 transition-colors">Terms of Use</a>
+            <a href="#" className="hover:text-amber-400 transition-colors">
+              Terms of Use
+            </a>
             <span>•</span>
-            <a href="#" className="hover:text-amber-400 transition-colors">Helpdesk: 1800-11-2526</a>
+            <a href="#" className="hover:text-amber-400 transition-colors">
+              Helpdesk: 1800-11-2526
+            </a>
           </div>
         </div>
       </footer>

@@ -1,12 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProcurementService } from './procurement.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { ApprovalDecision, RequisitionStatus, POStatus, PharmacyLocation } from '@prisma/client';
 
 describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
   let service: ProcurementService;
-  let prisma: any;
 
   const mockPrisma: any = {
     purchaseRequisition: {
@@ -50,7 +49,6 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
     }).compile();
 
     service = module.get<ProcurementService>(ProcurementService);
-    prisma = module.get<PrismaService>(PrismaService);
   });
 
   it('should be defined', () => {

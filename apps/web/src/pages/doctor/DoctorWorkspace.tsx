@@ -6,16 +6,7 @@ import {
   PrescriptionRecord,
 } from '../../api/prescription.api';
 import { evaluateBenefitRule } from '../../api/benefit.api';
-import {
-  User,
-  AlertTriangle,
-  Stethoscope,
-  Plus,
-  Trash2,
-  Lock,
-  Save,
-  FileText,
-} from 'lucide-react';
+import { User, AlertTriangle, Stethoscope, Plus, Trash2, Lock, Save, FileText } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 
 interface DoctorWorkspaceProps {
@@ -34,8 +25,18 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
   const [admissionRecommended, setAdmissionRecommended] = useState(false);
 
   const [items, setItems] = useState<PrescriptionItemPayload[]>([
-    { medicineName: 'Paracetamol 500mg', dose: '1 Tablet', frequency: '1-0-1 (Twice Daily)', duration: '5 Days' },
-    { medicineName: 'Azithromycin 500mg', dose: '1 Tablet', frequency: '1-0-0 (Once Daily)', duration: '3 Days' },
+    {
+      medicineName: 'Paracetamol 500mg',
+      dose: '1 Tablet',
+      frequency: '1-0-1 (Twice Daily)',
+      duration: '5 Days',
+    },
+    {
+      medicineName: 'Azithromycin 500mg',
+      dose: '1 Tablet',
+      frequency: '1-0-0 (Once Daily)',
+      duration: '3 Days',
+    },
   ]);
 
   const [labTests, setLabTests] = useState<string[]>([
@@ -145,8 +146,12 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             <Stethoscope className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Doctor Consultation & Prescription Console</h2>
-            <p className="text-xs text-[var(--color-text-secondary)]">Epic EMR-style 3-panel split clinical workspace</p>
+            <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+              Doctor Consultation & Prescription Console
+            </h2>
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Epic EMR-style 3-panel split clinical workspace
+            </p>
           </div>
         </div>
 
@@ -182,12 +187,16 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
               <div>
                 <h3 className="font-bold text-sm text-[var(--color-text-primary)]">Rahul Kumar</h3>
                 <p className="text-xs text-[var(--color-text-secondary)]">M / 42 yrs • B+</p>
-                <p className="text-[10px] text-primary-600 font-mono font-semibold">UHID: ESIC-MH-001042</p>
+                <p className="text-[10px] text-primary-600 font-mono font-semibold">
+                  UHID: ESIC-MH-001042
+                </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Visit Context ID</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Visit Context ID
+              </label>
               <input
                 type="text"
                 value={visitIdInput}
@@ -198,7 +207,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">ESIC Benefit Rule Engine</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                ESIC Benefit Rule Engine
+              </label>
               <select
                 value={employmentType}
                 onChange={(e) => setEmploymentType(e.target.value as 'PERMANENT' | 'CONTRACTUAL')}
@@ -217,7 +228,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
 
             {/* Vitals Summary */}
             <div className="pt-3 border-t border-[var(--color-border)] space-y-2">
-              <p className="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">Patient Vitals</p>
+              <p className="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                Patient Vitals
+              </p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="bg-[var(--color-surface-secondary)] p-2 rounded-lg">
                   <span className="text-[10px] text-[var(--color-text-tertiary)] block">BP</span>
@@ -255,7 +268,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             </h3>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Patient Symptoms & History</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Patient Symptoms & History
+              </label>
               <textarea
                 rows={3}
                 value={symptoms}
@@ -266,7 +281,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Physical Examination Findings</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Physical Examination Findings
+              </label>
               <textarea
                 rows={3}
                 value={examinationNotes}
@@ -277,7 +294,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Primary Clinical Diagnosis *</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Primary Clinical Diagnosis *
+              </label>
               <input
                 type="text"
                 required
@@ -308,7 +327,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
                   disabled={isSigned}
                   className="rounded border-[var(--color-border-strong)] text-primary-500"
                 />
-                <span className="font-semibold text-danger-600">Recommend Admission to IPD Ward</span>
+                <span className="font-semibold text-danger-600">
+                  Recommend Admission to IPD Ward
+                </span>
               </label>
             </div>
           </div>
@@ -319,7 +340,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
           {/* Rx Medicines */}
           <div className="card p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
-              <h3 className="text-sm font-bold text-[var(--color-text-primary)]">Prescribed Medicines</h3>
+              <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
+                Prescribed Medicines
+              </h3>
               {!isSigned && (
                 <button
                   type="button"
@@ -333,7 +356,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
 
             <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
               {items.map((item, idx) => (
-                <div key={idx} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-2">
+                <div
+                  key={idx}
+                  className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-2"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <input
                       type="text"
@@ -344,15 +370,40 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
                       className="input py-1 px-2 text-xs font-semibold"
                     />
                     {!isSigned && items.length > 1 && (
-                      <button type="button" onClick={() => handleRemoveItem(idx)} className="text-danger-500 hover:text-danger-600 p-1">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItem(idx)}
+                        className="text-danger-500 hover:text-danger-600 p-1"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
                   <div className="grid grid-cols-3 gap-1.5 text-[11px]">
-                    <input type="text" placeholder="Dose" value={item.dose} onChange={(e) => handleItemChange(idx, 'dose', e.target.value)} disabled={isSigned} className="input py-0.5 px-1.5 text-xs" />
-                    <input type="text" placeholder="Freq" value={item.frequency} onChange={(e) => handleItemChange(idx, 'frequency', e.target.value)} disabled={isSigned} className="input py-0.5 px-1.5 text-xs" />
-                    <input type="text" placeholder="Duration" value={item.duration} onChange={(e) => handleItemChange(idx, 'duration', e.target.value)} disabled={isSigned} className="input py-0.5 px-1.5 text-xs" />
+                    <input
+                      type="text"
+                      placeholder="Dose"
+                      value={item.dose}
+                      onChange={(e) => handleItemChange(idx, 'dose', e.target.value)}
+                      disabled={isSigned}
+                      className="input py-0.5 px-1.5 text-xs"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Freq"
+                      value={item.frequency}
+                      onChange={(e) => handleItemChange(idx, 'frequency', e.target.value)}
+                      disabled={isSigned}
+                      className="input py-0.5 px-1.5 text-xs"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Duration"
+                      value={item.duration}
+                      onChange={(e) => handleItemChange(idx, 'duration', e.target.value)}
+                      disabled={isSigned}
+                      className="input py-0.5 px-1.5 text-xs"
+                    />
                   </div>
                 </div>
               ))}
@@ -361,7 +412,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
 
           {/* Diagnostic Lab Orders */}
           <div className="card p-4 space-y-3">
-            <h3 className="text-sm font-bold text-[var(--color-text-primary)] border-b border-[var(--color-border)] pb-2">Diagnostic Lab Orders</h3>
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)] border-b border-[var(--color-border)] pb-2">
+              Diagnostic Lab Orders
+            </h3>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -372,15 +425,30 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
                 className="input py-1 px-2 text-xs"
               />
               {!isSigned && (
-                <button type="button" onClick={handleAddLabTest} className="btn btn-secondary btn-sm">Add</button>
+                <button
+                  type="button"
+                  onClick={handleAddLabTest}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Add
+                </button>
               )}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {labTests.map((test, i) => (
-                <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary-50 text-primary-700 text-xs font-medium border border-primary-100">
+                <span
+                  key={i}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary-50 text-primary-700 text-xs font-medium border border-primary-100"
+                >
                   {test}
                   {!isSigned && (
-                    <button type="button" onClick={() => handleRemoveLabTest(i)} className="hover:text-danger-600">×</button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLabTest(i)}
+                      className="hover:text-danger-600"
+                    >
+                      ×
+                    </button>
                   )}
                 </span>
               ))}
@@ -390,13 +458,21 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       </div>
 
       {/* Fixed Sticky Action Bar at Bottom */}
-      <div className="fixed bottom-0 right-0 left-0 bg-[var(--color-surface)] border-t border-[var(--color-border)] p-3 px-6 shadow-lg z-40 flex items-center justify-between" style={{ marginLeft: 'var(--current-sidebar-width, 260px)' }}>
+      <div
+        className="fixed bottom-0 right-0 left-0 bg-[var(--color-surface)] border-t border-[var(--color-border)] p-3 px-6 shadow-lg z-40 flex items-center justify-between"
+        style={{ marginLeft: 'var(--current-sidebar-width, 260px)' }}
+      >
         <div className="text-xs text-[var(--color-text-secondary)]">
           {activePrescription ? `Draft ID: ${activePrescription.id}` : 'Unsaved consultation draft'}
         </div>
         <div className="flex items-center gap-3">
           {!isSigned && (
-            <button type="button" onClick={() => handleSaveDraft()} disabled={submitting} className="btn btn-secondary btn-md gap-2">
+            <button
+              type="button"
+              onClick={() => handleSaveDraft()}
+              disabled={submitting}
+              className="btn btn-secondary btn-md gap-2"
+            >
               <Save className="w-4 h-4" /> Save Draft
             </button>
           )}
