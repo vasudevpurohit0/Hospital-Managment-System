@@ -7,13 +7,31 @@ describe('DashboardService (Phase 14 — Admin Dashboard & Analytics)', () => {
 
   const mockPrisma: any = {
     visit: { count: jest.fn().mockResolvedValue(142) },
-    admission: { count: jest.fn().mockResolvedValue(28) },
+    admission: {
+      count: jest.fn().mockResolvedValue(28),
+      groupBy: jest.fn().mockResolvedValue([
+        { eligibleCategory: 'A', _count: { _all: 3 } },
+        { eligibleCategory: 'C', _count: { _all: 9 } },
+      ]),
+    },
     bed: { count: jest.fn().mockResolvedValue(50) },
     medicineBatch: { count: jest.fn().mockResolvedValue(4) },
     purchaseRequisition: { count: jest.fn().mockResolvedValue(2) },
     purchaseOrder: { count: jest.fn().mockResolvedValue(3) },
-    billingTransaction: { count: jest.fn().mockResolvedValue(86) },
-    auditLog: { count: jest.fn().mockResolvedValue(12) },
+    billingTransaction: {
+      count: jest
+        .fn()
+        .mockResolvedValueOnce(86) // totalBillingTransactions
+        .mockResolvedValueOnce(24) // paidBillingTransactions
+        .mockResolvedValueOnce(65) // permanentTransactionCount
+        .mockResolvedValueOnce(35), // contractualTransactionCount
+    },
+    auditLog: {
+      count: jest.fn().mockResolvedValue(12),
+      findMany: jest.fn().mockResolvedValue([
+        { id: 'log-1', action: 'DISPENSE', entityType: 'Prescription', entityId: 'rx-1' },
+      ]),
+    },
   };
 
   beforeEach(async () => {

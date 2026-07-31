@@ -14,11 +14,6 @@ export interface RegistrationResult {
   reason?: string;
 }
 
-// In-memory dev store fallback when database connection is unavailable
-const DEV_EMPLOYEES_STORE: any[] = [];
-const DEV_UIDS_STORE: any[] = [];
-const DEV_CASES_STORE: any[] = [];
-
 @Injectable()
 export class EmployeeVerificationService {
   private readonly logger = new Logger(EmployeeVerificationService.name);
@@ -56,22 +51,13 @@ export class EmployeeVerificationService {
     const trimmedId = employeeId.trim();
 
     // 1. Double-submit check
-    let existingEmp: any = null;
-    try {
-      existingEmp = await this.prisma.employee.findUnique({
-        where: { employeeId: trimmedId },
-        include: { hospitalUid: true },
-      });
-    } catch {
-      existingEmp = DEV_EMPLOYEES_STORE.find((e) => e.employeeId === trimmedId);
-    }
+    const existingEmp = await this.prisma.employee.findUnique({
+      where: { employeeId: trimmedId },
+      include: { hospitalUid: true },
+    });
 
-    if (!existingEmp) {
-      existingEmp = DEV_EMPLOYEES_STORE.find((e) => e.employeeId === trimmedId);
-    }
-
-    if (existingEmp && (existingEmp.hospitalUid || existingEmp.uidCode)) {
-      const existingUidCode = existingEmp.hospitalUid?.uidCode || existingEmp.uidCode;
+    if (existingEmp && existingEmp.hospitalUid) {
+      const existingUidCode = existingEmp.hospitalUid.uidCode;
       throw new ConflictException({
         message: `Employee ID ${trimmedId} is already registered with Hospital UID ${existingUidCode}`,
         uidCode: existingUidCode,
@@ -83,26 +69,16 @@ export class EmployeeVerificationService {
     const verified = await this.labourDeptClient.verifyEmployee(trimmedId);
 
     if (!verified) {
-      // 3. Fallback: Create Manual Verification Escalation Case (FR-EMP-02)
-      let caseId = `case-${Date.now()}`;
-      try {
-        const escalation = await this.prisma.manualVerificationCase.create({
-          data: {
-            employeeId: trimmedId,
-            reason: 'Employee ID verification failed against Labour Department source',
-            status: 'PENDING',
-            createdBy: actorUserId || null,
-          },
-        });
-        caseId = escalation.id;
-      } catch {
-        DEV_CASES_STORE.push({
-          id: caseId,
+      // 3. Create Manual Verification Escalation Case (FR-EMP-02)
+      const escalation = await this.prisma.manualVerificationCase.create({
+        data: {
           employeeId: trimmedId,
-          reason: 'Verification failed against Labour Department source',
+          reason: 'Employee ID verification failed against Labour Department source',
           status: 'PENDING',
-        });
-      }
+          createdBy: actorUserId || null,
+        },
+      });
+      const caseId = escalation.id;
 
       this.logger.warn(
         `🚨 Escalated unverified employee ${trimmedId} to ManualVerificationCase (${caseId})`,
@@ -115,10 +91,8 @@ export class EmployeeVerificationService {
       };
     }
 
-    // 4. Atomic Registration Transaction with DB error dev fallback
-    const year = new Date().getFullYear();
-    const sequence = (DEV_UIDS_STORE.length + 1).toString().padStart(6, '0');
-    const uidCode = `ESIC-${year}-${sequence}`;
+    // 4. Atomic Registration Transaction
+    const uidCode = await this.uidGenerator.generateUid();
     const qrDataUrl = await this.qrService.generateQrDataUrl(uidCode);
 
     try {
@@ -198,36 +172,7 @@ export class EmployeeVerificationService {
         });
       }
 
-      // Dev memory fallback when DB connection is unavailable
-      const mockEmp = {
-        id: `emp-${Date.now()}`,
-        employeeId: trimmedId,
-        name: verified.name,
-        department: verified.department,
-        post: { title: verified.postTitle },
-        grade: { payLevel: verified.gradePayLevel },
-        employmentType: { code: verified.employmentTypeCode, name: verified.employmentTypeCode },
-        contactPhone: verified.contactPhone || null,
-        uidCode,
-      };
-
-      const mockUid = {
-        uidCode,
-        qrPayload: qrDataUrl,
-        issuedAt: new Date().toISOString(),
-      };
-
-      DEV_EMPLOYEES_STORE.push(mockEmp);
-      DEV_UIDS_STORE.push(mockUid);
-
-      this.logger.log(`✅ [Dev Memory] Registered Employee ${trimmedId} -> Issued UID ${uidCode}`);
-
-      return {
-        status: 'REGISTERED',
-        employee: mockEmp,
-        hospitalUid: mockUid,
-        qrDataUrl,
-      };
+      throw err;
     }
   }
 
@@ -237,48 +182,31 @@ export class EmployeeVerificationService {
   async getUidCardData(identifier: string) {
     const trimmed = identifier.trim();
 
-    try {
-      const uidRecord = await this.prisma.hospitalUID.findFirst({
-        where: {
-          OR: [{ uidCode: trimmed }, { employee: { employeeId: trimmed } }],
-        },
-        include: {
-          employee: {
-            include: {
-              post: true,
-              grade: true,
-              employmentType: true,
-              patientProfile: true,
-            },
+    const uidRecord = await this.prisma.hospitalUID.findFirst({
+      where: {
+        OR: [{ uidCode: trimmed }, { employee: { employeeId: trimmed } }],
+      },
+      include: {
+        employee: {
+          include: {
+            post: true,
+            grade: true,
+            employmentType: true,
+            patientProfile: true,
           },
         },
-      });
+      },
+    });
 
-      if (uidRecord) {
-        return {
-          uidCode: uidRecord.uidCode,
-          qrDataUrl: uidRecord.qrPayload,
-          issuedAt: uidRecord.issuedAt,
-          employee: uidRecord.employee,
-        };
-      }
-    } catch {
-      // Fall through to memory store
+    if (!uidRecord) {
+      throw new NotFoundException(`Hospital UID card not found for identifier: ${trimmed}`);
     }
 
-    const devEmp = DEV_EMPLOYEES_STORE.find(
-      (e) => e.employeeId === trimmed || e.uidCode === trimmed,
-    );
-
-    if (devEmp) {
-      return {
-        uidCode: devEmp.uidCode,
-        qrDataUrl: await this.qrService.generateQrDataUrl(devEmp.uidCode),
-        issuedAt: new Date().toISOString(),
-        employee: devEmp,
-      };
-    }
-
-    throw new NotFoundException(`Hospital UID card not found for identifier: ${trimmed}`);
+    return {
+      uidCode: uidRecord.uidCode,
+      qrDataUrl: uidRecord.qrPayload,
+      issuedAt: uidRecord.issuedAt,
+      employee: uidRecord.employee,
+    };
   }
 }

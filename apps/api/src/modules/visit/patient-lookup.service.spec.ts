@@ -9,6 +9,12 @@ describe('PatientLookupService', () => {
     employee: {
       findFirst: jest.fn(),
     },
+    admission: {
+      findFirst: jest.fn(),
+    },
+    prescription: {
+      findMany: jest.fn(),
+    },
   };
 
   beforeEach(async () => {
@@ -33,6 +39,8 @@ describe('PatientLookupService', () => {
       hospitalUid: { uidCode: 'ESIC-2026-000001' },
       visits: [{ id: 'v1', type: 'OPD', status: 'CLOSED', createdAt: new Date('2026-07-20') }],
     });
+    mockPrismaService.admission.findFirst.mockResolvedValue(null);
+    mockPrismaService.prescription.findMany.mockResolvedValue([]);
 
     const result = await service.lookupByUid('ESIC-2026-000001');
 
@@ -43,13 +51,17 @@ describe('PatientLookupService', () => {
     expect(result.historySummary[0].type).toBe('OPD');
   });
 
-  it('should return dev memory fallback for sample UID when database is unavailable', async () => {
+  it('should propagate a real error instead of masking a database failure', async () => {
     mockPrismaService.employee.findFirst.mockRejectedValue(new Error('DB offline'));
 
-    const result = await service.lookupByUid('ESIC-2026-000001');
+    await expect(service.lookupByUid('ESIC-2026-000001')).rejects.toThrow('DB offline');
+  });
 
-    expect(result).toBeDefined();
-    expect(result.employee.employeeId).toBe('EMP-1001');
-    expect(result.employee.name).toBe('Rajesh Kumar');
+  it('should throw NotFoundException when no employee matches the UID', async () => {
+    mockPrismaService.employee.findFirst.mockResolvedValue(null);
+
+    await expect(service.lookupByUid('UNKNOWN-UID')).rejects.toThrow(
+      'No patient profile found for UID / Employee ID: UNKNOWN-UID',
+    );
   });
 });

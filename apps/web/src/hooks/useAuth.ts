@@ -61,52 +61,26 @@ function clearStoredAuth(): void {
 }
 
 const ROLE_DISPLAY_NAMES: Record<string, string> = {
-  SuperAdmin: 'Administrator',
+  SuperAdmin: 'Super Admin',
   Administrator: 'Administrator',
   Doctor: 'Doctor',
   Pharmacist: 'Pharmacist',
   Nurse: 'Nurse',
   StoreManager: 'Store Manager',
-  Receptionist: 'Receptionist',
-  LabTechnician: 'Lab Technician',
-  BillingClerk: 'Billing Clerk',
+  ProcurementOfficer: 'Procurement Officer',
+  Reception: 'Reception',
+  AdmissionDesk: 'Admission Desk',
+  DataEntryOperator: 'Data Entry Operator',
 };
 
 function buildUserFromRole(roleName: string, identifier: string): AuthUser {
   const displayName = ROLE_DISPLAY_NAMES[roleName] || roleName;
   return {
     id: `user-${roleName.toLowerCase()}`,
-    name: `${displayName}`,
+    name: displayName,
     email: identifier,
     role: roleName,
   };
-}
-
-function inferRoleFromIdentifier(identifier: string): string {
-  const id = identifier.toLowerCase();
-  if (id.includes('admin') || id.includes('super')) return 'SuperAdmin';
-  if (id.includes('doctor') || id.includes('dr')) return 'Doctor';
-  if (id.includes('pharma')) return 'Pharmacist';
-  if (id.includes('nurse')) return 'Nurse';
-  if (id.includes('store') || id.includes('inventory')) return 'StoreManager';
-  if (id.includes('reception') || id.includes('front')) return 'Receptionist';
-  if (id.includes('lab')) return 'LabTechnician';
-  if (id.includes('bill')) return 'BillingClerk';
-  return 'Doctor';
-}
-
-function getRoleFullName(role: string): string {
-  const names: Record<string, string> = {
-    SuperAdmin: 'Dr. Rajesh Kumar',
-    Doctor: 'Dr. Suresh Sharma',
-    Pharmacist: 'Rph. Anjali Verma',
-    Nurse: 'Ns. Priya Singh',
-    StoreManager: 'Mr. Vikram Patel',
-    Receptionist: 'Ms. Sunita Devi',
-    LabTechnician: 'Mr. Amit Joshi',
-    BillingClerk: 'Ms. Kavita Rao',
-  };
-  return names[role] || 'ESIC User';
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -143,19 +117,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ identifier, password }),
       });
     } catch {
-      // Backend unreachable (e.g. offline/demo environment) — fall back to a local demo session.
-      const roleName = inferRoleFromIdentifier(identifier);
-      const user = buildUserFromRole(roleName, identifier);
-      user.name = getRoleFullName(roleName);
-      const mockToken = `dev-session-${Date.now()}`;
-      storeAuth(mockToken, user);
-      setState({
-        token: mockToken,
-        user,
-        isAuthenticated: true,
+      setState((prev) => ({
+        ...prev,
         isLoading: false,
-        error: null,
-      });
+        error: 'Cannot reach the server. Please check your connection and try again.',
+      }));
       return;
     }
 

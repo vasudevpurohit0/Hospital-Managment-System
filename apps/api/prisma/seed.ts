@@ -107,7 +107,7 @@ export async function main() {
     { roleName: 'ProcurementOfficer', resource: 'PurchaseOrder', action: 'create' },
     { roleName: 'ProcurementOfficer', resource: 'PurchaseOrder', action: 'read' },
 
-    // --- Administrator ---
+    // --- Administrator (hospital-wide operational read + admin-config write) ---
     { roleName: 'Administrator', resource: 'Employee', action: 'read' },
     { roleName: 'Administrator', resource: 'Employee', action: 'update' },
     { roleName: 'Administrator', resource: 'FacilityEligibilityRule', action: 'create' },
@@ -117,6 +117,18 @@ export async function main() {
     { roleName: 'Administrator', resource: 'BenefitRule', action: 'read' },
     { roleName: 'Administrator', resource: 'BenefitRule', action: 'update' },
     { roleName: 'Administrator', resource: 'AuditLog', action: 'read' },
+    { roleName: 'Administrator', resource: 'Visit', action: 'read' },
+    { roleName: 'Administrator', resource: 'OPDVisit', action: 'read' },
+    { roleName: 'Administrator', resource: 'Prescription', action: 'read' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'read' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'update' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'approve' },
+    { roleName: 'Administrator', resource: 'AdmissionNote', action: 'read' },
+    { roleName: 'Administrator', resource: 'Medicine', action: 'read' },
+    { roleName: 'Administrator', resource: 'MedicineBatch', action: 'read' },
+    { roleName: 'Administrator', resource: 'StockTransaction', action: 'read' },
+    { roleName: 'Administrator', resource: 'PurchaseRequisition', action: 'read' },
+    { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'read' },
 
     // --- SuperAdmin (Wildcard / all permissions) ---
     { roleName: 'SuperAdmin', resource: '*', action: '*' },
@@ -577,6 +589,116 @@ export async function main() {
   });
 
   console.log(`  ✓ Seeded AdmissionDesk user: admission@esic.gov.in (${admissionUser.id})`);
+
+  const adminPasswordHash = await bcrypt.hash('AdminPass123!', 10);
+  const adminUser = await prisma.user.upsert({
+    where: { identifier: 'admin@esic.gov.in' },
+    update: {
+      passwordHash: adminPasswordHash,
+      roleId: roleMap['Administrator'],
+      active: true,
+    },
+    create: {
+      identifier: 'admin@esic.gov.in',
+      passwordHash: adminPasswordHash,
+      roleId: roleMap['Administrator'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Administrator user: admin@esic.gov.in (${adminUser.id})`);
+
+  const pharmacistPasswordHash = await bcrypt.hash('PharmacistPass123!', 10);
+  const pharmacistUser = await prisma.user.upsert({
+    where: { identifier: 'pharmacist@esic.gov.in' },
+    update: {
+      passwordHash: pharmacistPasswordHash,
+      roleId: roleMap['Pharmacist'],
+      active: true,
+    },
+    create: {
+      identifier: 'pharmacist@esic.gov.in',
+      passwordHash: pharmacistPasswordHash,
+      roleId: roleMap['Pharmacist'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Pharmacist user: pharmacist@esic.gov.in (${pharmacistUser.id})`);
+
+  const storeManagerPasswordHash = await bcrypt.hash('StoreManagerPass123!', 10);
+  const storeManagerUser = await prisma.user.upsert({
+    where: { identifier: 'storemanager@esic.gov.in' },
+    update: {
+      passwordHash: storeManagerPasswordHash,
+      roleId: roleMap['StoreManager'],
+      active: true,
+    },
+    create: {
+      identifier: 'storemanager@esic.gov.in',
+      passwordHash: storeManagerPasswordHash,
+      roleId: roleMap['StoreManager'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded StoreManager user: storemanager@esic.gov.in (${storeManagerUser.id})`);
+
+  const procurementPasswordHash = await bcrypt.hash('ProcurementPass123!', 10);
+  const procurementUser = await prisma.user.upsert({
+    where: { identifier: 'procurement@esic.gov.in' },
+    update: {
+      passwordHash: procurementPasswordHash,
+      roleId: roleMap['ProcurementOfficer'],
+      active: true,
+    },
+    create: {
+      identifier: 'procurement@esic.gov.in',
+      passwordHash: procurementPasswordHash,
+      roleId: roleMap['ProcurementOfficer'],
+      active: true,
+    },
+  });
+
+  console.log(
+    `  ✓ Seeded ProcurementOfficer user: procurement@esic.gov.in (${procurementUser.id})`,
+  );
+
+  const receptionPasswordHash = await bcrypt.hash('ReceptionPass123!', 10);
+  const receptionUser = await prisma.user.upsert({
+    where: { identifier: 'reception@esic.gov.in' },
+    update: {
+      passwordHash: receptionPasswordHash,
+      roleId: roleMap['Reception'],
+      active: true,
+    },
+    create: {
+      identifier: 'reception@esic.gov.in',
+      passwordHash: receptionPasswordHash,
+      roleId: roleMap['Reception'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Reception user: reception@esic.gov.in (${receptionUser.id})`);
+
+  const dataEntryPasswordHash = await bcrypt.hash('DataEntryPass123!', 10);
+  const dataEntryUser = await prisma.user.upsert({
+    where: { identifier: 'dataentry@esic.gov.in' },
+    update: {
+      passwordHash: dataEntryPasswordHash,
+      roleId: roleMap['DataEntryOperator'],
+      active: true,
+    },
+    create: {
+      identifier: 'dataentry@esic.gov.in',
+      passwordHash: dataEntryPasswordHash,
+      roleId: roleMap['DataEntryOperator'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded DataEntryOperator user: dataentry@esic.gov.in (${dataEntryUser.id})`);
 
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   const genMedDept = await prisma.department.findUnique({ where: { code: 'GENMED' } });

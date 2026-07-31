@@ -7,99 +7,11 @@ import {
   AdmissionRecord,
   BedRecord,
 } from '../../api/admission.api';
+import { fetchUsersByRole, UserSummary } from '../../api/user.api';
 
 interface AdmissionDeskScreenProps {
   authToken: string;
 }
-
-const MOCK_ADMISSIONS: AdmissionRecord[] = [
-  {
-    id: 'adm-101',
-    visitId: 'v-1003',
-    status: 'AWAITING_BED',
-    eligibleCategory: 'GENERAL_WARD',
-    requestedAt: new Date(Date.now() - 3600000).toISOString(),
-    allocatedAt: null,
-    dischargedAt: null,
-    wardId: null,
-    roomId: null,
-    bedId: null,
-    assignedDoctorId: null,
-    assignedNurseId: null,
-    visit: {
-      id: 'v-1003',
-      employee: {
-        id: 'emp-1001',
-        employeeId: 'EMP-1001',
-        name: 'Rahul Kumar',
-        department: 'Labour Dept',
-        post: { title: 'Senior Assistant' },
-        grade: { payLevel: 'Level 6' },
-      },
-    },
-  },
-  {
-    id: 'adm-102',
-    visitId: 'v-1004',
-    status: 'REQUESTED',
-    eligibleCategory: 'GENERAL_WARD',
-    requestedAt: new Date(Date.now() - 7200000).toISOString(),
-    allocatedAt: null,
-    dischargedAt: null,
-    wardId: null,
-    roomId: null,
-    bedId: null,
-    assignedDoctorId: null,
-    assignedNurseId: null,
-    visit: {
-      id: 'v-1004',
-      employee: {
-        id: 'emp-1002',
-        employeeId: 'EMP-1002',
-        name: 'Priya Devi',
-        department: 'Admin Dept',
-        post: { title: 'Officer' },
-        grade: { payLevel: 'Level 8' },
-      },
-    },
-  },
-];
-
-const MOCK_BEDS: BedRecord[] = [
-  {
-    id: 'bed-101',
-    bedNumber: 'B-101',
-    status: 'AVAILABLE',
-    room: {
-      id: 'room-1',
-      roomNumber: '101',
-      type: 'GENERAL',
-      ward: { id: 'ward-general-male', name: 'Male General Ward', category: 'GENERAL_WARD' },
-    },
-  },
-  {
-    id: 'bed-201',
-    bedNumber: 'B-201',
-    status: 'AVAILABLE',
-    room: {
-      id: 'room-2',
-      roomNumber: '201',
-      type: 'GENERAL',
-      ward: { id: 'ward-general-female', name: 'Female General Ward', category: 'GENERAL_WARD' },
-    },
-  },
-  {
-    id: 'bed-301',
-    bedNumber: 'ICU-301',
-    status: 'AVAILABLE',
-    room: {
-      id: 'room-3',
-      roomNumber: '301',
-      type: 'GENERAL',
-      ward: { id: 'ward-icu', name: 'ICU / Critical Care Ward', category: 'GENERAL_WARD' },
-    },
-  },
-];
 
 export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authToken }) => {
   const [admissions, setAdmissions] = useState<AdmissionRecord[]>([]);
@@ -111,8 +23,10 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
   const [availableBeds, setAvailableBeds] = useState<BedRecord[]>([]);
   const [loadingBeds, setLoadingBeds] = useState(false);
   const [selectedBedId, setSelectedBedId] = useState('');
-  const [assignedDoctorId] = useState('00000000-0000-0000-0000-000000000888');
-  const [assignedNurseId] = useState('00000000-0000-0000-0000-000000000777');
+  const [doctors, setDoctors] = useState<UserSummary[]>([]);
+  const [nurses, setNurses] = useState<UserSummary[]>([]);
+  const [assignedDoctorId, setAssignedDoctorId] = useState('');
+  const [assignedNurseId, setAssignedNurseId] = useState('');
   const [submittingAllocation, setSubmittingAllocation] = useState(false);
 
   const loadAdmissions = useCallback(async () => {
@@ -120,13 +34,9 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
     setError(null);
     try {
       const data = await fetchAdmissions(authToken);
-      if (data && data.length > 0) {
-        setAdmissions(data);
-      } else {
-        setAdmissions(MOCK_ADMISSIONS);
-      }
-    } catch {
-      setAdmissions(MOCK_ADMISSIONS);
+      setAdmissions(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load admission queue');
     } finally {
       setLoading(false);
     }
@@ -143,10 +53,8 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
     try {
       await resolveAdmissionEligibility(id, authToken);
       await loadAdmissions();
-    } catch {
-      setAdmissions((prev) =>
-        prev.map((a) => (a.id === id ? { ...a, status: 'ELIGIBILITY_CHECKED' as const } : a)),
-      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to resolve eligibility');
     }
   };
 
@@ -154,18 +62,22 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
     setSelectedAdmission(admission);
     setLoadingBeds(true);
     setSelectedBedId('');
+    setError(null);
     try {
-      const beds = await fetchEligibleBeds(admission.id, authToken);
-      if (beds && beds.length > 0) {
-        setAvailableBeds(beds);
-        setSelectedBedId(beds[0].id);
-      } else {
-        setAvailableBeds(MOCK_BEDS);
-        setSelectedBedId(MOCK_BEDS[0].id);
-      }
-    } catch {
-      setAvailableBeds(MOCK_BEDS);
-      setSelectedBedId(MOCK_BEDS[0].id);
+      const [beds, doctorUsers, nurseUsers] = await Promise.all([
+        fetchEligibleBeds(admission.id, authToken),
+        fetchUsersByRole('Doctor', authToken),
+        fetchUsersByRole('Nurse', authToken),
+      ]);
+      setAvailableBeds(beds);
+      setSelectedBedId(beds[0]?.id || '');
+      setDoctors(doctorUsers);
+      setAssignedDoctorId(doctorUsers[0]?.id || '');
+      setNurses(nurseUsers);
+      setAssignedNurseId(nurseUsers[0]?.id || '');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load beds/staff for allocation');
+      setSelectedAdmission(null);
     } finally {
       setLoadingBeds(false);
     }
@@ -173,7 +85,7 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
 
   const handleAllocate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedAdmission || !selectedBedId) return;
+    if (!selectedAdmission || !selectedBedId || !assignedDoctorId || !assignedNurseId) return;
 
     setSubmittingAllocation(true);
     setError(null);
@@ -189,9 +101,8 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
       );
       setSelectedAdmission(null);
       await loadAdmissions();
-    } catch {
-      setAdmissions((prev) => prev.filter((a) => a.id !== selectedAdmission.id));
-      setSelectedAdmission(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to allocate bed');
     } finally {
       setSubmittingAllocation(false);
     }
@@ -379,6 +290,52 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                 )}
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Attending Doctor
+                </label>
+                <select
+                  value={assignedDoctorId}
+                  onChange={(e) => setAssignedDoctorId(e.target.value)}
+                  required
+                  disabled={loadingBeds}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-esic-primary"
+                >
+                  {doctors.length === 0 ? (
+                    <option value="">No active doctors found</option>
+                  ) : (
+                    doctors.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.identifier}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Assigned Nurse
+                </label>
+                <select
+                  value={assignedNurseId}
+                  onChange={(e) => setAssignedNurseId(e.target.value)}
+                  required
+                  disabled={loadingBeds}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-esic-primary"
+                >
+                  {nurses.length === 0 ? (
+                    <option value="">No active nurses found</option>
+                  ) : (
+                    nurses.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.identifier}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                 <button
                   type="button"
@@ -389,7 +346,9 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingAllocation || !selectedBedId}
+                  disabled={
+                    submittingAllocation || !selectedBedId || !assignedDoctorId || !assignedNurseId
+                  }
                   className="px-5 py-2 bg-esic-primary hover:bg-esic-primary-dark text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50"
                 >
                   {submittingAllocation ? 'Allocating...' : 'Confirm General Bed Allocation'}

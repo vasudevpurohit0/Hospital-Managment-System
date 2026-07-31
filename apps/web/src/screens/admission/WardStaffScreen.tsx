@@ -11,49 +11,6 @@ interface WardStaffScreenProps {
   userRole: string; // Used to restrict Discharge approval to Doctors/SuperAdmin
 }
 
-const MOCK_WARD_ADMISSIONS: AdmissionRecord[] = [
-  {
-    id: 'adm-101',
-    visitId: 'v-1003',
-    status: 'ALLOCATED',
-    eligibleCategory: 'GENERAL_WARD',
-    requestedAt: new Date(Date.now() - 86400000).toISOString(),
-    allocatedAt: new Date(Date.now() - 3600000).toISOString(),
-    dischargedAt: null,
-    wardId: 'ward-general-male',
-    roomId: 'room-1',
-    bedId: 'bed-101',
-    assignedDoctorId: 'doc-1',
-    assignedNurseId: 'nurse-1',
-    visit: {
-      id: 'v-1003',
-      employee: {
-        id: 'emp-1001',
-        employeeId: 'EMP-1001',
-        name: 'Rahul Kumar',
-        department: 'Labour Dept',
-        post: { title: 'Senior Assistant' },
-        grade: { payLevel: 'Level 6' },
-      },
-    },
-    bed: {
-      id: 'bed-101',
-      bedNumber: 'B-101 (Male General Ward)',
-      status: 'OCCUPIED',
-    },
-    notes: [
-      {
-        id: 'note-1',
-        admissionId: 'adm-101',
-        authoredBy: 'Ns. Priya Singh',
-        note: 'Patient admitted to Male General Ward Bed B-101. Vitals stable. IV fluids started.',
-        createdAt: new Date(Date.now() - 1800000).toISOString(),
-        author: { id: 'nurse-1', identifier: 'Ns. Priya Singh' },
-      },
-    ],
-  },
-];
-
 export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, userRole }) => {
   const [admissions, setAdmissions] = useState<AdmissionRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,13 +33,9 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
     setError(null);
     try {
       const data = await fetchAdmissions(authToken);
-      if (data && data.length > 0) {
-        setAdmissions(data);
-      } else {
-        setAdmissions(MOCK_WARD_ADMISSIONS);
-      }
-    } catch {
-      setAdmissions(MOCK_WARD_ADMISSIONS);
+      setAdmissions(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load ward admissions');
     } finally {
       setLoading(false);
     }

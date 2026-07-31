@@ -24,64 +24,59 @@ export class ExpiryScannerService {
     let criticalCount = 0;
     let earlyCount = 0;
 
-    try {
-      // 1. Expired batches -> transition to QUARANTINED (blocking FEFO queries)
-      const expiredBatches = await this.prisma.medicineBatch.findMany({
-        where: {
-          expiryDate: { lte: now },
-          stockStatus: {
-            notIn: [StockStatus.EXPIRED, StockStatus.QUARANTINED, StockStatus.DISPOSED],
-          },
+    // 1. Expired batches -> transition to QUARANTINED (blocking FEFO queries)
+    const expiredBatches = await this.prisma.medicineBatch.findMany({
+      where: {
+        expiryDate: { lte: now },
+        stockStatus: {
+          notIn: [StockStatus.EXPIRED, StockStatus.QUARANTINED, StockStatus.DISPOSED],
         },
+      },
+    });
+
+    for (const batch of expiredBatches) {
+      await this.prisma.medicineBatch.update({
+        where: { id: batch.id },
+        data: { stockStatus: StockStatus.QUARANTINED },
       });
-
-      for (const batch of expiredBatches) {
-        await this.prisma.medicineBatch.update({
-          where: { id: batch.id },
-          data: { stockStatus: StockStatus.QUARANTINED },
-        });
-        quarantinedCount++;
-      }
-
-      // 2. Critical Alert (expiry <= 30 days)
-      const criticalBatches = await this.prisma.medicineBatch.findMany({
-        where: {
-          expiryDate: { gt: now, lte: day30 },
-          stockStatus: { in: [StockStatus.IN_STOCK, StockStatus.EARLY_WARNING] },
-        },
-      });
-
-      for (const batch of criticalBatches) {
-        await this.prisma.medicineBatch.update({
-          where: { id: batch.id },
-          data: { stockStatus: StockStatus.CRITICAL_ALERT },
-        });
-        criticalCount++;
-      }
-
-      // 3. Early Warning (expiry <= 90 days)
-      const earlyBatches = await this.prisma.medicineBatch.findMany({
-        where: {
-          expiryDate: { gt: day30, lte: day90 },
-          stockStatus: StockStatus.IN_STOCK,
-        },
-      });
-
-      for (const batch of earlyBatches) {
-        await this.prisma.medicineBatch.update({
-          where: { id: batch.id },
-          data: { stockStatus: StockStatus.EARLY_WARNING },
-        });
-        earlyCount++;
-      }
-
-      this.logger.log(
-        `[ExpiryScanner] Completed scan: ${quarantinedCount} quarantined, ${criticalCount} critical, ${earlyCount} early warning.`,
-      );
-    } catch {
-      // Fallback for memory store mode
-      this.logger.warn('[ExpiryScanner] Offline mode: Scan executed against in-memory catalog');
+      quarantinedCount++;
     }
+
+    // 2. Critical Alert (expiry <= 30 days)
+    const criticalBatches = await this.prisma.medicineBatch.findMany({
+      where: {
+        expiryDate: { gt: now, lte: day30 },
+        stockStatus: { in: [StockStatus.IN_STOCK, StockStatus.EARLY_WARNING] },
+      },
+    });
+
+    for (const batch of criticalBatches) {
+      await this.prisma.medicineBatch.update({
+        where: { id: batch.id },
+        data: { stockStatus: StockStatus.CRITICAL_ALERT },
+      });
+      criticalCount++;
+    }
+
+    // 3. Early Warning (expiry <= 90 days)
+    const earlyBatches = await this.prisma.medicineBatch.findMany({
+      where: {
+        expiryDate: { gt: day30, lte: day90 },
+        stockStatus: StockStatus.IN_STOCK,
+      },
+    });
+
+    for (const batch of earlyBatches) {
+      await this.prisma.medicineBatch.update({
+        where: { id: batch.id },
+        data: { stockStatus: StockStatus.EARLY_WARNING },
+      });
+      earlyCount++;
+    }
+
+    this.logger.log(
+      `[ExpiryScanner] Completed scan: ${quarantinedCount} quarantined, ${criticalCount} critical, ${earlyCount} early warning.`,
+    );
 
     return {
       quarantinedCount,

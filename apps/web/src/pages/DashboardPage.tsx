@@ -15,27 +15,21 @@ import {
   Building,
   ShieldCheck,
 } from 'lucide-react';
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-} from 'recharts';
+import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const CATEGORY_COLORS = ['#0F4C81', '#0D9488', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
 
 export const DashboardPage: React.FC = () => {
   const { user, token } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDashboardMetrics(token || '')
       .then(setMetrics)
-      .catch(() => {});
+      .catch((err: unknown) => {
+        setMetricsError(err instanceof Error ? err.message : 'Failed to load dashboard metrics');
+      });
   }, [token]);
 
   const role = user?.role || 'Doctor';
@@ -63,75 +57,68 @@ export const DashboardPage: React.FC = () => {
           </h1>
           <p className="text-sm text-primary-200/80 mt-1.5 leading-relaxed">
             {role === 'Doctor' &&
-              'You have 8 patients waiting in your OPD queue today. 2 critical lab results require your immediate review.'}
+              (metrics?.opd
+                ? `You have ${metrics.opd.waitingQueue} patients waiting in the OPD queue today.`
+                : 'Loading today’s OPD queue...')}
             {role === 'Pharmacist' &&
-              'Pharmacy Queue has 14 pending prescriptions for FEFO batch allocation. Stock level is healthy.'}
+              (metrics?.billing && metrics.inventory
+                ? `${metrics.billing.totalTransactions} prescriptions in the billing ledger. ${metrics.inventory.lowStockAlerts} low-stock alerts.`
+                : 'Loading pharmacy summary...')}
             {role === 'StoreManager' &&
-              'Inventory summary: 3 purchase orders pending approval. 2 medicine batches near quarantine threshold.'}
+              (metrics?.procurement && metrics.inventory
+                ? `Inventory summary: ${metrics.procurement.pendingRequisitions} requisitions pending approval. ${metrics.inventory.quarantinedBatches} batches quarantined.`
+                : 'Loading inventory summary...')}
             {(role === 'SuperAdmin' || role === 'Administrator') &&
-              'Hospital operational summary: OPD flow running smoothly. Bed occupancy at 76%. Financial ledger balanced.'}
+              (metrics?.ipd && metrics.billing
+                ? `Hospital operational summary: Bed occupancy at ${metrics.ipd.bedOccupancyRate}%. ${metrics.billing.paidTransactions} paid billing transactions.`
+                : 'Loading hospital operational summary...')}
           </p>
         </div>
       </div>
+
+      {metricsError && <div className="alert alert-danger">{metricsError}</div>}
 
       {/* Role-Specific Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {role === 'Doctor' ? (
           <>
             <StatCard
-              title="Today's Consultations"
-              value={metrics?.opd?.totalVisits ?? 24}
+              title="Today's OPD Visits"
+              value={metrics?.opd?.totalVisits ?? '—'}
               icon={Stethoscope}
               variant="primary"
-              trend={{ value: '+12%', direction: 'up', label: 'vs yesterday' }}
             />
             <StatCard
               title="Waiting Queue"
-              value={`${metrics?.opd?.waitingQueue ?? 8} Patients`}
+              value={metrics?.opd ? `${metrics.opd.waitingQueue} Patients` : '—'}
               icon={Clock}
               variant="warning"
-              subtitle="Avg wait: 14 mins"
             />
             <StatCard
-              title="Critical Lab Alerts"
-              value="2 Pending"
-              icon={AlertTriangle}
-              variant="danger"
-              subtitle="Requires immediate action"
-            />
-            <StatCard
-              title="Signed Prescriptions"
-              value={metrics?.billing?.totalTransactions ?? 18}
+              title="Billing Transactions"
+              value={metrics?.billing?.totalTransactions ?? '—'}
               icon={CheckCircle2}
               variant="success"
-              subtitle="100% digital sign rate"
             />
           </>
         ) : role === 'Pharmacist' ? (
           <>
             <StatCard
-              title="Prescriptions Received"
-              value={metrics?.billing?.totalTransactions ?? 32}
+              title="Billing Transactions"
+              value={metrics?.billing?.totalTransactions ?? '—'}
               icon={Pill}
               variant="primary"
             />
             <StatCard
-              title="Pending Dispense"
-              value="6 Rx"
-              icon={Clock}
-              variant="warning"
-              subtitle="FEFO pre-allocated"
-            />
-            <StatCard
               title="Low Stock Alerts"
-              value={metrics?.inventory?.lowStockAlerts ?? 3}
+              value={metrics?.inventory?.lowStockAlerts ?? '—'}
               icon={AlertTriangle}
               variant="danger"
               subtitle="Action required in Inventory"
             />
             <StatCard
               title="Revenue Paid Tx"
-              value={metrics?.billing?.paidTransactions ?? 12}
+              value={metrics?.billing?.paidTransactions ?? '—'}
               icon={DollarSign}
               variant="success"
             />
@@ -140,150 +127,97 @@ export const DashboardPage: React.FC = () => {
           <>
             <StatCard
               title="Total OPD Visits"
-              value={metrics?.opd?.totalVisits ?? 142}
+              value={metrics?.opd?.totalVisits ?? '—'}
               icon={Users}
               variant="primary"
-              trend={{ value: '+8%', direction: 'up' }}
             />
             <StatCard
               title="Active Admissions"
-              value={metrics?.ipd?.activeAdmissions ?? 48}
+              value={metrics?.ipd?.activeAdmissions ?? '—'}
               icon={Building}
               variant="info"
-              subtitle={`${metrics?.ipd?.bedOccupancyRate ?? 76}% bed occupancy`}
+              subtitle={metrics?.ipd ? `${metrics.ipd.bedOccupancyRate}% bed occupancy` : undefined}
             />
             <StatCard
               title="Low Stock Items"
-              value={metrics?.inventory?.lowStockAlerts ?? 3}
+              value={metrics?.inventory?.lowStockAlerts ?? '—'}
               icon={AlertTriangle}
               variant="danger"
               subtitle="Reorder required"
             />
             <StatCard
               title="Paid Ledger Tx"
-              value={metrics?.billing?.paidTransactions ?? 45}
+              value={metrics?.billing?.paidTransactions ?? '—'}
               icon={TrendingUp}
               variant="success"
-              trend={{ value: '+15%', direction: 'up' }}
             />
           </>
         )}
       </div>
 
-      {/* Analytics Charts Grid */}
+      {/* Ward Category Distribution — real active-admission breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Chart — Patient Flow Trend */}
-        <div className="card p-5 lg:col-span-2 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-4">
+        <div className="card p-5 flex flex-col justify-between lg:col-span-1">
+          <div className="flex items-center justify-between mb-2">
             <div>
               <h3 className="text-base font-bold text-[var(--color-text-primary)]">
-                OPD Patient Consultations Trend
+                Ward Category Distribution
               </h3>
               <p className="text-xs text-[var(--color-text-secondary)]">
-                Daily consultations volume over past week
+                Active admissions by eligibility category
               </p>
             </div>
-            <Badge variant="neutral">Live Metrics</Badge>
+            <Badge variant="neutral">Live</Badge>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={[
-                  { day: 'Mon', visits: 110, rx: 85 },
-                  { day: 'Tue', visits: 132, rx: 104 },
-                  { day: 'Wed', visits: 142, rx: 118 },
-                  { day: 'Thu', visits: 125, rx: 98 },
-                  { day: 'Fri', visits: 156, rx: 130 },
-                  { day: 'Sat', visits: 90, rx: 72 },
-                  { day: 'Sun', visits: 45, rx: 38 },
-                ]}
-              >
-                <defs>
-                  <linearGradient id="opdColor" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0F4C81" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#0F4C81" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="var(--color-border)"
-                />
-                <XAxis dataKey="day" tick={{ fontSize: 12 }} stroke="var(--color-text-tertiary)" />
-                <YAxis tick={{ fontSize: 12 }} stroke="var(--color-text-tertiary)" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'var(--color-surface)',
-                    borderColor: 'var(--color-border)',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="visits"
-                  stroke="#0F4C81"
-                  strokeWidth={2.5}
-                  fillOpacity={1}
-                  fill="url(#opdColor)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Side Panel — Department Distribution */}
-        <div className="card p-5 flex flex-col justify-between">
-          <div>
-            <h3 className="text-base font-bold text-[var(--color-text-primary)]">
-              Department Distribution
-            </h3>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              Patient consultations by specialty
+          {!metrics?.ipd || metrics.ipd.categorySplit.length === 0 ? (
+            <p className="text-xs text-[var(--color-text-tertiary)] py-8 text-center">
+              {metrics ? 'No active admissions to chart.' : 'Loading...'}
             </p>
-          </div>
-
-          <div className="h-52 w-full my-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={[
-                    { name: 'General Medicine', value: 45 },
-                    { name: 'Orthopedics', value: 25 },
-                    { name: 'Pediatrics', value: 18 },
-                    { name: 'Cardiology', value: 12 },
-                  ]}
-                  innerRadius={50}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  <Cell fill="#0F4C81" />
-                  <Cell fill="#0D9488" />
-                  <Cell fill="#3B82F6" />
-                  <Cell fill="#F59E0B" />
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
-            {[
-              { label: 'General Medicine', color: 'bg-[#0F4C81]', pct: '45%' },
-              { label: 'Orthopedics', color: 'bg-[#0D9488]', pct: '25%' },
-              { label: 'Pediatrics', color: 'bg-[#3B82F6]', pct: '18%' },
-              { label: 'Cardiology', color: 'bg-[#F59E0B]', pct: '12%' },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
-                  <span className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
-                  {item.label}
-                </span>
-                <span className="font-semibold text-[var(--color-text-primary)]">{item.pct}</span>
+          ) : (
+            <>
+              <div className="h-52 w-full my-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={metrics.ipd.categorySplit}
+                      innerRadius={50}
+                      outerRadius={75}
+                      paddingAngle={4}
+                      dataKey="count"
+                      nameKey="category"
+                    >
+                      {metrics.ipd.categorySplit.map((_, idx) => (
+                        <Cell key={idx} fill={CATEGORY_COLORS[idx % CATEGORY_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </div>
+
+              <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
+                {metrics.ipd.categorySplit.map((item, idx) => {
+                  const total = metrics.ipd.categorySplit.reduce((sum, c) => sum + c.count, 0);
+                  const pct = total > 0 ? Math.round((item.count / total) * 100) : 0;
+                  return (
+                    <div key={item.category} className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: CATEGORY_COLORS[idx % CATEGORY_COLORS.length] }}
+                        />
+                        Category {item.category}
+                      </span>
+                      <span className="font-semibold text-[var(--color-text-primary)]">
+                        {item.count} ({pct}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

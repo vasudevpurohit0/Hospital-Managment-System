@@ -26,6 +26,9 @@ describe('PharmacyService', () => {
     stockTransaction: {
       create: jest.fn(),
     },
+    billingTransaction: {
+      create: jest.fn(),
+    },
   };
 
   const mockBenefitRuleService = {

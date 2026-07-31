@@ -14,84 +14,21 @@ interface OpdQueueScreenProps {
   authToken: string;
 }
 
-const MOCK_DEPTS: Department[] = [
-  { id: 'dept-gen-med', code: 'GEN_MED', name: 'General Medicine' },
-  { id: 'dept-ortho', code: 'ORTHO', name: 'Orthopedics' },
-  { id: 'dept-peds', code: 'PEDS', name: 'Pediatrics' },
-  { id: 'dept-cardio', code: 'CARDIO', name: 'Cardiology' },
-];
-
-const MOCK_QUEUE: OPDVisitRecord[] = [
-  {
-    id: 'opd-1',
-    visitId: 'v-1001',
-    departmentId: 'dept-gen-med',
-    tokenNumber: 'T-0043',
-    calledAt: new Date(Date.now() - 300000).toISOString(),
-    closedAt: null,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    department: MOCK_DEPTS[0],
-    visit: {
-      id: 'v-1001',
-      employeeId: 'EMP-1001',
-      type: 'OPD',
-      status: 'OPEN',
-      employee: { name: 'Suresh Patel', employeeId: 'EMP-1001', department: 'General Med' },
-    },
-  },
-  {
-    id: 'opd-2',
-    visitId: 'v-1002',
-    departmentId: 'dept-gen-med',
-    tokenNumber: 'T-0044',
-    calledAt: null,
-    closedAt: null,
-    createdAt: new Date(Date.now() - 2400000).toISOString(),
-    department: MOCK_DEPTS[0],
-    visit: {
-      id: 'v-1002',
-      employeeId: 'EMP-1002',
-      type: 'OPD',
-      status: 'OPEN',
-      employee: { name: 'Priya Devi', employeeId: 'EMP-1002', department: 'General Med' },
-    },
-  },
-  {
-    id: 'opd-3',
-    visitId: 'v-1003',
-    departmentId: 'dept-gen-med',
-    tokenNumber: 'T-0045',
-    calledAt: null,
-    closedAt: null,
-    createdAt: new Date(Date.now() - 1800000).toISOString(),
-    department: MOCK_DEPTS[0],
-    visit: {
-      id: 'v-1003',
-      employeeId: 'EMP-1003',
-      type: 'OPD',
-      status: 'OPEN',
-      employee: { name: 'Rahul Kumar', employeeId: 'EMP-1003', department: 'General Med' },
-    },
-  },
-];
-
 export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => {
-  const [departments, setDepartments] = useState<Department[]>(MOCK_DEPTS);
-  const [selectedDeptId, setSelectedDeptId] = useState<string>('dept-gen-med');
-  const [queue, setQueue] = useState<OPDVisitRecord[]>(MOCK_QUEUE);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
+  const [queue, setQueue] = useState<OPDVisitRecord[]>([]);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDepts = async () => {
       try {
         const depts = await fetchDepartments(authToken);
-        if (depts && depts.length > 0) {
-          setDepartments(depts);
-          setSelectedDeptId(depts[0].id);
-        }
-      } catch {
-        setDepartments(MOCK_DEPTS);
-        setSelectedDeptId(MOCK_DEPTS[0].id);
+        setDepartments(depts);
+        if (depts.length > 0) setSelectedDeptId(depts[0].id);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load departments');
       }
     };
     loadDepts();
@@ -101,13 +38,10 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     if (!selectedDeptId) return;
     try {
       const q = await fetchOpdQueue(selectedDeptId, authToken);
-      if (q && q.length > 0) {
-        setQueue(q);
-      } else {
-        setQueue(MOCK_QUEUE);
-      }
-    } catch {
-      setQueue(MOCK_QUEUE);
+      setQueue(q);
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load OPD queue');
     }
   }, [selectedDeptId, authToken]);
 
@@ -129,18 +63,8 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
       const updated = await callOpdToken(nextItem.id, authToken);
       setActionMessage(`📢 Called Token ${updated.tokenNumber} for consultation!`);
       await loadQueue();
-    } catch {
-      // Mock call fallback
-      const updatedQueue = queue.map((item) => {
-        if (item.id === nextItem.id) {
-          return { ...item, calledAt: new Date().toISOString() };
-        }
-        return item;
-      });
-      setQueue(updatedQueue);
-      setActionMessage(
-        `📢 Called Token ${nextItem.tokenNumber} (${nextItem.visit?.employee?.name}) for consultation!`,
-      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to call next token');
     }
   };
 
@@ -150,10 +74,8 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
       await closeOpdVisit(id, authToken);
       setActionMessage(`✅ Consultation completed for visit.`);
       await loadQueue();
-    } catch {
-      const updatedQueue = queue.filter((item) => item.id !== id);
-      setQueue(updatedQueue);
-      setActionMessage(`✅ Consultation completed & token closed.`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to close visit');
     }
   };
 
@@ -191,6 +113,7 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
         </div>
       </div>
 
+      {error && <div className="alert alert-danger">{error}</div>}
       {actionMessage && <div className="alert alert-success">{actionMessage}</div>}
 
       {/* Main Calling Station Box */}
