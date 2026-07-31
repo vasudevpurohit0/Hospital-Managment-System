@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface AdmissionNoteRecord {
   id: string;
   admissionId: string;
@@ -87,47 +89,41 @@ export interface AdmissionRecord {
 }
 
 export async function fetchAdmissions(token: string): Promise<AdmissionRecord[]> {
-  const res = await fetch('/api/admissions', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch admissions');
-  }
-  return res.json();
+  return apiFetch<AdmissionRecord[]>(
+    '/api/admissions',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch admissions',
+  );
 }
 
 export async function fetchAdmissionById(id: string, token: string): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch admission details');
-  }
-  return res.json();
+  return apiFetch<AdmissionRecord>(
+    `/api/admissions/${id}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch admission details',
+  );
 }
 
 export async function resolveAdmissionEligibility(
   id: string,
   token: string,
 ): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}/resolve`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error('Failed to resolve admission eligibility');
-  }
-  return res.json();
+  return apiFetch<AdmissionRecord>(
+    `/api/admissions/${id}/resolve`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    'Failed to resolve admission eligibility',
+  );
 }
 
 export async function fetchEligibleBeds(id: string, token: string): Promise<BedRecord[]> {
-  const res = await fetch(`/api/admissions/${id}/eligible-beds`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch eligible available beds');
-  }
-  return res.json();
+  return apiFetch<BedRecord[]>(
+    `/api/admissions/${id}/eligible-beds`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch eligible available beds',
+  );
 }
 
 export async function allocateBed(
@@ -139,19 +135,18 @@ export async function allocateBed(
   },
   token: string,
 ): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}/allocate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<AdmissionRecord>(
+    `/api/admissions/${id}/allocate`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => ({}));
-    throw new Error(errorBody.message || 'Failed to allocate bed');
-  }
-  return res.json();
+    'Failed to allocate bed',
+  );
 }
 
 export async function addAdmissionNote(
@@ -159,18 +154,18 @@ export async function addAdmissionNote(
   body: { note: string },
   token: string,
 ): Promise<AdmissionNoteRecord> {
-  const res = await fetch(`/api/admissions/${id}/notes`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<AdmissionNoteRecord>(
+    `/api/admissions/${id}/notes`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error('Failed to add admission note');
-  }
-  return res.json();
+    'Failed to add admission note',
+  );
 }
 
 export async function dischargePatient(
@@ -178,16 +173,16 @@ export async function dischargePatient(
   body: { summaryText: string },
   token: string,
 ): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}/discharge`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<AdmissionRecord>(
+    `/api/admissions/${id}/discharge`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error('Failed to approve discharge');
-  }
-  return res.json();
+    'Failed to approve discharge',
+  );
 }

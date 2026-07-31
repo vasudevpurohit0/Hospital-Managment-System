@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface BillingTransactionRecord {
   id: string;
   prescriptionItemId: string;
@@ -42,17 +44,17 @@ export interface ReceiptRecord {
 }
 
 export async function fetchBillingTransactions(token: string): Promise<BillingTransactionRecord[]> {
-  const res = await fetch('/api/billing/transactions', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch billing transactions');
-  return res.json();
+  return apiFetch<BillingTransactionRecord[]>(
+    '/api/billing/transactions',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch billing transactions',
+  );
 }
 
 export async function fetchReceipt(transactionId: string, token: string): Promise<ReceiptRecord> {
-  const res = await fetch(`/api/billing/receipts/${transactionId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch receipt data');
-  return res.json();
+  return apiFetch<ReceiptRecord>(
+    `/api/billing/receipts/${transactionId}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch receipt data',
+  );
 }

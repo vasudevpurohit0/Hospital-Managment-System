@@ -2,6 +2,16 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
+/** Fills in the login form fields, since the form no longer ships with pre-filled dev credentials. */
+function fillLoginForm(identifier = 'doctor@esic.gov.in', password = 'DoctorPass123!') {
+  fireEvent.change(screen.getByLabelText(/Government Email \/ User ID/i), {
+    target: { value: identifier },
+  });
+  fireEvent.change(screen.getByLabelText(/Password/i), {
+    target: { value: password },
+  });
+}
+
 describe('App', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -35,6 +45,7 @@ describe('App', () => {
   it('logs in successfully and renders the authenticated dashboard', async () => {
     render(<App />);
 
+    fillLoginForm();
     fireEvent.click(screen.getByRole('button', { name: /Secure Login/i }));
 
     await waitFor(() => {
@@ -56,6 +67,7 @@ describe('App', () => {
 
     render(<App />);
 
+    fillLoginForm();
     fireEvent.click(screen.getByRole('button', { name: /Secure Login/i }));
 
     await waitFor(() => {

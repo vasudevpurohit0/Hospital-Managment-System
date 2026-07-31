@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface PatientLookupResponse {
   employee: {
     id: string;
@@ -51,18 +53,11 @@ export async function lookupPatientByUid(
   uid: string,
   token: string,
 ): Promise<PatientLookupResponse> {
-  const res = await fetch(`/api/patients/lookup?uid=${encodeURIComponent(uid)}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Patient lookup failed');
-  }
-
-  return res.json();
+  return apiFetch<PatientLookupResponse>(
+    `/api/patients/lookup?uid=${encodeURIComponent(uid)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Patient lookup failed',
+  );
 }
 
 export interface VisitDetail {
@@ -101,35 +96,27 @@ export interface VisitDetail {
 }
 
 export async function fetchVisitById(visitId: string, token: string): Promise<VisitDetail> {
-  const res = await fetch(`/api/visits/${encodeURIComponent(visitId)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Visit lookup failed');
-  }
-
-  return res.json();
+  return apiFetch<VisitDetail>(
+    `/api/visits/${encodeURIComponent(visitId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Visit lookup failed',
+  );
 }
 
 export async function createVisit(
   payload: CreateVisitPayload,
   token: string,
 ): Promise<CreateVisitResponse> {
-  const res = await fetch('/api/visits', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<CreateVisitResponse>(
+    '/api/visits',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Failed to create visit');
-  }
-
-  return res.json();
+    'Failed to create visit',
+  );
 }

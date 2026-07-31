@@ -13,6 +13,7 @@ export const SYSTEM_ROLES = [
   'ProcurementOfficer',
   'DataEntryOperator',
   'Administrator',
+  'BillingClerk',
   'SuperAdmin',
 ] as const;
 
@@ -65,6 +66,7 @@ export async function main() {
     { roleName: 'Doctor', resource: 'Diagnosis', action: 'read' },
     { roleName: 'Doctor', resource: 'Prescription', action: 'create' },
     { roleName: 'Doctor', resource: 'Prescription', action: 'read' },
+    { roleName: 'Doctor', resource: 'Prescription', action: 'update' },
     { roleName: 'Doctor', resource: 'Prescription', action: 'sign' },
     { roleName: 'Doctor', resource: 'Admission', action: 'create' }, // Recommendation stub
     { roleName: 'Doctor', resource: 'Admission', action: 'read' },
@@ -129,6 +131,13 @@ export async function main() {
     { roleName: 'Administrator', resource: 'StockTransaction', action: 'read' },
     { roleName: 'Administrator', resource: 'PurchaseRequisition', action: 'read' },
     { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'read' },
+    { roleName: 'Administrator', resource: 'Billing', action: 'read' },
+
+    // --- BillingClerk ---
+    { roleName: 'BillingClerk', resource: 'Billing', action: 'read' },
+
+    // Pharmacist also needs to see the billing ledger resulting from dispensed medicines
+    { roleName: 'Pharmacist', resource: 'Billing', action: 'read' },
 
     // --- SuperAdmin (Wildcard / all permissions) ---
     { roleName: 'SuperAdmin', resource: '*', action: '*' },
@@ -152,7 +161,7 @@ export async function main() {
       },
     });
   }
-  console.log(`  ✓ Seeded permissions for all 10 roles`);
+  console.log(`  ✓ Seeded permissions for all ${SYSTEM_ROLES.length} roles`);
 
   // 3. Seed Employment Types
   const permanentType = await prisma.employmentType.upsert({
@@ -699,6 +708,24 @@ export async function main() {
   });
 
   console.log(`  ✓ Seeded DataEntryOperator user: dataentry@esic.gov.in (${dataEntryUser.id})`);
+
+  const billingClerkPasswordHash = await bcrypt.hash('BillingClerkPass123!', 10);
+  const billingClerkUser = await prisma.user.upsert({
+    where: { identifier: 'billingclerk@esic.gov.in' },
+    update: {
+      passwordHash: billingClerkPasswordHash,
+      roleId: roleMap['BillingClerk'],
+      active: true,
+    },
+    create: {
+      identifier: 'billingclerk@esic.gov.in',
+      passwordHash: billingClerkPasswordHash,
+      roleId: roleMap['BillingClerk'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded BillingClerk user: billingclerk@esic.gov.in (${billingClerkUser.id})`);
 
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   const genMedDept = await prisma.department.findUnique({ where: { code: 'GENMED' } });

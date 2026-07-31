@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface PharmacyQueueRecord {
   id: string;
   visitId: string;
@@ -42,42 +44,40 @@ export interface MedicineBatchOption {
 }
 
 export async function fetchPharmacyQueue(token: string): Promise<PharmacyQueueRecord[]> {
-  const res = await fetch('/api/pharmacy/queue', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch pharmacy queue');
-  return res.json();
+  return apiFetch<PharmacyQueueRecord[]>(
+    '/api/pharmacy/queue',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch pharmacy queue',
+  );
 }
 
 export async function fetchBatchOptions(
   prescriptionId: string,
   token: string,
 ): Promise<Record<string, MedicineBatchOption[]>> {
-  const res = await fetch(`/api/pharmacy/prescriptions/${prescriptionId}/batches`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch batch options');
-  return res.json();
+  return apiFetch<Record<string, MedicineBatchOption[]>>(
+    `/api/pharmacy/prescriptions/${prescriptionId}/batches`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch batch options',
+  );
 }
 
 export async function dispenseMedicines(
   prescriptionId: string,
   items: Array<{ prescriptionItemId: string; medicineBatchId: string; dispenseQuantity: number }>,
   token: string,
-) {
-  const res = await fetch('/api/pharmacy/dispense', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
+  return apiFetch(
+    '/api/pharmacy/dispense',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ prescriptionId, items }),
     },
-    body: JSON.stringify({ prescriptionId, items }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.message || 'Failed to dispense medicines');
-  }
-
-  return res.json();
+    'Failed to dispense medicines',
+  );
 }

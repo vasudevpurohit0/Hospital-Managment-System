@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface FacilityEligibilityRuleRecord {
   id: string;
   postId: string | null;
@@ -19,13 +21,11 @@ export interface FacilityEligibilityRuleRecord {
 }
 
 export async function fetchFacilityRules(token: string): Promise<FacilityEligibilityRuleRecord[]> {
-  const res = await fetch('/api/facility-rules', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch facility rules');
-  }
-  return res.json();
+  return apiFetch<FacilityEligibilityRuleRecord[]>(
+    '/api/facility-rules',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch facility rules',
+  );
 }
 
 export async function updateFacilityRule(
@@ -38,18 +38,18 @@ export async function updateFacilityRule(
   },
   token: string,
 ): Promise<FacilityEligibilityRuleRecord> {
-  const res = await fetch(`/api/facility-rules/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<FacilityEligibilityRuleRecord>(
+    `/api/facility-rules/${id}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error('Failed to update facility rule');
-  }
-  return res.json();
+    'Failed to update facility rule',
+  );
 }
 
 export async function resolveFacilityRule(
@@ -63,14 +63,9 @@ export async function resolveFacilityRule(
   ruleId: string;
   version: number;
 }> {
-  const res = await fetch(
+  return apiFetch(
     `/api/facility-rules/resolve?employeeId=${encodeURIComponent(employeeId)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to resolve facility eligibility rule',
   );
-  if (!res.ok) {
-    throw new Error('Failed to resolve facility eligibility rule');
-  }
-  return res.json();
 }

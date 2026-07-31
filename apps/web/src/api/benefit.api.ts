@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface BenefitRuleRecord {
   id: string;
   employmentTypeId: string;
@@ -12,13 +14,11 @@ export interface BenefitRuleRecord {
 }
 
 export async function fetchBenefitRules(token: string): Promise<BenefitRuleRecord[]> {
-  const res = await fetch('/api/benefit-rules', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error('Failed to fetch benefit rules');
-  }
-  return res.json();
+  return apiFetch<BenefitRuleRecord[]>(
+    '/api/benefit-rules',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch benefit rules',
+  );
 }
 
 export async function evaluateBenefitRule(
@@ -34,13 +34,9 @@ export async function evaluateBenefitRule(
     employmentType,
   )}${medicineCategory ? `&medicineCategory=${encodeURIComponent(medicineCategory)}` : ''}`;
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    throw new Error('Failed to evaluate benefit rule');
-  }
-
-  return res.json();
+  return apiFetch(
+    url,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to evaluate benefit rule',
+  );
 }

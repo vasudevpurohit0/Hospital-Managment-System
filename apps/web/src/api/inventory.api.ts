@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface MedicineBatchRecord {
   id: string;
   medicineId: string;
@@ -40,11 +42,11 @@ export interface MedicineRecord {
 }
 
 export async function fetchMedicines(token: string): Promise<MedicineRecord[]> {
-  const res = await fetch('/api/inventory/medicines', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch inventory medicines');
-  return res.json();
+  return apiFetch<MedicineRecord[]>(
+    '/api/inventory/medicines',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch inventory medicines',
+  );
 }
 
 export async function createMedicine(
@@ -57,16 +59,18 @@ export async function createMedicine(
   },
   token: string,
 ): Promise<MedicineRecord> {
-  const res = await fetch('/api/inventory/medicines', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<MedicineRecord>(
+    '/api/inventory/medicines',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to create medicine entry');
-  return res.json();
+    'Failed to create medicine entry',
+  );
 }
 
 export async function createBatch(
@@ -85,24 +89,26 @@ export async function createBatch(
   },
   token: string,
 ): Promise<MedicineBatchRecord> {
-  const res = await fetch('/api/inventory/batches', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<MedicineBatchRecord>(
+    '/api/inventory/batches',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to create batch entry');
-  return res.json();
+    'Failed to create batch entry',
+  );
 }
 
 export async function fetchLowStockAlerts(token: string): Promise<MedicineBatchRecord[]> {
-  const res = await fetch('/api/inventory/low-stock', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch low stock alerts');
-  return res.json();
+  return apiFetch<MedicineBatchRecord[]>(
+    '/api/inventory/low-stock',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch low stock alerts',
+  );
 }
 
 export async function triggerDailyExpiryScan(token: string): Promise<{
@@ -111,23 +117,25 @@ export async function triggerDailyExpiryScan(token: string): Promise<{
   earlyCount: number;
   scannedAt: string;
 }> {
-  const res = await fetch('/api/inventory/scan-expiry', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to trigger daily expiry scan');
-  return res.json();
+  return apiFetch(
+    '/api/inventory/scan-expiry',
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    'Failed to trigger daily expiry scan',
+  );
 }
 
 export async function fetchExpiringBatches(
   withinDays = 90,
   token: string,
 ): Promise<MedicineBatchRecord[]> {
-  const res = await fetch(`/api/inventory/expiring?within=${withinDays}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch expiring batches');
-  return res.json();
+  return apiFetch<MedicineBatchRecord[]>(
+    `/api/inventory/expiring?within=${withinDays}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch expiring batches',
+  );
 }
 
 export async function quarantineBatch(
@@ -135,16 +143,18 @@ export async function quarantineBatch(
   reason: string | undefined,
   token: string,
 ): Promise<MedicineBatchRecord> {
-  const res = await fetch(`/api/inventory/batches/${batchId}/quarantine`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<MedicineBatchRecord>(
+    `/api/inventory/batches/${batchId}/quarantine`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ reason }),
     },
-    body: JSON.stringify({ reason }),
-  });
-  if (!res.ok) throw new Error('Failed to quarantine batch');
-  return res.json();
+    'Failed to quarantine batch',
+  );
 }
 
 export async function disposeBatch(
@@ -152,14 +162,16 @@ export async function disposeBatch(
   payload: { disposalReason: string; notes?: string },
   token: string,
 ): Promise<MedicineBatchRecord> {
-  const res = await fetch(`/api/inventory/batches/${batchId}/dispose`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<MedicineBatchRecord>(
+    `/api/inventory/batches/${batchId}/dispose`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to dispose batch');
-  return res.json();
+    'Failed to dispose batch',
+  );
 }

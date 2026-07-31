@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface UserSummary {
   id: string;
   identifier: string;
@@ -5,14 +7,9 @@ export interface UserSummary {
 }
 
 export async function fetchUsersByRole(role: string, token: string): Promise<UserSummary[]> {
-  const res = await fetch(`/api/users?role=${encodeURIComponent(role)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.message || 'Failed to fetch users');
-  }
-
-  return res.json();
+  return apiFetch<UserSummary[]>(
+    `/api/users?role=${encodeURIComponent(role)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch users',
+  );
 }

@@ -33,23 +33,23 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [showTransferModal, setShowTransferModal] = useState(false);
 
   // Form states
-  const [reqMedicineId, setReqMedicineId] = useState('med-paracetamol');
+  const [reqMedicineId, setReqMedicineId] = useState('');
   const [reqQuantity, setReqQuantity] = useState('500');
 
   const [poReqId, setPoReqId] = useState('');
-  const [poSupplierId, setPoSupplierId] = useState('sup-01');
+  const [poSupplierId, setPoSupplierId] = useState('');
   const [poUnitPrice, setPoUnitPrice] = useState('10.00');
 
   const [grnPOId, setGrnPOId] = useState('');
-  const [grnBatchNum, setGrnBatchNum] = useState('GRN-BATCH-2026-X1');
-  const [grnManufacturer, setGrnManufacturer] = useState('Cipla India');
+  const [grnBatchNum, setGrnBatchNum] = useState('');
+  const [grnManufacturer, setGrnManufacturer] = useState('');
   const [grnQty, setGrnQty] = useState('500');
   const [grnMfgDate, setGrnMfgDate] = useState('2026-01-01');
   const [grnExpDate, setGrnExpDate] = useState('2028-06-30');
   const [grnPurchasePrice, setGrnPurchasePrice] = useState('10.00');
   const [grnIssuePrice, setGrnIssuePrice] = useState('15.00');
 
-  const [transferBatchId, setTransferBatchId] = useState('batch-p-500-01');
+  const [transferBatchId, setTransferBatchId] = useState('');
   const [transferQty, setTransferQty] = useState('100');
 
   const loadData = useCallback(async () => {
@@ -98,7 +98,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
 
   const handleCreatePO = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!poReqId) return;
+    if (!poReqId || !poSupplierId.trim()) return;
     try {
       const req = requisitions.find((r) => r.id === poReqId);
       const items = (req?.items || []).map((i) => ({
@@ -110,7 +110,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
       await createPurchaseOrder(
         {
           requisitionId: poReqId,
-          supplierId: poSupplierId || 'sup-01',
+          supplierId: poSupplierId.trim(),
           items,
         },
         activeToken,
@@ -127,7 +127,11 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
     if (!grnPOId) return;
     try {
       const po = purchaseOrders.find((p) => p.id === grnPOId);
-      const medId = po?.items[0]?.medicineId || 'med-paracetamol';
+      const medId = po?.items[0]?.medicineId;
+      if (!medId) {
+        alert('Selected purchase order has no line items to receive.');
+        return;
+      }
 
       await createGRN(
         {

@@ -9,13 +9,13 @@ export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get('transactions')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('Billing', 'read')
   async findAllTransactions() {
     return this.billingService.findAllTransactions();
   }
 
   @Get('receipts/:id')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('Billing', 'read')
   async getReceipt(@Param('id') id: string) {
     return this.billingService.getReceipt(id);
   }

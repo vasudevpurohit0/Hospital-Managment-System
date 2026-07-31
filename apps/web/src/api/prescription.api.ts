@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface PrescriptionItemPayload {
   medicineName: string;
   dose: string;
@@ -37,33 +39,27 @@ export async function createPrescription(
   payload: CreatePrescriptionPayload,
   token: string,
 ): Promise<{ diagnosis: Record<string, unknown>; prescription: PrescriptionRecord }> {
-  const res = await fetch('/api/prescriptions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch(
+    '/api/prescriptions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'Failed to create prescription');
-  }
-
-  return res.json();
+    'Failed to create prescription',
+  );
 }
 
 export async function signPrescription(id: string, token: string): Promise<PrescriptionRecord> {
-  const res = await fetch(`/api/prescriptions/${id}/sign`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || 'Failed to sign prescription');
-  }
-
-  return res.json();
+  return apiFetch<PrescriptionRecord>(
+    `/api/prescriptions/${id}/sign`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+    'Failed to sign prescription',
+  );
 }

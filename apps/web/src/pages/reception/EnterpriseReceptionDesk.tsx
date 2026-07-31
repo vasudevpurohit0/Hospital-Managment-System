@@ -66,14 +66,20 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [selectedDeptId, setSelectedDeptId] = useState('');
   const [liveQueue, setLiveQueue] = useState<OPDVisitRecord[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [deptError, setDeptError] = useState<string | null>(null);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDepartments(authToken)
       .then((depts) => {
         setDepartments(depts);
         if (depts.length > 0) setSelectedDeptId(depts[0].id);
+        setDeptError(null);
       })
-      .catch(() => {});
+      .catch((err: unknown) => {
+        setDeptError(err instanceof Error ? err.message : 'Failed to load departments');
+      });
   }, [authToken]);
 
   const loadQueue = useCallback(async () => {
@@ -81,8 +87,9 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     try {
       const q = await fetchOpdQueue(selectedDeptId, authToken);
       setLiveQueue(q);
-    } catch {
-      // transient polling failure — keep last known queue on screen
+      setQueueError(null);
+    } catch (err: unknown) {
+      setQueueError(err instanceof Error ? err.message : 'Failed to load OPD queue');
     }
   }, [selectedDeptId, authToken]);
 
@@ -94,12 +101,17 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
   useEffect(() => {
     fetchDashboardMetrics(authToken)
-      .then(setMetrics)
-      .catch(() => {});
+      .then((m) => {
+        setMetrics(m);
+        setMetricsError(null);
+      })
+      .catch((err: unknown) => {
+        setMetricsError(err instanceof Error ? err.message : 'Failed to load dashboard metrics');
+      });
   }, [authToken]);
 
   /* ── Employee-ID Verification & Registration ── */
-  const [employeeIdInput, setEmployeeIdInput] = useState('EMP-1001');
+  const [employeeIdInput, setEmployeeIdInput] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [verifiedData, setVerifiedData] = useState<VerifiedEmployeeData | null>(null);
@@ -164,7 +176,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   };
 
   /* ── Universal Patient Search & Repeat-Visit Token ── */
-  const [searchInput, setSearchInput] = useState('EMP-1001');
+  const [searchInput, setSearchInput] = useState('');
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [patientData, setPatientData] = useState<PatientLookupResponse | null>(null);
@@ -275,6 +287,12 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
+      {(deptError || queueError || metricsError) && (
+        <div className="alert alert-danger text-sm font-semibold">
+          ❌ {deptError || queueError || metricsError}
+        </div>
+      )}
+
       {/* ── Top Operational Reception KPI Bar (real dashboard metrics) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[

@@ -14,20 +14,20 @@ export class ProcurementController {
   constructor(private readonly procurementService: ProcurementService) {}
 
   @Post('requisitions')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('PurchaseRequisition', 'create')
   async createRequisition(@Body() dto: CreateRequisitionDto, @Req() req: any) {
     const userId = req.user?.sub || '00000000-0000-0000-0000-000000000001';
     return this.procurementService.createRequisition(dto, userId);
   }
 
   @Get('requisitions')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('PurchaseRequisition', 'read')
   async findAllRequisitions() {
     return this.procurementService.findAllRequisitions();
   }
 
   @Post('requisitions/:id/approve')
-  @RequirePermission('Inventory', 'approve')
+  @RequirePermission('Approval', 'approve')
   async approveRequisition(
     @Param('id') id: string,
     @Body() dto: ApproveRequisitionDto,
@@ -38,27 +38,27 @@ export class ProcurementController {
   }
 
   @Post('purchase-orders')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('PurchaseOrder', 'create')
   async createPurchaseOrder(@Body() dto: CreatePODto, @Req() req: any) {
     const userId = req.user?.sub || '00000000-0000-0000-0000-000000000001';
     return this.procurementService.createPurchaseOrder(dto, userId);
   }
 
   @Get('purchase-orders')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('PurchaseOrder', 'read')
   async findAllPurchaseOrders() {
     return this.procurementService.findAllPurchaseOrders();
   }
 
   @Post('goods-receipt-notes')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('MedicineBatch', 'create')
   async createGRN(@Body() dto: CreateGRNDto, @Req() req: any) {
     const userId = req.user?.sub || '00000000-0000-0000-0000-000000000001';
     return this.procurementService.createGRN(dto, userId);
   }
 
   @Post('transfers')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('MedicineBatch', 'update')
   async createStoreTransfer(@Body() dto: CreateTransferDto, @Req() req: any) {
     const userId = req.user?.sub || '00000000-0000-0000-0000-000000000001';
     return this.procurementService.createStoreTransfer(dto, userId);

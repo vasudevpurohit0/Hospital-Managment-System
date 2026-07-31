@@ -67,30 +67,14 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [handleClickOutside]);
 
-  // Mock notifications
-  const notifications = [
-    {
-      id: '1',
-      type: 'danger' as const,
-      title: 'Critical: Low stock alert',
-      desc: 'Paracetamol 500mg below minimum',
-      time: '2 min ago',
-    },
-    {
-      id: '2',
-      type: 'warning' as const,
-      title: 'Medicine expiry warning',
-      desc: '3 batches expiring in 30 days',
-      time: '15 min ago',
-    },
-    {
-      id: '3',
-      type: 'info' as const,
-      title: 'New admission',
-      desc: 'Patient Rahul Kumar admitted to Ward A',
-      time: '1 hr ago',
-    },
-  ];
+  // No live notifications backend exists yet; start empty rather than showing fabricated alerts.
+  const notifications: Array<{
+    id: string;
+    type: 'danger' | 'warning' | 'info';
+    title: string;
+    desc: string;
+    time: string;
+  }> = [];
 
   const unreadCount = notifications.length;
 
@@ -176,7 +160,12 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                   </button>
                 </div>
                 <div className="max-h-[320px] overflow-y-auto">
-                  {notifications.map((n) => (
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-xs text-[var(--color-text-tertiary)]">
+                      No notifications right now.
+                    </div>
+                  ) : (
+                  notifications.map((n) => (
                     <div
                       key={n.id}
                       className="px-4 py-3 hover:bg-[var(--color-surface-hover)] transition-colors border-b border-[var(--color-border)] last:border-0 cursor-pointer"
@@ -204,7 +193,8 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
                         </div>
                       </div>
                     </div>
-                  ))}
+                  ))
+                  )}
                 </div>
               </motion.div>
             )}

@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface DashboardMetrics {
   opd: {
     totalVisits: number;
@@ -38,9 +40,9 @@ export interface DashboardMetrics {
 }
 
 export async function fetchDashboardMetrics(token: string): Promise<DashboardMetrics> {
-  const res = await fetch('/api/dashboard/summary', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch dashboard metrics');
-  return res.json();
+  return apiFetch<DashboardMetrics>(
+    '/api/dashboard/summary',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch dashboard metrics',
+  );
 }

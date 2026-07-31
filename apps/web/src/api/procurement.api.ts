@@ -1,3 +1,5 @@
+import { apiFetch } from './http';
+
 export interface RequisitionRecord {
   id: string;
   raisedBy: string;
@@ -38,11 +40,11 @@ export interface PurchaseOrderRecord {
 }
 
 export async function fetchRequisitions(token: string): Promise<RequisitionRecord[]> {
-  const res = await fetch('/api/procurement/requisitions', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch requisitions');
-  return res.json();
+  return apiFetch<RequisitionRecord[]>(
+    '/api/procurement/requisitions',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch requisitions',
+  );
 }
 
 export async function createRequisition(
@@ -52,16 +54,18 @@ export async function createRequisition(
   },
   token: string,
 ): Promise<RequisitionRecord> {
-  const res = await fetch('/api/procurement/requisitions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<RequisitionRecord>(
+    '/api/procurement/requisitions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to create purchase requisition');
-  return res.json();
+    'Failed to create purchase requisition',
+  );
 }
 
 export async function approveRequisition(
@@ -69,24 +73,26 @@ export async function approveRequisition(
   payload: { decision: 'APPROVED' | 'REJECTED'; notes?: string },
   token: string,
 ): Promise<unknown> {
-  const res = await fetch(`/api/procurement/requisitions/${id}/approve`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch(
+    `/api/procurement/requisitions/${id}/approve`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to process requisition approval');
-  return res.json();
+    'Failed to process requisition approval',
+  );
 }
 
 export async function fetchPurchaseOrders(token: string): Promise<PurchaseOrderRecord[]> {
-  const res = await fetch('/api/procurement/purchase-orders', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch purchase orders');
-  return res.json();
+  return apiFetch<PurchaseOrderRecord[]>(
+    '/api/procurement/purchase-orders',
+    { headers: { Authorization: `Bearer ${token}` } },
+    'Failed to fetch purchase orders',
+  );
 }
 
 export async function createPurchaseOrder(
@@ -97,19 +103,18 @@ export async function createPurchaseOrder(
   },
   token: string,
 ): Promise<PurchaseOrderRecord> {
-  const res = await fetch('/api/procurement/purchase-orders', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch<PurchaseOrderRecord>(
+    '/api/procurement/purchase-orders',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const errData = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(errData.message || 'Failed to create purchase order');
-  }
-  return res.json();
+    'Failed to create purchase order',
+  );
 }
 
 export async function createGRN(
@@ -129,16 +134,18 @@ export async function createGRN(
   },
   token: string,
 ): Promise<unknown> {
-  const res = await fetch('/api/procurement/goods-receipt-notes', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch(
+    '/api/procurement/goods-receipt-notes',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('Failed to record Goods Receipt Note');
-  return res.json();
+    'Failed to record Goods Receipt Note',
+  );
 }
 
 export async function createStoreTransfer(
@@ -150,17 +157,16 @@ export async function createStoreTransfer(
   },
   token: string,
 ): Promise<unknown> {
-  const res = await fetch('/api/procurement/transfers', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  return apiFetch(
+    '/api/procurement/transfers',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const errData = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(errData.message || 'Failed to execute store transfer');
-  }
-  return res.json();
+    'Failed to execute store transfer',
+  );
 }

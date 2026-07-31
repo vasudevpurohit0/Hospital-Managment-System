@@ -10,19 +10,19 @@ export class PharmacyController {
   constructor(private readonly pharmacyService: PharmacyService) {}
 
   @Get('queue')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('Prescription', 'read')
   async getQueue() {
     return this.pharmacyService.getQueue();
   }
 
   @Get('prescriptions/:id/batches')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('Prescription', 'read')
   async getBatchOptions(@Param('id') id: string) {
     return this.pharmacyService.getBatchOptions(id);
   }
 
   @Post('dispense')
-  @RequirePermission('Pharmacy', 'dispense')
+  @RequirePermission('StockTransaction', 'dispense')
   async dispense(@Body() dto: DispenseMedicineDto, @Req() req: any) {
     const userId = req.user?.id || '00000000-0000-0000-0000-000000000099';
     const userRole = req.user?.roleName || req.user?.role || 'Pharmacist';

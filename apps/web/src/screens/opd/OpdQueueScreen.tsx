@@ -14,86 +14,28 @@ interface OpdQueueScreenProps {
   authToken: string;
 }
 
-// ── Mock Departments with Valid UUIDs to Prevent DB UUID Parsing Errors ──
-const MOCK_DEPTS: Department[] = [
-  { id: '11111111-2222-3333-4444-555555555555', code: 'GEN_MED', name: 'General Medicine' },
-  { id: '22222222-3333-4444-5555-666666666666', code: 'ORTHO', name: 'Orthopedics' },
-  { id: '33333333-4444-5555-6666-777777777777', code: 'PEDS', name: 'Pediatrics' },
-  { id: '44444444-5555-6666-7777-888888888888', code: 'CARDIO', name: 'Cardiology' },
-];
-
-// ── Mock Queue Records with Valid UUIDs to Prevent DB UUID Parsing Errors ──
-const MOCK_QUEUE: OPDVisitRecord[] = [
-  {
-    id: 'a71a05ae-c657-4d39-bed6-453442f3c3e5',
-    visitId: 'b71a05ae-c657-4d39-bed6-453442f3c3e5',
-    departmentId: '11111111-2222-3333-4444-555555555555',
-    tokenNumber: 'T-0043',
-    calledAt: new Date(Date.now() - 300000).toISOString(),
-    closedAt: null,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    department: { id: '11111111-2222-3333-4444-555555555555', code: 'GEN_MED', name: 'General Medicine' },
-    visit: {
-      id: 'b71a05ae-c657-4d39-bed6-453442f3c3e5',
-      employeeId: 'EMP-1001',
-      type: 'OPD',
-      status: 'OPEN',
-      employee: { name: 'Suresh Patel', employeeId: 'EMP-1001', department: 'General Med' },
-    },
-  },
-  {
-    id: 'a5318437-c6c4-411f-a9d4-26c66b07403c',
-    visitId: 'b5318437-c6c4-411f-a9d4-26c66b07403c',
-    departmentId: '11111111-2222-3333-4444-555555555555',
-    tokenNumber: 'T-0044',
-    calledAt: null,
-    closedAt: null,
-    createdAt: new Date(Date.now() - 2400000).toISOString(),
-    department: { id: '11111111-2222-3333-4444-555555555555', code: 'GEN_MED', name: 'General Medicine' },
-    visit: {
-      id: 'b5318437-c6c4-411f-a9d4-26c66b07403c',
-      employeeId: 'EMP-1002',
-      type: 'OPD',
-      status: 'OPEN',
-      employee: { name: 'Priya Devi', employeeId: 'EMP-1002', department: 'General Med' },
-    },
-  },
-  {
-    id: 'a8d1aeb6-9e5e-4fd0-8dbe-a45e2e9be593',
-    visitId: 'b8d1aeb6-9e5e-4fd0-8dbe-a45e2e9be593',
-    departmentId: '11111111-2222-3333-4444-555555555555',
-    tokenNumber: 'T-0045',
-    calledAt: null,
-    closedAt: null,
-    createdAt: new Date(Date.now() - 1800000).toISOString(),
-    department: { id: '11111111-2222-3333-4444-555555555555', code: 'GEN_MED', name: 'General Medicine' },
-    visit: {
-      id: 'b8d1aeb6-9e5e-4fd0-8dbe-a45e2e9be593',
-      employeeId: 'EMP-1003',
-      type: 'OPD',
-      status: 'OPEN',
-      employee: { name: 'Rahul Kumar', employeeId: 'EMP-1003', department: 'General Med' },
-    },
-  },
-];
-
 export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => {
-  const [departments, setDepartments] = useState<Department[]>(MOCK_DEPTS);
-  const [selectedDeptId, setSelectedDeptId] = useState<string>('11111111-2222-3333-4444-555555555555');
-  const [queue, setQueue] = useState<OPDVisitRecord[]>(MOCK_QUEUE);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
+  const [queue, setQueue] = useState<OPDVisitRecord[]>([]);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadDepts = async () => {
+      setLoading(true);
       try {
         const depts = await fetchDepartments(authToken);
+        setDepartments(depts);
         if (depts && depts.length > 0) {
-          setDepartments(depts);
           setSelectedDeptId(depts[0].id);
         }
-      } catch {
-        setDepartments(MOCK_DEPTS);
-        setSelectedDeptId(MOCK_DEPTS[0].id);
+        setError(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load departments');
+      } finally {
+        setLoading(false);
       }
     };
     loadDepts();
@@ -103,11 +45,10 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     if (!selectedDeptId) return;
     try {
       const q = await fetchOpdQueue(selectedDeptId, authToken);
-      if (q && q.length > 0) {
-        setQueue(q);
-      }
-    } catch {
-      // Keep local state on error
+      setQueue(q);
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load OPD queue');
     }
   }, [selectedDeptId, authToken]);
 
@@ -129,19 +70,8 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
       const updated = await callOpdToken(nextItem.id, authToken);
       setActionMessage(`📢 Called Token ${updated.tokenNumber} for consultation!`);
       await loadQueue();
-    } catch {
-      const updatedQueue = queue.map((item) => {
-        if (item.calledAt && !item.closedAt) {
-          return { ...item, closedAt: new Date().toISOString() };
-        }
-        if (item.id === nextItem.id) {
-          return { ...item, calledAt: new Date().toISOString() };
-        }
-        return item;
-      });
-      const activeQueue = updatedQueue.filter((item) => !item.closedAt);
-      setQueue(activeQueue);
-      setActionMessage(`📢 Called Token ${nextItem.tokenNumber} — ${nextItem.visit?.employee?.name || 'Patient'} — Please proceed to Consultation Room!`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to call next token');
     }
   };
 
@@ -152,10 +82,8 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
       await closeOpdVisit(id, authToken);
       setActionMessage(`✅ Consultation completed for ${closingToken?.visit?.employee?.name || 'patient'}.`);
       await loadQueue();
-    } catch {
-      const updatedQueue = queue.filter((item) => item.id !== id);
-      setQueue(updatedQueue);
-      setActionMessage(`✅ Consultation completed for ${closingToken?.visit?.employee?.name || 'patient'} — Token ${closingToken?.tokenNumber} closed.`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to close visit');
     }
   };
 
@@ -191,10 +119,20 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
         </div>
       </div>
 
+      {error && (
+        <div className="alert alert-danger text-sm font-semibold">❌ {error}</div>
+      )}
+
       {actionMessage && (
         <div className="alert alert-success text-sm font-semibold">{actionMessage}</div>
       )}
 
+      {loading ? (
+        <div className="card p-8 text-center text-sm text-[var(--color-text-tertiary)]">
+          Loading OPD queue…
+        </div>
+      ) : (
+      <>
       {/* Main Calling Station Box */}
       <div className="card p-6 bg-primary-900 text-white border-none space-y-6">
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
@@ -280,6 +218,8 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };

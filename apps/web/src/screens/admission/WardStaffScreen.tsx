@@ -187,7 +187,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                       </div>
                       <div className="flex items-center space-x-2">
                         <span className="bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-xs font-bold border border-emerald-200">
-                          Admitted (Bed: {adm.bed?.bedNumber || 'M-1'})
+                          Admitted (Bed: {adm.bed?.bedNumber || 'Unassigned'})
                         </span>
                       </div>
                     </div>
@@ -196,13 +196,13 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                       <div>
                         <span className="text-gray-400 block">Attending Doctor</span>
                         <span className="font-medium text-gray-800">
-                          {adm.assignedDoctor?.identifier || 'Dr. Verma'}
+                          {adm.assignedDoctor?.identifier || 'Not assigned'}
                         </span>
                       </div>
                       <div>
                         <span className="text-gray-400 block">Care Nurse</span>
                         <span className="font-medium text-gray-800">
-                          {adm.assignedNurse?.identifier || 'Nurse Emily'}
+                          {adm.assignedNurse?.identifier || 'Not assigned'}
                         </span>
                       </div>
                       <div>
