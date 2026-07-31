@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   fetchExpiringBatches,
   triggerDailyExpiryScan,
@@ -30,7 +30,7 @@ export const ExpiryManagementScreen: React.FC<ExpiryManagementScreenProps> = ({
   const [disposalReason, setDisposalReason] = useState('Expired past safe usage threshold');
   const [disposalNotes, setDisposalNotes] = useState('');
 
-  const loadBatches = async () => {
+  const loadBatches = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -41,11 +41,11 @@ export const ExpiryManagementScreen: React.FC<ExpiryManagementScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeToken]);
 
   useEffect(() => {
     loadBatches();
-  }, [activeToken]);
+  }, [loadBatches]);
 
   const handleRunScan = async () => {
     setLoading(true);

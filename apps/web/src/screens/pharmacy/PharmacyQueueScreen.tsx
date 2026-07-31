@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchPharmacyQueue,
   fetchBatchOptions,
@@ -23,13 +23,48 @@ export const PharmacyQueueScreen: React.FC<PharmacyQueueScreenProps> = ({ authTo
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const loadQueue = async () => {
+  const selectedRxRef = useRef<PharmacyQueueRecord | null>(null);
+  useEffect(() => {
+    selectedRxRef.current = selectedRx;
+  }, [selectedRx]);
+
+  const handleSelectRx = useCallback(
+    async (rx: PharmacyQueueRecord) => {
+      setSelectedRx(rx);
+      setError(null);
+      setSuccessMessage(null);
+      try {
+        const batches = await fetchBatchOptions(rx.id, authToken);
+        setBatchOptions(batches);
+
+        // Pre-select top FEFO batch for each item
+        const initialBatches: Record<string, string> = {};
+        const initialQty: Record<string, number> = {};
+
+        rx.items.forEach((item) => {
+          const itemBatches = batches[item.id] || [];
+          if (itemBatches.length > 0) {
+            initialBatches[item.id] = itemBatches[0].id; // Top FEFO batch
+          }
+          initialQty[item.id] = 1;
+        });
+
+        setSelectedBatches(initialBatches);
+        setDispenseQtyMap(initialQty);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load FEFO batch options');
+      }
+    },
+    [authToken],
+  );
+
+  const loadQueue = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await fetchPharmacyQueue(authToken);
       setQueue(data);
-      if (data.length > 0 && !selectedRx) {
+      if (data.length > 0 && !selectedRxRef.current) {
         handleSelectRx(data[0]);
       }
     } catch (err: unknown) {
@@ -37,38 +72,11 @@ export const PharmacyQueueScreen: React.FC<PharmacyQueueScreenProps> = ({ authTo
     } finally {
       setLoading(false);
     }
-  };
+  }, [authToken, handleSelectRx]);
 
   useEffect(() => {
     loadQueue();
-  }, [authToken]);
-
-  const handleSelectRx = async (rx: PharmacyQueueRecord) => {
-    setSelectedRx(rx);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      const batches = await fetchBatchOptions(rx.id, authToken);
-      setBatchOptions(batches);
-
-      // Pre-select top FEFO batch for each item
-      const initialBatches: Record<string, string> = {};
-      const initialQty: Record<string, number> = {};
-
-      rx.items.forEach((item) => {
-        const itemBatches = batches[item.id] || [];
-        if (itemBatches.length > 0) {
-          initialBatches[item.id] = itemBatches[0].id; // Top FEFO batch
-        }
-        initialQty[item.id] = 1;
-      });
-
-      setSelectedBatches(initialBatches);
-      setDispenseQtyMap(initialQty);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load FEFO batch options');
-    }
-  };
+  }, [loadQueue]);
 
   const handleDispense = async () => {
     if (!selectedRx) return;

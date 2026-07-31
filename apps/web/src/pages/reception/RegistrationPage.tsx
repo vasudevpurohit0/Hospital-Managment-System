@@ -86,14 +86,18 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
           department: verifiedData?.department || 'Labour Dept',
           post: { title: verifiedData?.postTitle || 'Senior Assistant' },
           grade: { payLevel: verifiedData?.gradePayLevel || 'Level 6' },
-          employmentType: { code: verifiedData?.employmentTypeCode || 'PERMANENT', name: 'Permanent Employee' },
+          employmentType: {
+            code: verifiedData?.employmentTypeCode || 'PERMANENT',
+            name: 'Permanent Employee',
+          },
           contactPhone: '+91 98765 43210',
         },
         hospitalUid: {
           uidCode: 'ESIC-MH-001042',
           issuedAt: new Date().toISOString(),
         },
-        qrDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%230F4C81"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="10">ESIC QR</text></svg>',
+        qrDataUrl:
+          'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%230F4C81"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="10">ESIC QR</text></svg>',
       });
     } finally {
       setRegistering(false);
@@ -120,14 +124,18 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
           department: walkinDept,
           post: { title: 'Registered Patient' },
           grade: { payLevel: 'Level 1' },
-          employmentType: { code: walkinBenefit, name: walkinBenefit === 'PERMANENT' ? 'ESIC Covered' : 'Self Paid' },
+          employmentType: {
+            code: walkinBenefit,
+            name: walkinBenefit === 'PERMANENT' ? 'ESIC Covered' : 'Self Paid',
+          },
           contactPhone: walkinPhone || '+91 98765 43210',
         },
         hospitalUid: {
           uidCode: randomUid,
           issuedAt: new Date().toISOString(),
         },
-        qrDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%230F4C81"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="10">ESIC QR</text></svg>',
+        qrDataUrl:
+          'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%230F4C81"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="10">ESIC QR</text></svg>',
       });
       setRegistering(false);
     }, 600);
@@ -143,18 +151,31 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
       <div className="card p-6 bg-gradient-to-r from-primary-900 via-primary-800 to-primary-900 text-white border-none relative overflow-hidden">
         <div className="relative z-10 space-y-4">
           <div>
-            <span className="text-xs font-semibold text-secondary-300 uppercase tracking-wider">Clinical Reception Desk</span>
-            <h1 className="text-2xl font-bold tracking-tight">New Patient Registration & Hospital UID Card</h1>
-            <p className="text-xs text-primary-200/80 mt-1">Register new patients via Labour Department Employee ID verification or direct walk-in registration</p>
+            <span className="text-xs font-semibold text-secondary-300 uppercase tracking-wider">
+              Clinical Reception Desk
+            </span>
+            <h1 className="text-2xl font-bold tracking-tight">
+              New Patient Registration & Hospital UID Card
+            </h1>
+            <p className="text-xs text-primary-200/80 mt-1">
+              Register new patients via Labour Department Employee ID verification or direct walk-in
+              registration
+            </p>
           </div>
 
           {/* Registration Mode Selector Tabs */}
           <div className="flex border-t border-white/10 pt-3 gap-4 text-xs font-semibold">
             <button
               type="button"
-              onClick={() => { setMode('labour-id'); setRegistrationResult(null); setError(null); }}
+              onClick={() => {
+                setMode('labour-id');
+                setRegistrationResult(null);
+                setError(null);
+              }}
               className={`pb-2 border-b-2 flex items-center gap-1.5 transition-colors ${
-                mode === 'labour-id' ? 'border-secondary-400 text-white' : 'border-transparent text-primary-200/60 hover:text-white'
+                mode === 'labour-id'
+                  ? 'border-secondary-400 text-white'
+                  : 'border-transparent text-primary-200/60 hover:text-white'
               }`}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -162,9 +183,15 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
             </button>
             <button
               type="button"
-              onClick={() => { setMode('direct-walkin'); setRegistrationResult(null); setError(null); }}
+              onClick={() => {
+                setMode('direct-walkin');
+                setRegistrationResult(null);
+                setError(null);
+              }}
               className={`pb-2 border-b-2 flex items-center gap-1.5 transition-colors ${
-                mode === 'direct-walkin' ? 'border-secondary-400 text-white' : 'border-transparent text-primary-200/60 hover:text-white'
+                mode === 'direct-walkin'
+                  ? 'border-secondary-400 text-white'
+                  : 'border-transparent text-primary-200/60 hover:text-white'
               }`}
             >
               <UserPlus className="w-3.5 h-3.5" />
@@ -208,7 +235,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
                 <button
                   key={id}
                   type="button"
-                  onClick={() => { setEmployeeIdInput(id); }}
+                  onClick={() => {
+                    setEmployeeIdInput(id);
+                  }}
                   className="px-2 py-0.5 rounded bg-[var(--color-surface-secondary)] border border-[var(--color-border)] font-mono hover:text-[var(--color-text-primary)]"
                 >
                   {id}
@@ -228,12 +257,34 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
-                <div><span className="text-[var(--color-text-secondary)] block">Full Name:</span> <span className="font-semibold text-sm">{verifiedData.name}</span></div>
-                <div><span className="text-[var(--color-text-secondary)] block">Employee ID:</span> <span className="font-semibold text-sm font-mono">{verifiedData.employeeId}</span></div>
-                <div><span className="text-[var(--color-text-secondary)] block">Department:</span> <span className="font-semibold text-sm">{verifiedData.department}</span></div>
-                <div><span className="text-[var(--color-text-secondary)] block">Employment Type:</span> <span className="font-semibold text-sm">{verifiedData.employmentTypeCode}</span></div>
-                <div><span className="text-[var(--color-text-secondary)] block">Post / Grade:</span> <span className="font-semibold text-sm">{verifiedData.postTitle} ({verifiedData.gradePayLevel})</span></div>
-                <div><span className="text-[var(--color-text-secondary)] block">ESIC Benefit Status:</span> <span className="font-semibold text-sm text-success-600">Covered (100%)</span></div>
+                <div>
+                  <span className="text-[var(--color-text-secondary)] block">Full Name:</span>{' '}
+                  <span className="font-semibold text-sm">{verifiedData.name}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-secondary)] block">Employee ID:</span>{' '}
+                  <span className="font-semibold text-sm font-mono">{verifiedData.employeeId}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-secondary)] block">Department:</span>{' '}
+                  <span className="font-semibold text-sm">{verifiedData.department}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-secondary)] block">Employment Type:</span>{' '}
+                  <span className="font-semibold text-sm">{verifiedData.employmentTypeCode}</span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-secondary)] block">Post / Grade:</span>{' '}
+                  <span className="font-semibold text-sm">
+                    {verifiedData.postTitle} ({verifiedData.gradePayLevel})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[var(--color-text-secondary)] block">
+                    ESIC Benefit Status:
+                  </span>{' '}
+                  <span className="font-semibold text-sm text-success-600">Covered (100%)</span>
+                </div>
               </div>
 
               <div className="pt-3 border-t border-[var(--color-border)] flex justify-end">
@@ -261,14 +312,18 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
                 <User className="w-4 h-4 text-primary-500" />
                 Direct Walk-in Patient Demographics Registration
               </h3>
-              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Fill in patient information for non-employee or direct emergency registrations</p>
+              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
+                Fill in patient information for non-employee or direct emergency registrations
+              </p>
             </div>
             <Badge variant="info">New Registration Form</Badge>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Patient Full Name *</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Patient Full Name *
+              </label>
               <input
                 type="text"
                 required
@@ -281,7 +336,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Gender *</label>
+                <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                  Gender *
+                </label>
                 <select
                   value={walkinGender}
                   onChange={(e) => setWalkinGender(e.target.value)}
@@ -294,7 +351,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Date of Birth *</label>
+                <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                  Date of Birth *
+                </label>
                 <input
                   type="date"
                   required
@@ -306,7 +365,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Contact Phone Number</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Contact Phone Number
+              </label>
               <input
                 type="text"
                 value={walkinPhone}
@@ -317,7 +378,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Hospital Department</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Hospital Department
+              </label>
               <select
                 value={walkinDept}
                 onChange={(e) => setWalkinDept(e.target.value)}
@@ -331,7 +394,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Insurance / Benefit Category</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Insurance / Benefit Category
+              </label>
               <select
                 value={walkinBenefit}
                 onChange={(e) => setWalkinBenefit(e.target.value as 'PERMANENT' | 'CONTRACTUAL')}
@@ -343,7 +408,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">Residential Address</label>
+              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                Residential Address
+              </label>
               <input
                 type="text"
                 value={walkinAddress}
@@ -373,9 +440,15 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
           <div className="alert alert-success flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5" />
-              <span className="font-bold">Patient Registration Successful! Digital Hospital UID Card Issued.</span>
+              <span className="font-bold">
+                Patient Registration Successful! Digital Hospital UID Card Issued.
+              </span>
             </div>
-            <button type="button" onClick={handlePrint} className="btn btn-secondary btn-sm gap-1.5">
+            <button
+              type="button"
+              onClick={handlePrint}
+              className="btn btn-secondary btn-sm gap-1.5"
+            >
               <Printer className="w-4 h-4" /> Print Card
             </button>
           </div>
@@ -383,7 +456,10 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ authToken })
           <div className="flex justify-center py-4">
             <UidCard
               uidCode={registrationResult.hospitalUid?.uidCode || 'ESIC-MH-001042'}
-              qrDataUrl={registrationResult.qrDataUrl || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%230F4C81"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="10">ESIC QR</text></svg>'}
+              qrDataUrl={
+                registrationResult.qrDataUrl ||
+                'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="%230F4C81"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="10">ESIC QR</text></svg>'
+              }
               issuedAt={registrationResult.hospitalUid?.issuedAt || new Date().toISOString()}
               employee={{
                 employeeId: registrationResult.employee.employeeId,

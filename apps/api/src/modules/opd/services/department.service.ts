@@ -59,7 +59,10 @@ export class DepartmentService implements OnModuleInit {
         const dept = await this.prisma.department.findUnique({ where: { id } });
         if (dept) return dept;
       }
-      const normalizedCode = id.replace(/^dept-/, '').replace(/_/g, '').toUpperCase();
+      const normalizedCode = id
+        .replace(/^dept-/, '')
+        .replace(/_/g, '')
+        .toUpperCase();
       const deptByCode = await this.prisma.department.findFirst({
         where: {
           OR: [
@@ -77,7 +80,11 @@ export class DepartmentService implements OnModuleInit {
         (d) =>
           d.id === id ||
           d.code === id ||
-          d.code.replace(/_/g, '').toUpperCase() === id.replace(/^dept-/, '').replace(/_/g, '').toUpperCase(),
+          d.code.replace(/_/g, '').toUpperCase() ===
+            id
+              .replace(/^dept-/, '')
+              .replace(/_/g, '')
+              .toUpperCase(),
       ) || null
     );
   }

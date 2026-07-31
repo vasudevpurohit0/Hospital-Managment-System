@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
@@ -12,26 +12,34 @@ describe('App', () => {
           json: async () => ({ accessToken: 'mock_token', user: { role: 'SuperAdmin' } }),
         };
       }
+      if (url.includes('/api/dashboard/summary')) {
+        return {
+          ok: true,
+          json: async () => ({}),
+        };
+      }
       return {
         ok: true,
-        json: async () => ({
-          status: 'ok',
-          version: '1.0.0',
-          uptime: 1234,
-          timestamp: new Date().toISOString(),
-        }),
+        json: async () => ({}),
       };
     });
   });
 
-  it('renders without crashing and displays the title', async () => {
+  it('renders the login page when the user is not authenticated', async () => {
     render(<App />);
 
-    // Check for title
-    expect(screen.getByText('ESIC Hospital Management System')).toBeInTheDocument();
-    expect(
-      screen.getByText('Doctor Consultation & Digital Prescription Console'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Authorized Personnel Login')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Secure Login/i })).toBeInTheDocument();
+  });
+
+  it('logs in successfully and renders the authenticated dashboard', async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Secure Login/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Welcome back/i)).toBeInTheDocument();
+    });
   });
 
   it('displays error state on health fetch failure', async () => {
@@ -39,23 +47,20 @@ describe('App', () => {
       if (url.includes('/api/health')) {
         return {
           ok: false,
-          json: async () => ({ message: 'Health check failed' }),
+          status: 401,
+          json: async () => ({ message: 'Invalid credentials' }),
         };
       }
-      return {
-        ok: true,
-        json: async () => ({ accessToken: 'mock_token', user: { role: 'SuperAdmin' } }),
-      };
+      return { ok: true, json: async () => ({}) };
     });
 
     render(<App />);
 
-    // Switch to System Status tab
-    const statusTabBtn = screen.getByText(/System Status/i);
-    statusTabBtn.click();
+    fireEvent.click(screen.getByRole('button', { name: /Secure Login/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/API Unreachable/i)).toBeInTheDocument();
+      expect(screen.getByText(/Invalid credentials/i)).toBeInTheDocument();
     });
+    expect(screen.getByText('Authorized Personnel Login')).toBeInTheDocument();
   });
 });

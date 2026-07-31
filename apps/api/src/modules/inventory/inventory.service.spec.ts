@@ -1,11 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { StockStatus, PharmacyLocation } from '@prisma/client';
+import { StockStatus } from '@prisma/client';
 
 describe('InventoryService', () => {
   let service: InventoryService;
-  let prisma: PrismaService;
 
   const mockPrisma = {
     medicine: {
@@ -33,7 +32,6 @@ describe('InventoryService', () => {
     }).compile();
 
     service = module.get<InventoryService>(InventoryService);
-    prisma = module.get<PrismaService>(PrismaService);
     jest.clearAllMocks();
   });
 

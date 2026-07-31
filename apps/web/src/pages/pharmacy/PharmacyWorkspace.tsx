@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchPharmacyQueue,
   fetchBatchOptions,
@@ -24,48 +24,56 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const loadQueue = async () => {
+  const selectedRxRef = useRef<PharmacyQueueRecord | null>(null);
+  useEffect(() => {
+    selectedRxRef.current = selectedRx;
+  }, [selectedRx]);
+
+  const handleSelectRx = useCallback(
+    async (rx: PharmacyQueueRecord) => {
+      setSelectedRx(rx);
+      setError(null);
+      setSuccessMessage(null);
+      try {
+        const batches = await fetchBatchOptions(rx.id, authToken);
+        setBatchOptions(batches);
+
+        const initialBatches: Record<string, string> = {};
+        const initialQty: Record<string, number> = {};
+
+        rx.items.forEach((item) => {
+          const itemBatches = batches[item.id] || [];
+          if (itemBatches.length > 0) {
+            initialBatches[item.id] = itemBatches[0].id;
+          }
+          initialQty[item.id] = 1;
+        });
+
+        setSelectedBatches(initialBatches);
+        setDispenseQtyMap(initialQty);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Failed to load FEFO batch options');
+      }
+    },
+    [authToken],
+  );
+
+  const loadQueue = useCallback(async () => {
     setError(null);
     try {
       const data = await fetchPharmacyQueue(authToken);
       setQueue(data);
-      if (data.length > 0 && !selectedRx) {
+      if (data.length > 0 && !selectedRxRef.current) {
         handleSelectRx(data[0]);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load pharmacy queue');
     }
-  };
+  }, [authToken, handleSelectRx]);
 
   useEffect(() => {
     loadQueue();
-  }, [authToken]);
-
-  const handleSelectRx = async (rx: PharmacyQueueRecord) => {
-    setSelectedRx(rx);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      const batches = await fetchBatchOptions(rx.id, authToken);
-      setBatchOptions(batches);
-
-      const initialBatches: Record<string, string> = {};
-      const initialQty: Record<string, number> = {};
-
-      rx.items.forEach((item) => {
-        const itemBatches = batches[item.id] || [];
-        if (itemBatches.length > 0) {
-          initialBatches[item.id] = itemBatches[0].id;
-        }
-        initialQty[item.id] = 1;
-      });
-
-      setSelectedBatches(initialBatches);
-      setDispenseQtyMap(initialQty);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load FEFO batch options');
-    }
-  };
+  }, [loadQueue]);
 
   const handleDispense = async () => {
     if (!selectedRx) return;
@@ -90,7 +98,9 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
 
     try {
       const result = await dispenseMedicines(selectedRx.id, itemsToDispense, authToken);
-      setSuccessMessage(`Dispensed ${result.dispensedItemsCount} items. Bill status: ${result.transactionOutcome}`);
+      setSuccessMessage(
+        `Dispensed ${result.dispensedItemsCount} items. Bill status: ${result.transactionOutcome}`,
+      );
       loadQueue();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Dispensing failed');
@@ -107,8 +117,12 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
             <Pill className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Pharmacy FEFO Dispensing Console</h2>
-            <p className="text-xs text-[var(--color-text-secondary)]">Automated First-Expiry-First-Out batch selection workspace</p>
+            <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+              Pharmacy FEFO Dispensing Console
+            </h2>
+            <p className="text-xs text-[var(--color-text-secondary)]">
+              Automated First-Expiry-First-Out batch selection workspace
+            </p>
           </div>
         </div>
 
@@ -124,7 +138,9 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
         {/* Queue List (4 cols) */}
         <div className="lg:col-span-4 card overflow-hidden">
           <div className="p-4 border-b border-[var(--color-border)] flex items-center justify-between">
-            <h3 className="text-sm font-bold text-[var(--color-text-primary)]">Prescription Queue ({queue.length})</h3>
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
+              Prescription Queue ({queue.length})
+            </h3>
             <Badge variant="info">FEFO Active</Badge>
           </div>
 
@@ -139,16 +155,27 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                   key={rx.id}
                   onClick={() => handleSelectRx(rx)}
                   className={`p-4 cursor-pointer transition-colors hover:bg-[var(--color-surface-hover)] ${
-                    selectedRx?.id === rx.id ? 'bg-primary-50/70 border-l-4 border-primary-500 dark:bg-primary-950/30' : ''
+                    selectedRx?.id === rx.id
+                      ? 'bg-primary-50/70 border-l-4 border-primary-500 dark:bg-primary-950/30'
+                      : ''
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sm text-[var(--color-text-primary)]">Rx #{rx.id.slice(-6)}</span>
-                    <Badge variant={rx.status === 'SIGNED' ? 'success' : 'warning'}>{rx.status}</Badge>
+                    <span className="font-bold text-sm text-[var(--color-text-primary)]">
+                      Rx #{rx.id.slice(-6)}
+                    </span>
+                    <Badge variant={rx.status === 'SIGNED' ? 'success' : 'warning'}>
+                      {rx.status}
+                    </Badge>
                   </div>
                   <div className="mt-2 text-xs space-y-1 text-[var(--color-text-secondary)]">
-                    <p className="flex items-center gap-1.5"><User className="w-3.5 h-3.5 text-primary-500" /> Patient: Rahul Kumar</p>
-                    <p className="flex items-center gap-1.5"><Stethoscope className="w-3.5 h-3.5 text-secondary-500" /> {rx.items.length} Medicines prescribed</p>
+                    <p className="flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-primary-500" /> Patient: Rahul Kumar
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <Stethoscope className="w-3.5 h-3.5 text-secondary-500" /> {rx.items.length}{' '}
+                      Medicines prescribed
+                    </p>
                   </div>
                 </div>
               ))
@@ -163,7 +190,9 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 border-b border-[var(--color-border)]">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-[var(--color-text-primary)]">Dispense Prescription</h3>
+                    <h3 className="text-base font-bold text-[var(--color-text-primary)]">
+                      Dispense Prescription
+                    </h3>
                     <Badge variant="info">Rx #{selectedRx.id}</Badge>
                   </div>
                 </div>
@@ -184,11 +213,18 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                   const selectedBatchId = selectedBatches[item.id] || '';
 
                   return (
-                    <div key={item.id} className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-3">
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-3"
+                    >
                       <div className="flex items-start justify-between">
                         <div>
-                          <h5 className="font-bold text-sm text-[var(--color-text-primary)]">{item.medicineName}</h5>
-                          <p className="text-xs text-[var(--color-text-secondary)]">Dose: {item.dose} • Freq: {item.frequency} • Duration: {item.duration}</p>
+                          <h5 className="font-bold text-sm text-[var(--color-text-primary)]">
+                            {item.medicineName}
+                          </h5>
+                          <p className="text-xs text-[var(--color-text-secondary)]">
+                            Dose: {item.dose} • Freq: {item.frequency} • Duration: {item.duration}
+                          </p>
                         </div>
                         <Badge variant="neutral">{item.dispenseStatus}</Badge>
                       </div>
@@ -201,7 +237,9 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                           </label>
                           <select
                             value={selectedBatchId}
-                            onChange={(e) => setSelectedBatches({ ...selectedBatches, [item.id]: e.target.value })}
+                            onChange={(e) =>
+                              setSelectedBatches({ ...selectedBatches, [item.id]: e.target.value })
+                            }
                             className="input text-xs font-mono py-1.5"
                           >
                             {options.length === 0 ? (
@@ -209,7 +247,8 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                             ) : (
                               options.map((b) => (
                                 <option key={b.id} value={b.id}>
-                                  Batch #{b.batchNumber} (Stock: {b.currentStock} | Exp: {new Date(b.expiryDate).toLocaleDateString()})
+                                  Batch #{b.batchNumber} (Stock: {b.currentStock} | Exp:{' '}
+                                  {new Date(b.expiryDate).toLocaleDateString()})
                                 </option>
                               ))
                             )}
@@ -224,7 +263,12 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                             type="number"
                             min={1}
                             value={dispenseQtyMap[item.id] || 1}
-                            onChange={(e) => setDispenseQtyMap({ ...dispenseQtyMap, [item.id]: parseInt(e.target.value) || 1 })}
+                            onChange={(e) =>
+                              setDispenseQtyMap({
+                                ...dispenseQtyMap,
+                                [item.id]: parseInt(e.target.value) || 1,
+                              })
+                            }
                             className="input text-xs py-1.5"
                           />
                         </div>

@@ -61,42 +61,110 @@ interface MenuGroup {
 const MENU_GROUPS: MenuGroup[] = [
   {
     title: 'Overview',
-    items: [
-      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] },
-    ],
+    items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] }],
   },
   {
     title: 'Clinical',
     items: [
-      { id: 'patient-search', label: 'Patient Search', icon: Search, roles: ['Doctor', 'Receptionist', 'Pharmacist', 'Nurse', 'SuperAdmin', 'Administrator'] },
-      { id: 'registration', label: 'Registration', icon: UserPlus, roles: ['Receptionist', 'SuperAdmin', 'Administrator'] },
-      { id: 'opd-queue', label: 'OPD Queue', icon: ClipboardList, roles: ['Doctor', 'Receptionist', 'Nurse', 'SuperAdmin', 'Administrator'] },
-      { id: 'consultations', label: 'Consultations', icon: Stethoscope, roles: ['Doctor', 'SuperAdmin', 'Administrator'] },
-      { id: 'ipd-admissions', label: 'IPD / Admissions', icon: BedDouble, roles: ['Doctor', 'Receptionist', 'Nurse', 'SuperAdmin', 'Administrator'] },
-      { id: 'ward-console', label: 'Ward Console', icon: Building2, roles: ['Nurse', 'SuperAdmin', 'Administrator'] },
+      {
+        id: 'patient-search',
+        label: 'Patient Search',
+        icon: Search,
+        roles: ['Doctor', 'Receptionist', 'Pharmacist', 'Nurse', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'registration',
+        label: 'Registration',
+        icon: UserPlus,
+        roles: ['Receptionist', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'opd-queue',
+        label: 'OPD Queue',
+        icon: ClipboardList,
+        roles: ['Doctor', 'Receptionist', 'Nurse', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'consultations',
+        label: 'Consultations',
+        icon: Stethoscope,
+        roles: ['Doctor', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'ipd-admissions',
+        label: 'IPD / Admissions',
+        icon: BedDouble,
+        roles: ['Doctor', 'Receptionist', 'Nurse', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'ward-console',
+        label: 'Ward Console',
+        icon: Building2,
+        roles: ['Nurse', 'SuperAdmin', 'Administrator'],
+      },
     ],
   },
   {
     title: 'Pharmacy & Inventory',
     items: [
-      { id: 'pharmacy', label: 'Dispensing', icon: Pill, roles: ['Pharmacist', 'SuperAdmin', 'Administrator'] },
-      { id: 'inventory', label: 'Inventory', icon: Package, roles: ['Pharmacist', 'StoreManager', 'SuperAdmin', 'Administrator'] },
-      { id: 'expiry-fefo', label: 'Expiry & FEFO', icon: Clock, roles: ['Pharmacist', 'StoreManager', 'SuperAdmin', 'Administrator'] },
-      { id: 'supply-chain', label: 'Supply Chain', icon: Truck, roles: ['StoreManager', 'SuperAdmin', 'Administrator'] },
+      {
+        id: 'pharmacy',
+        label: 'Dispensing',
+        icon: Pill,
+        roles: ['Pharmacist', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'inventory',
+        label: 'Inventory',
+        icon: Package,
+        roles: ['Pharmacist', 'StoreManager', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'expiry-fefo',
+        label: 'Expiry & FEFO',
+        icon: Clock,
+        roles: ['Pharmacist', 'StoreManager', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'supply-chain',
+        label: 'Supply Chain',
+        icon: Truck,
+        roles: ['StoreManager', 'SuperAdmin', 'Administrator'],
+      },
     ],
   },
   {
     title: 'Finance',
     items: [
-      { id: 'billing', label: 'Billing', icon: Receipt, roles: ['Pharmacist', 'BillingClerk', 'SuperAdmin', 'Administrator'] },
+      {
+        id: 'billing',
+        label: 'Billing',
+        icon: Receipt,
+        roles: ['Pharmacist', 'BillingClerk', 'SuperAdmin', 'Administrator'],
+      },
     ],
   },
   {
     title: 'Administration',
     items: [
-      { id: 'facility-rules', label: 'Facility Rules', icon: Shield, roles: ['SuperAdmin', 'Administrator'] },
-      { id: 'analytics', label: 'Analytics', icon: BarChart3, roles: ['SuperAdmin', 'Administrator'] },
-      { id: 'system-config', label: 'System Config', icon: Settings, roles: ['SuperAdmin', 'Administrator'] },
+      {
+        id: 'facility-rules',
+        label: 'Facility Rules',
+        icon: Shield,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'analytics',
+        label: 'Analytics',
+        icon: BarChart3,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'system-config',
+        label: 'System Config',
+        icon: Settings,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
     ],
   },
 ];
@@ -150,9 +218,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }}
     >
       {/* ── Brand Header ── */}
-      <div className={`flex items-center h-[var(--topnav-height)] flex-shrink-0 border-b border-white/[0.06] ${
-        collapsed ? 'justify-center px-2' : 'px-5'
-      }`}>
+      <div
+        className={`flex items-center h-[var(--topnav-height)] flex-shrink-0 border-b border-white/[0.06] ${
+          collapsed ? 'justify-center px-2' : 'px-5'
+        }`}
+      >
         {collapsed ? (
           <div className="w-9 h-9 rounded-lg bg-primary-500/20 flex items-center justify-center">
             <Building2 className="w-5 h-5 text-primary-300" />
@@ -213,9 +283,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className={`
                           w-full flex items-center gap-3 sidebar-item-transition relative
                           ${collapsed ? 'justify-center px-2 py-2.5 mx-auto' : 'px-5 py-2'}
-                          ${isActive
-                            ? 'text-white bg-white/[0.08]'
-                            : 'text-[var(--sidebar-text)] hover:text-white hover:bg-[var(--sidebar-item-hover)]'
+                          ${
+                            isActive
+                              ? 'text-white bg-white/[0.08]'
+                              : 'text-[var(--sidebar-text)] hover:text-white hover:bg-[var(--sidebar-item-hover)]'
                           }
                         `}
                       >
@@ -228,7 +299,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           />
                         )}
 
-                        <Icon className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-[18px] h-[18px]'}`} />
+                        <Icon
+                          className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-[18px] h-[18px]'}`}
+                        />
 
                         {!collapsed && (
                           <span className="text-[13px] font-medium truncate">{item.label}</span>
@@ -249,11 +322,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         className="flex items-center justify-center h-10 border-t border-b border-white/[0.06] text-[var(--sidebar-text)] hover:text-white hover:bg-[var(--sidebar-item-hover)] transition-colors"
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
-        <ChevronLeft className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
+        <ChevronLeft
+          className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {/* ── User & Logout ── */}
-      <div className={`flex-shrink-0 border-t border-white/[0.06] p-3 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}>
+      <div
+        className={`flex-shrink-0 border-t border-white/[0.06] p-3 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}
+      >
         {collapsed ? (
           <>
             <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center text-xs font-bold text-primary-300">
@@ -274,7 +351,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-medium text-white truncate">{user?.name || 'User'}</p>
-              <p className="text-[10px] text-[var(--sidebar-text)] opacity-50 truncate">{user?.role || 'Role'}</p>
+              <p className="text-[10px] text-[var(--sidebar-text)] opacity-50 truncate">
+                {user?.role || 'Role'}
+              </p>
             </div>
             <button
               onClick={logout}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   fetchAdmissions,
   addAdmissionNote,
@@ -71,7 +71,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const [summaryText, setSummaryText] = useState('');
   const [submittingDischarge, setSubmittingDischarge] = useState(false);
 
-  const loadAdmissions = async () => {
+  const loadAdmissions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -86,13 +86,13 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
     } finally {
       setLoading(false);
     }
-  };
+  }, [authToken]);
 
   useEffect(() => {
     if (authToken) {
       loadAdmissions();
     }
-  }, [authToken]);
+  }, [authToken, loadAdmissions]);
 
   const handleAddNoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
