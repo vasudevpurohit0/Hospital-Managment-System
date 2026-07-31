@@ -303,7 +303,7 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
         exit={{ opacity: 0, scale: 0.97, y: -8 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-lg rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         {/* Search Input */}
         <div className="flex items-center gap-3 px-4 border-b border-[var(--color-border)]">

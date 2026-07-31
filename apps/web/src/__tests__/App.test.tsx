@@ -5,7 +5,7 @@ import App from '../App';
 describe('App', () => {
   beforeEach(() => {
     // Reset fetch mock before each test
-    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
       if (url.includes('/api/auth/login')) {
         return {
           ok: true,
@@ -35,7 +35,7 @@ describe('App', () => {
   });
 
   it('displays error state on health fetch failure', async () => {
-    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
       if (url.includes('/api/health')) {
         return {
           ok: false,

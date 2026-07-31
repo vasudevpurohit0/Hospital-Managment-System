@@ -101,10 +101,8 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     if (!selectedDeptId) return;
     try {
       const q = await fetchOpdQueue(selectedDeptId, authToken);
-      if (q && q.length > 0) {
+      if (Array.isArray(q)) {
         setQueue(q);
-      } else {
-        setQueue(MOCK_QUEUE);
       }
     } catch {
       setQueue(MOCK_QUEUE);
@@ -117,7 +115,10 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     return () => clearInterval(interval);
   }, [selectedDeptId, authToken]);
 
-  const currentCalledToken = queue.find((o) => o.calledAt && !o.closedAt);
+  const calledTokens = queue
+    .filter((o) => o.calledAt && !o.closedAt)
+    .sort((a, b) => new Date(b.calledAt!).getTime() - new Date(a.calledAt!).getTime());
+  const currentCalledToken = calledTokens[0];
   const nextWaitingTokens = queue.filter((o) => !o.calledAt && !o.closedAt);
 
   const handleCallNext = async () => {
@@ -126,19 +127,29 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
     setActionMessage(null);
 
     try {
+      if (currentCalledToken) {
+        await closeOpdVisit(currentCalledToken.id, authToken).catch(() => {});
+      }
       const updated = await callOpdToken(nextItem.id, authToken);
-      setActionMessage(`📢 Called Token ${updated.tokenNumber} for consultation!`);
+      setActionMessage(
+        `📢 Called Token ${updated.tokenNumber} (${updated.visit?.employee?.name || 'Patient'}) for consultation!`,
+      );
       await loadQueue();
     } catch {
       // Mock call fallback
       const updatedQueue = queue.map((item) => {
+        if (currentCalledToken && item.id === currentCalledToken.id) {
+          return { ...item, closedAt: new Date().toISOString() };
+        }
         if (item.id === nextItem.id) {
           return { ...item, calledAt: new Date().toISOString() };
         }
         return item;
       });
       setQueue(updatedQueue);
-      setActionMessage(`📢 Called Token ${nextItem.tokenNumber} (${nextItem.visit?.employee?.name}) for consultation!`);
+      setActionMessage(
+        `📢 Called Token ${nextItem.tokenNumber} (${nextItem.visit?.employee?.name || 'Patient'}) for consultation!`,
+      );
     }
   };
 

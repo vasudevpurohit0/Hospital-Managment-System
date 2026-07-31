@@ -11,7 +11,10 @@ export default defineConfig({
     // Proxy API requests to the NestJS backend during development
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        // `localhost` works when Vite and Nest run on the host.  In Docker,
+        // Vite runs in the web container, where it must address the API by
+        // its Compose service name instead.
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
         changeOrigin: true,
       },
     },

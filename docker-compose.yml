@@ -19,7 +19,7 @@ services:
       POSTGRES_PASSWORD: esic_password
       POSTGRES_DB: esic_hms
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -93,7 +93,10 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: development
-      VITE_API_URL: http://api:3000
+      VITE_API_URL: http://localhost:3000
+      # Vite's server-side proxy runs inside this container, so localhost
+      # would point back to the web container rather than the NestJS API.
+      VITE_API_PROXY_TARGET: http://api:3000
     ports:
       - '5173:5173'
     volumes:
