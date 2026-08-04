@@ -60,10 +60,31 @@ export class VisitService {
       },
     });
 
+    // 4. If visit is IPD, automatically create IPD Admission Stub for Bed Allocation Desk
+    let admission = null;
+    if (dto.type === 'IPD') {
+      const existingAdmission = await this.prisma.admission.findFirst({
+        where: { visitId: visit.id },
+      });
+      if (!existingAdmission) {
+        admission = await this.prisma.admission.create({
+          data: {
+            visitId: visit.id,
+            status: 'REQUESTED',
+            eligibleCategory: 'C',
+          },
+        });
+        this.logger.log(`🏥 Created IPD Admission Request ${admission.id} for Visit ${visit.id}`);
+      } else {
+        admission = existingAdmission;
+      }
+    }
+
     this.logger.log(`✅ Created Visit ${visit.id} (${dto.type}) for Employee ${employeeId}`);
     return {
       status: 'CREATED',
       visit,
+      admission,
     };
   }
 

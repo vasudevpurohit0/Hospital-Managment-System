@@ -215,12 +215,15 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                     className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors"
                   >
                     <div className="space-y-1">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-gray-900 text-lg">
                           {item.visit.employee.name}
                         </span>
                         <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-blue-50 text-blue-700">
                           {item.visit.employee.employeeId}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                          <span>🏥</span> IPD Inpatient
                         </span>
                         <span
                           className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
