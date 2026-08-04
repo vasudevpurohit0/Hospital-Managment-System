@@ -36,6 +36,7 @@ export interface RegisterPatientPayload {
   notes?: string;
   contactPhone?: string;
   contactEmail?: string;
+  photoUrl?: string;
 }
 
 export interface PatientProfileResponse {

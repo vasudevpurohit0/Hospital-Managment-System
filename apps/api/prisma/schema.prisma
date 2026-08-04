@@ -156,6 +156,7 @@ model PatientProfile {
   allergies           String?
   chronicDiseases     String?   @map("chronic_diseases")
   bloodGroup          String?   @map("blood_group")
+  photoUrl            String?   @map("photo_url")
   notes               String?
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")

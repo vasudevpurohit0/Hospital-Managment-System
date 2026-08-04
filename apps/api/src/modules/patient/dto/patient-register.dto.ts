@@ -62,6 +62,10 @@ export class RegisterPatientDto {
   @IsEmail()
   @IsOptional()
   contactEmail?: string;
+
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
 }
 
 export class CreatePatientVisitDto {

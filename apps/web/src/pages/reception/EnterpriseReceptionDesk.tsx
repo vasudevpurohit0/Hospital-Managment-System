@@ -110,6 +110,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
   /* Form Fields */
   const [careType, setCareType] = useState<'OPD' | 'IPD'>('OPD');
+  const [photoUrl, setPhotoUrl] = useState<string>('');
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
@@ -120,6 +121,20 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [chronicDiseases, setChronicDiseases] = useState('');
   const [notes, setNotes] = useState('');
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setRegistrationError('Photo size must be under 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) setPhotoUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!employeeIdInput.trim()) return;
@@ -129,6 +144,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     setVerifiedData(null);
     setRegistrationResult(null);
     setIssuedToken(null);
+    setPhotoUrl('');
 
     try {
       const res = await verifyEmployeeId(employeeIdInput.trim(), authToken);
@@ -165,6 +181,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
           bloodGroup: bloodGroup || undefined,
           contactPhone: contactPhone || undefined,
           contactEmail: contactEmail || undefined,
+          photoUrl: photoUrl || undefined,
           notes: notes || undefined,
         },
         authToken,
@@ -564,6 +581,64 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                           </div>
                         </button>
                       </div>
+                    {/* Patient Identification Photo Upload Section */}
+                    <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2.5 shadow-sm">
+                      <label className="text-xs font-bold text-[var(--color-text-primary)] flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-primary-700 dark:text-primary-400 font-semibold">
+                          <span>📷</span> Patient Identification Photo
+                        </span>
+                        <span className="text-[11px] font-normal text-gray-500">
+                          Supports PNG, JPG, WEBP (Max 5MB)
+                        </span>
+                      </label>
+
+                      <div className="flex items-center gap-4">
+                        {photoUrl ? (
+                          <div className="relative group">
+                            <img
+                              src={photoUrl}
+                              alt="Patient Photo Preview"
+                              className="w-16 h-16 rounded-xl object-cover border-2 border-primary-500 shadow-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPhotoUrl('')}
+                              className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600 transition-colors"
+                              title="Remove Photo"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center text-gray-400">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="text-[9px] mt-0.5 font-medium">No Photo</span>
+                          </div>
+                        )}
+
+                        <div className="space-y-1 flex-1">
+                          <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100 cursor-pointer inline-flex items-center gap-1.5 transition-colors">
+                            <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            <span>{photoUrl ? 'Change Patient Photo' : 'Upload / Capture Photo'}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handlePhotoUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                            The photo will be saved with the patient record and printed on the official registration slip.
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
@@ -946,9 +1021,17 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             {previewEmployee ? (
               <>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center font-bold text-primary-600 text-sm">
-                    {previewEmployee.name.charAt(0)}
-                  </div>
+                  {photoUrl ? (
+                    <img
+                      src={photoUrl}
+                      alt={previewEmployee.name}
+                      className="w-12 h-12 rounded-full object-cover border-2 border-primary-500 shadow-sm flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center font-bold text-primary-600 text-sm flex-shrink-0">
+                      {previewEmployee.name.charAt(0)}
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <h4 className="font-bold text-sm text-[var(--color-text-primary)] truncate">
                       {previewEmployee.name}

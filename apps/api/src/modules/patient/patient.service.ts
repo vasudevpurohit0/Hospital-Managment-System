@@ -172,6 +172,7 @@ export class PatientService {
           allergies: dto.allergies || null,
           chronicDiseases: dto.chronicDiseases || null,
           bloodGroup: dto.bloodGroup || null,
+          photoUrl: dto.photoUrl || null,
           notes: dto.notes || null,
         },
       });
