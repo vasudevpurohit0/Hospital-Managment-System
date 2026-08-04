@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESIC HMS — Master Project Guide, Workflows & Developer Defect Matrix</title>
+  <style>
+    :root {
+      --navy-dark: #0B2545;
+      --navy-mid: #13315C;
+      --navy-light: #1E40AF;
+      --maroon: #800000;
+      --gold: #B45309;
+      --gold-light: #F59E0B;
+      --bg-main: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --border-color: #E2E8F0;
+      --danger-bg: #FEF2F2;
+      --danger-border: #F87171;
+      --danger-text: #991B1B;
+      --success-bg: #F0FDF4;
+      --success-text: #166534;
+      --warning-bg: #FFFBEB;
+      --warning-text: #92400E;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+      background: var(--card-bg);
+      padding: 45px;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      border: 1px solid var(--border-color);
+    }
+
+    @media print {
+      body { background: none; padding: 0; }
+      .container { box-shadow: none; border: none; padding: 0; max-width: 100%; }
+      .no-print { display: none; }
+      .page-break { page-break-before: always; }
+    }
+
+    /* Top Tricolor Strip */
+    .tricolor-bar {
+      height: 6px;
+      width: 100%;
+      display: flex;
+      border-radius: 4px 4px 0 0;
+      overflow: hidden;
+      margin-bottom: 25px;
+    }
+    .tri-saffron { background: #FF9933; width: 33.33%; }
+    .tri-white { background: #FFFFFF; width: 33.34%; border-left: 1px solid #ddd; border-right: 1px solid #ddd; }
+    .tri-green { background: #138808; width: 33.33%; }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 25px;
+      margin-bottom: 35px;
+    }
+
+    .header-left h1 {
+      font-size: 28px;
+      color: var(--navy-dark);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .header-left p {
+      font-size: 14px;
+      color: var(--maroon);
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    .btn-pdf {
+      background: var(--navy-dark);
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(11, 37, 69, 0.15);
+    }
+
+    .btn-pdf:hover {
+      background: var(--navy-mid);
+    }
+
+    /* KPI Summary Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .kpi-card {
+      background: #F8FAFC;
+      border: 1px solid var(--border-color);
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .kpi-card h3 {
+      font-size: 32px;
+      color: var(--navy-dark);
+      font-weight: 800;
+    }
+
+    .kpi-card p {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* Section Headers */
+    .section {
+      margin-bottom: 45px;
+    }
+
+    .section-title {
+      font-size: 22px;
+      color: var(--navy-dark);
+      border-left: 5px solid var(--gold);
+      padding-left: 14px;
+      margin-bottom: 22px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .pill-badge {
+      background: var(--navy-dark);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+
+    /* Callout Box */
+    .callout-info {
+      background: #EFF6FF;
+      border-left: 4px solid var(--navy-light);
+      padding: 18px 22px;
+      border-radius: 6px;
+      margin-bottom: 25px;
+      font-size: 14px;
+      color: #1E3A8A;
+    }
+
+    /* Workflow Diagram */
+    .workflow-flow {
+      display: flex;
+      justify-content: space-between;
+      gap: 15px;
+      background: #F1F5F9;
+      padding: 25px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 25px 0;
+    }
+
+    .flow-node {
+      flex: 1;
+      background: #fff;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    }
+
+    .node-number {
+      width: 32px;
+      height: 32px;
+      background: var(--navy-dark);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      margin: 0 auto 10px;
+    }
+
+    .node-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--navy-dark);
+      margin-bottom: 4px;
+    }
+
+    .node-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+
+    th, td {
+      border: 1px solid var(--border-color);
+      padding: 12px 16px;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    th {
+      background: #F1F5F9;
+      color: var(--navy-dark);
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) {
+      background: #F8FAFC;
+    }
+
+    /* Issue & Screenshot Cards */
+    .issue-card {
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      margin-bottom: 30px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    }
+
+    .issue-header {
+      background: #F1F5F9;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .issue-title {
+      font-weight: 800;
+      font-size: 16px;
+      color: var(--navy-dark);
+    }
+
+    .tag-critical {
+      background: var(--danger-bg);
+      color: var(--danger-text);
+      border: 1px solid var(--danger-border);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .tag-warning {
+      background: var(--warning-bg);
+      color: var(--warning-text);
+      border: 1px solid #FDE68A;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .issue-body {
+      padding: 24px;
+    }
+
+    .issue-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .shot-box {
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      background: #F8FAFC;
+      text-align: center;
+    }
+
+    .shot-box img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    }
+
+    .shot-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      font-weight: 600;
+    }
+
+    .code-box {
+      background: #0F172A;
+      color: #F8FAFC;
+      padding: 16px;
+      border-radius: 8px;
+      font-family: "Cascadia Code", Consolas, Monaco, monospace;
+      font-size: 12px;
+      margin-top: 12px;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    .cred-box {
+      background: #F8FAFC;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 15px;
+    }
+
+    .cred-title {
+      font-weight: 700;
+      color: var(--navy-dark);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Tricolor Top Accent -->
+  <div class="tricolor-bar">
+    <div class="tri-saffron"></div>
+    <div class="tri-white"></div>
+    <div class="tri-green"></div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>ESIC HMS — Developer Blueprint & Master Audit</h1>
+      <p>Employees' State Insurance Corporation • Monorepo Architecture & Defect Remediation</p>
+    </div>
+    <div class="header-right no-print">
+      <button class="btn-pdf" onclick="window.print()">📥 Download as PDF</button>
+    </div>
+  </div>
+
+  <!-- KPI Grid -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <h3>7</h3>
+      <p>Role Workflows</p>
+    </div>
+    <div class="kpi-card">
+      <h3>100%</h3>
+      <p>RBAC Isolation Needed</p>
+    </div>
+    <div class="kpi-card">
+      <h3>5</h3>
+      <p>Screenshots Audited</p>
+    </div>
+    <div class="kpi-card">
+      <h3>0</h3>
+      <p>JSON Crash Tolerated</p>
+    </div>
+  </div>
+
+  <!-- PART 1: PROJECT OVERVIEW FROM SCRATCH -->
+  <div class="section">
+    <div class="section-title">
+      <span>Part 1: Project Architecture Overview (From Scratch)</span>
+      <span class="pill-badge">System Setup</span>
+    </div>
+
+    <div class="callout-info">
+      <strong>👋 Developer Onboarding Note:</strong> This repository is a Turbo monorepo designed for Government of India ESIC Hospitals. It consists of a React/TypeScript frontend (<code>apps/web</code>) and a NestJS/Prisma backend (<code>apps/api</code>).
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>Technology</th>
+          <th>Directory Path</th>
+          <th>Command to Run</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Monorepo Root</strong></td>
+          <td>pnpm + Turbo</td>
+          <td><code>/ESIC/</code></td>
+          <td><code>pnpm dev</code> (Launches Web + API concurrently)</td>
+        </tr>
+        <tr>
+          <td><strong>Frontend Web App</strong></td>
+          <td>React 18, Vite, Tailwind CSS, Lucide Icons</td>
+          <td><code>/ESIC/apps/web/</code></td>
+          <td><code>pnpm --filter @esic-hms/web dev</code></td>
+        </tr>
+        <tr>
+          <td><strong>Backend API</strong></td>
+          <td>NestJS, Prisma ORM, PostgreSQL</td>
+          <td><code>/ESIC/apps/api/</code></td>
+          <td><code>npx prisma generate</code> then <code>pnpm --filter @esic-hms/api dev</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PART 2: END-TO-END HOSPITAL WORKFLOW -->
+  <div class="section">
+    <div class="section-title">
+      <span>Part 2: The Perfect End-to-End ESIC Hospital Workflow</span>
+      <span class="pill-badge">Workflow Spec</span>
+    </div>
+
+    <p>How a patient moves through the ESIC Hospital System from arrival to discharge:</p>
+
+    <div class="workflow-flow">
+      <div class="flow-node">
+        <div class="node-number">1</div>
+        <div class="node-title">Reception Desk</div>
+        <div class="node-desc">Verify ESIC IP # (10-digits), fetch dependents, assign UHID & print Queue Token.</div>
+      </div>
+      <div class="flow-node">
+        <div class="node-number">2</div>
+        <div class="node-title">OPD Queue</div>
+        <div class="node-desc">Token caller station calls token (e.g. T-0043). Patient enters Doctor Room.</div>
+      </div>
+      <div class="flow-node">
+        <div class="node-number">3</div>
+        <div class="node-title">Doctor Consultation</div>
+        <div class="node-desc">3-Panel EMR: Notes, ICD-10 Diagnosis, Rx Prescriptions & Lab orders.</div>
+      </div>
+      <div class="flow-node">
+        <div class="node-number">4</div>
+        <div class="node-title">Pharmacy Dispensing</div>
+        <div class="node-desc">FEFO automated batch queue checks stock expiry and dispenses medicine.</div>
+      </div>
+      <div class="flow-node">
+        <div class="node-number">5</div>
+        <div class="node-title">IPD Ward & Billing</div>
+        <div class="node-desc">General Ward bed allocation (No VIP beds). Zero-cost insurance clearance.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- PART 3: ROLE CREDENTIALS & ACCESS RIGHTS -->
+  <div class="section">
+    <div class="section-title">
+      <span>Part 3: Role Credentials & Access Isolation Matrix</span>
+      <span class="pill-badge">RBAC Security</span>
+    </div>
+
+    <p><strong>Current Flaw:</strong> Pharmacists currently see Receptionist and Billing menus. Each role must ONLY see its assigned screens.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Sign-In Email</th>
+          <th>Password</th>
+          <th>Allowed Sidebar Navigation ONLY</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Doctor</strong></td>
+          <td><code>doctor@esic.gov.in</code></td>
+          <td><code>DoctorPass123!</code></td>
+          <td>OPD Queue, Clinical Consultations, Patient Search</td>
+        </tr>
+        <tr>
+          <td><strong>Receptionist</strong></td>
+          <td><code>receptionist@esic.gov.in</code></td>
+          <td><code>ReceptionPass123!</code></td>
+          <td>Reception Dashboard, Beneficiary Reg, Universal Search</td>
+        </tr>
+        <tr>
+          <td><strong>Pharmacist</strong></td>
+          <td><code>pharmacist@esic.gov.in</code></td>
+          <td><code>PharmaPass123!</code></td>
+          <td>Dispensing Queue, Inventory Master, Expiry & FEFO</td>
+        </tr>
+        <tr>
+          <td><strong>Ward Nurse</strong></td>
+          <td><code>nurse@esic.gov.in</code></td>
+          <td><code>NursePass123!</code></td>
+          <td>Ward Console, Bed Allocation, Nursing Care Notes</td>
+        </tr>
+        <tr>
+          <td><strong>Store Manager</strong></td>
+          <td><code>store@esic.gov.in</code></td>
+          <td><code>StorePass123!</code></td>
+          <td>Inventory Master, Expiry Audits, Requisitions & GRN</td>
+        </tr>
+        <tr>
+          <td><strong>Billing Clerk</strong></td>
+          <td><code>billing@esic.gov.in</code></td>
+          <td><code>BillingPass123!</code></td>
+          <td>Billing Ledger, Receipts, Revenue Analytics</td>
+        </tr>
+        <tr>
+          <td><strong>SuperAdmin</strong></td>
+          <td><code>admin@esic.gov.in</code></td>
+          <td><code>AdminPass123!</code></td>
+          <td><strong>ALL MODULES & EDIT RIGHTS</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- PART 4: AUDITED DEFECTS & SCREENSHOT REVIEW -->
+  <div class="section">
+    <div class="section-title">
+      <span>Part 4: Audited System Defects & Screenshot Analysis</span>
+      <span class="tag-critical">Developer Action Needed</span>
+    </div>
+
+    <!-- Defect 1 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title">Defect #1: Pharmacy Dispensing JSON Parsing Crash</div>
+        <span class="tag-critical">P0 - Runtime Crash</span>
+      </div>
+      <div class="issue-body">
+        <div class="issue-grid">
+          <div>
+            <p><strong>Description:</strong> Opening Dispensing Queue displays a red error banner: <code>Unexpected token '&lt;', "&lt;!DOCTYPE "... is not valid JSON</code>.</p>
+            <p style="margin-top: 10px;"><strong>Root Cause:</strong> The frontend calls <code>/api/pharmacy/queue</code>. When the endpoint is unreachable or returns a 404/500 HTML page, <code>res.json()</code> throws a SyntaxError.</p>
+            <p style="margin-top: 10px;"><strong>Required Code Fix:</strong></p>
+            <div class="code-box">
+// In apps/web/src/screens/pharmacy/PharmacyWorkspace.tsx
+async function fetchQueue() {
+  try {
+    const res = await fetch('/api/pharmacy/queue');
+    const contentType = res.headers.get('content-type');
+    if (!res.ok || !contentType?.includes('application/json')) {
+      // Graceful fallback mock data
+      setQueue(MOCK_PENDING_PRESCRIPTIONS);
+      return;
+    }
+    const data = await res.json();
+    setQueue(data);
+  } catch (err) {
+    setQueue(MOCK_PENDING_PRESCRIPTIONS);
+  }
+}
+            </div>
+          </div>
+          <div class="shot-box">
+            <img src="./issues/pharmacy_dispensing_error.png" alt="Dispensing Error" onerror="this.src='https://via.placeholder.com/500x250?text=Pharmacy+Dispensing+JSON+Error'">
+            <div class="shot-label">Screenshot 1: Unexpected token '<' in Dispensing Screen</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Defect 2 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title">Defect #2: Central Inventory & Medicine Master Crash</div>
+        <span class="tag-critical">P0 - Runtime Crash</span>
+      </div>
+      <div class="issue-body">
+        <div class="issue-grid">
+          <div>
+            <p><strong>Description:</strong> Loading Inventory screen throws <code>Unexpected token '&lt;', "&lt;!DOCTYPE "... is not valid JSON</code> banner.</p>
+            <p style="margin-top: 10px;"><strong>Required Code Fix:</strong> Implement robust JSON validation in <code>apps/web/src/screens/inventory/InventoryScreen.tsx</code> and fallback to pre-seeded ESIC essential medicines list.</p>
+          </div>
+          <div class="shot-box">
+            <img src="./issues/inventory_error.png" alt="Inventory Error" onerror="this.src='https://via.placeholder.com/500x250?text=Inventory+Master+JSON+Error'">
+            <div class="shot-label">Screenshot 2: Unexpected token '<' in Inventory Screen</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Defect 3 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title">Defect #3: Expiry & FEFO Workstation API Failure</div>
+        <span class="tag-critical">P0 - Runtime Crash</span>
+      </div>
+      <div class="issue-body">
+        <div class="issue-grid">
+          <div>
+            <p><strong>Description:</strong> <code>GET /api/inventory/expiring</code> fails with HTML error response.</p>
+            <p style="margin-top: 10px;"><strong>Required Code Fix:</strong> Add mock batch fallback for <code>&le;90d / &le;30d</code> expiring drugs and bind <em>"Run Daily Expiry Scan"</em> button to batch update state.</p>
+          </div>
+          <div class="shot-box">
+            <img src="./issues/expiry_fefo_error.png" alt="Expiry FEFO Error" onerror="this.src='https://via.placeholder.com/500x250?text=Expiry+FEFO+JSON+Error'">
+            <div class="shot-label">Screenshot 3: Unexpected token '<' in FEFO Workstation</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Defect 4 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title">Defect #4: Billing & Benefit Ledger JSON Failure</div>
+        <span class="tag-critical">P0 - Runtime Crash</span>
+      </div>
+      <div class="issue-body">
+        <div class="issue-grid">
+          <div>
+            <p><strong>Description:</strong> <code>GET /api/billing/transactions</code> triggers HTML response error.</p>
+            <p style="margin-top: 10px;"><strong>Required Code Fix:</strong> Update <code>BillingLedgerScreen.tsx</code> to handle offline benefit outcomes gracefully for Permanent, Superannuated, and Contractual beneficiaries.</p>
+          </div>
+          <div class="shot-box">
+            <img src="./issues/billing_error.png" alt="Billing Error" onerror="this.src='https://via.placeholder.com/500x250?text=Billing+Ledger+JSON+Error'">
+            <div class="shot-label">Screenshot 4: Unexpected token '<' in Billing Screen</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Defect 5 -->
+    <div class="issue-card">
+      <div class="issue-header">
+        <div class="issue-title">Defect #5: OPD Consultation Queue & Re-Checking Gaps</div>
+        <span class="tag-warning">P1 - Workflow Gap</span>
+      </div>
+      <div class="issue-body">
+        <div class="issue-grid">
+          <div>
+            <p><strong>Description:</strong> The OPD Queue caller station (token <code>T-0043</code>) does not automatically transition the doctor into the EMR Consultation screen upon calling.</p>
+            <p style="margin-top: 10px;"><strong>Required Enhancements:</strong></p>
+            <ul style="margin-left: 20px; font-size: 13px;">
+              <li>Bind <em>"Complete Consultation"</em> button to open <code>DoctorWorkspace.tsx</code> directly.</li>
+              <li>Add a dedicated <strong>"Re-Checking Queue"</strong> tab for patients returning with lab/radiology reports.</li>
+            </ul>
+          </div>
+          <div class="shot-box">
+            <img src="./issues/opd_queue.png" alt="OPD Queue" onerror="this.src='https://via.placeholder.com/500x250?text=Doctor+OPD+Queue+Station'">
+            <div class="shot-label">Screenshot 5: OPD Queue Caller Station</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PART 5: DEVELOPER ACTION CHECKLIST -->
+  <div class="section">
+    <div class="section-title">
+      <span>Part 5: Final Developer Action Checklist</span>
+      <span class="pill-badge">Action Plan</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Priority</th>
+          <th>File Path</th>
+          <th>Required Action</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="tag-critical">P0</span></td>
+          <td><code>apps/web/src/components/layout/AppShell.tsx</code></td>
+          <td>Filter sidebar navigation items by logged-in role using <code>ROLE_ALLOWED_ROUTES</code>. Hide Pharmacist access to Receptionist/Billing screens.</td>
+          <td>Pending</td>
+        </tr>
+        <tr>
+          <td><span class="tag-critical">P0</span></td>
+          <td><code>apps/web/src/utils/apiClient.ts</code></td>
+          <td>Wrap all <code>fetch()</code> calls with <code>Content-Type</code> validation to prevent <code>Unexpected token '<'</code> crashes. Provide mock fallbacks.</td>
+          <td>Pending</td>
+        </tr>
+        <tr>
+          <td><span class="tag-warning">P1</span></td>
+          <td><code>apps/web/src/screens/opd/OpdQueueScreen.tsx</code></td>
+          <td>Wire token calling station directly to <code>DoctorWorkspace.tsx</code> and add Re-Checking Queue tab.</td>
+          <td>Pending</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>

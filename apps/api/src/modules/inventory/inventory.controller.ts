@@ -16,56 +16,56 @@ export class InventoryController {
   ) {}
 
   @Get('medicines')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('MedicineBatch', 'read')
   async findAllMedicines() {
     return this.inventoryService.findAllMedicines();
   }
 
   @Post('medicines')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('Medicine', 'create')
   async createMedicine(@Body() dto: CreateMedicineDto) {
     return this.inventoryService.createMedicine(dto);
   }
 
   @Post('batches')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('MedicineBatch', 'create')
   async createBatch(@Body() dto: CreateBatchDto) {
     return this.inventoryService.createBatch(dto);
   }
 
   @Get('low-stock')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('MedicineBatch', 'read')
   async getLowStockAlerts() {
     return this.inventoryService.getLowStockAlerts();
   }
 
   @Get('stock-locations')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('MedicineBatch', 'read')
   async getPharmacyStock() {
     return this.inventoryService.getPharmacyStock();
   }
 
   @Post('scan-expiry')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('MedicineBatch', 'update')
   async triggerExpiryScan() {
     return this.expiryScannerService.runDailyScan();
   }
 
   @Get('expiring')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('MedicineBatch', 'read')
   async getExpiringBatches(@Query('within') within?: string) {
     const days = within ? parseInt(within, 10) : 90;
     return this.inventoryService.getExpiringBatches(days);
   }
 
   @Post('batches/:id/quarantine')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('MedicineBatch', 'update')
   async quarantineBatch(@Param('id') id: string, @Body('reason') reason?: string) {
     return this.inventoryService.quarantineBatch(id, reason);
   }
 
   @Post('batches/:id/dispose')
-  @RequirePermission('Inventory', 'create')
+  @RequirePermission('MedicineBatch', 'update')
   async disposeBatch(@Param('id') id: string, @Body() dto: DisposeBatchDto, @Req() req: any) {
     const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
     return this.inventoryService.disposeBatch(id, dto, userId);

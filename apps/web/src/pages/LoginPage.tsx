@@ -21,8 +21,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 export const LoginPage: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuth();
-  const [identifier, setIdentifier] = useState('doctor@esic.gov.in');
-  const [password, setPassword] = useState('DoctorPass123!');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const identifierRef = useRef<HTMLInputElement>(null);
