@@ -170,7 +170,8 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                   </div>
                   <div className="mt-2 text-xs space-y-1 text-[var(--color-text-secondary)]">
                     <p className="flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-primary-500" /> Patient: Rahul Kumar
+                      <User className="w-3.5 h-3.5 text-primary-500" /> Patient:{' '}
+                      {rx.visit?.employee?.name || 'Patient'}
                     </p>
                     <p className="flex items-center gap-1.5">
                       <Stethoscope className="w-3.5 h-3.5 text-secondary-500" /> {rx.items.length}{' '}
@@ -197,8 +198,18 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                   </div>
                 </div>
 
-                <Badge variant="success" dot className="px-3 py-1">
-                  Benefit Rule: ESIC Covered (100%)
+                <Badge
+                  variant={
+                    selectedRx.visit?.employee?.employmentType?.code === 'CONTRACTUAL'
+                      ? 'warning'
+                      : 'success'
+                  }
+                  dot
+                  className="px-3 py-1"
+                >
+                  {selectedRx.visit?.employee?.employmentType?.code === 'CONTRACTUAL'
+                    ? 'Benefit Rule: Contractual (Paid)'
+                    : 'Benefit Rule: ESIC Covered (100%)'}
                 </Badge>
               </div>
 

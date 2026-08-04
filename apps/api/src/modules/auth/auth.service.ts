@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ServiceUnavailableException,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -6,122 +12,24 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 
-// Fallback in-memory users for development when PostgreSQL container is not started
-const DEV_MEMORY_USERS: Record<string, any> = {
-  'superadmin@esic.gov.in': {
-    id: '00000000-0000-0000-0000-000000000010',
-    identifier: 'superadmin@esic.gov.in',
-    passwordRaw: 'SuperAdminSecret123!',
-    roleId: '00000000-0000-0000-0000-000000000001',
-    active: true,
-    role: {
-      id: '00000000-0000-0000-0000-000000000001',
-      name: 'SuperAdmin',
-      isSystemRole: true,
-      permissions: [{ id: 'p1', resource: '*', action: '*' }],
-    },
-  },
-  'doctor@esic.gov.in': {
-    id: '00000000-0000-0000-0000-000000000088',
-    identifier: 'doctor@esic.gov.in',
-    passwordRaw: 'DoctorPass123!',
-    roleId: '00000000-0000-0000-0000-000000000003',
-    active: true,
-    role: {
-      id: '00000000-0000-0000-0000-000000000003',
-      name: 'Doctor',
-      isSystemRole: true,
-      permissions: [
-        { id: 'p1', resource: 'Employee', action: 'read' },
-        { id: 'p2', resource: 'Visit', action: 'read' },
-        { id: 'p3', resource: 'OPDVisit', action: 'read' },
-        { id: 'p4', resource: 'Diagnosis', action: 'create' },
-        { id: 'p5', resource: 'Diagnosis', action: 'read' },
-        { id: 'p6', resource: 'Prescription', action: 'create' },
-        { id: 'p7', resource: 'Prescription', action: 'read' },
-        { id: 'p8', resource: 'Prescription', action: 'sign' },
-        { id: 'p9', resource: 'Admission', action: 'create' },
-        { id: 'p10', resource: 'Admission', action: 'read' },
-        { id: 'p11', resource: 'Admission', action: 'approve' },
-      ],
-    },
-  },
-  'reception@esic.gov.in': {
-    id: '00000000-0000-0000-0000-000000000099',
-    identifier: 'reception@esic.gov.in',
-    passwordRaw: 'ReceptionPass123!',
-    roleId: '00000000-0000-0000-0000-000000000002',
-    active: true,
-    role: {
-      id: '00000000-0000-0000-0000-000000000002',
-      name: 'Reception',
-      isSystemRole: true,
-      permissions: [
-        { id: 'p1', resource: 'Employee', action: 'create' },
-        { id: 'p2', resource: 'Employee', action: 'read' },
-        { id: 'p3', resource: 'Employee', action: 'update' },
-        { id: 'p4', resource: 'HospitalUID', action: 'create' },
-        { id: 'p5', resource: 'HospitalUID', action: 'read' },
-        { id: 'p6', resource: 'Visit', action: 'create' },
-        { id: 'p7', resource: 'Visit', action: 'read' },
-        { id: 'p8', resource: 'OPDVisit', action: 'create' },
-        { id: 'p9', resource: 'OPDVisit', action: 'read' },
-      ],
-    },
-  },
-  'nurse@esic.gov.in': {
-    id: '00000000-0000-0000-0000-000000000077',
-    identifier: 'nurse@esic.gov.in',
-    passwordRaw: 'NursePass123!',
-    roleId: '00000000-0000-0000-0000-000000000004',
-    active: true,
-    role: {
-      id: '00000000-0000-0000-0000-000000000004',
-      name: 'Nurse',
-      isSystemRole: true,
-      permissions: [
-        { id: 'p1', resource: 'Employee', action: 'read' },
-        { id: 'p2', resource: 'Visit', action: 'read' },
-        { id: 'p3', resource: 'Admission', action: 'read' },
-        { id: 'p4', resource: 'AdmissionNote', action: 'create' },
-        { id: 'p5', resource: 'AdmissionNote', action: 'read' },
-      ],
-    },
-  },
-  'admission@esic.gov.in': {
-    id: '00000000-0000-0000-0000-000000000066',
-    identifier: 'admission@esic.gov.in',
-    passwordRaw: 'AdmissionPass123!',
-    roleId: '00000000-0000-0000-0000-000000000005',
-    active: true,
-    role: {
-      id: '00000000-0000-0000-0000-000000000005',
-      name: 'AdmissionDesk',
-      isSystemRole: true,
-      permissions: [
-        { id: 'p1', resource: 'Employee', action: 'read' },
-        { id: 'p2', resource: 'Visit', action: 'read' },
-        { id: 'p3', resource: 'Admission', action: 'create' },
-        { id: 'p4', resource: 'Admission', action: 'read' },
-        { id: 'p5', resource: 'Admission', action: 'update' },
-      ],
-    },
-  },
-};
-
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
 
   async validateUser(identifier: string, pass: string) {
-    let user: any = null;
+    if (!identifier || typeof identifier !== 'string' || !pass || typeof pass !== 'string') {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
+    let user;
     try {
       user = await this.prisma.user.findUnique({
-        where: { identifier },
+        where: { identifier: identifier.trim() },
         include: {
           role: {
             include: {
@@ -130,20 +38,15 @@ export class AuthService {
           },
         },
       });
-    } catch {
-      // Database connection error -> Fallback to dev memory accounts
-      const devUser = DEV_MEMORY_USERS[identifier];
-      if (devUser && pass === devUser.passwordRaw) {
-        return devUser;
+    } catch (err: unknown) {
+      if (err instanceof UnauthorizedException || err instanceof ServiceUnavailableException) {
+        throw err;
       }
+      this.logger.error(`Database error during validateUser lookup for "${identifier}":`, err);
+      throw new ServiceUnavailableException('Database service is currently unavailable.');
     }
 
     if (!user) {
-      // Check dev memory fallback if password match
-      const devUser = DEV_MEMORY_USERS[identifier];
-      if (devUser && pass === devUser.passwordRaw) {
-        return devUser;
-      }
       throw new UnauthorizedException('Invalid credentials or account inactive');
     }
 
@@ -151,7 +54,18 @@ export class AuthService {
       throw new UnauthorizedException('User account inactive');
     }
 
-    const isMatch = await bcrypt.compare(pass, user.passwordHash);
+    if (!user.passwordHash || typeof user.passwordHash !== 'string') {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    let isMatch = false;
+    try {
+      isMatch = await bcrypt.compare(pass, user.passwordHash);
+    } catch (err: unknown) {
+      this.logger.error(`Password comparison error for user "${identifier}":`, err);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     if (!isMatch) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -161,12 +75,13 @@ export class AuthService {
 
   async login(loginDto: LoginDto) {
     const user = await this.validateUser(loginDto.identifier, loginDto.password);
+    const roleName = user.role?.name || 'Doctor';
 
     const payload: JwtPayload = {
       sub: user.id,
       identifier: user.identifier,
       roleId: user.roleId,
-      roleName: user.role.name,
+      roleName,
       type: 'access',
     };
 
@@ -176,25 +91,30 @@ export class AuthService {
       type: 'refresh',
     };
 
-    const accessToken = this.jwtService.sign(payload, {
-      secret: process.env.JWT_ACCESS_SECRET || 'dev_jwt_access_secret_key_12345',
-      expiresIn: '15m',
-    });
+    try {
+      const accessToken = this.jwtService.sign(payload, {
+        secret: process.env.JWT_ACCESS_SECRET || 'dev_jwt_access_secret_key_12345',
+        expiresIn: (process.env.JWT_EXPIRES_IN as any) || '8h',
+      });
 
-    const refreshToken = this.jwtService.sign(refreshPayload, {
-      secret: process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_key_67890',
-      expiresIn: '7d',
-    });
+      const refreshToken = this.jwtService.sign(refreshPayload, {
+        secret: process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_key_67890',
+        expiresIn: '7d',
+      });
 
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        identifier: user.identifier,
-        role: user.role.name,
-      },
-    };
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          identifier: user.identifier,
+          role: roleName,
+        },
+      };
+    } catch (err: unknown) {
+      this.logger.error(`JWT signing error during login for "${user.identifier}":`, err);
+      throw new InternalServerErrorException('Failed to generate authentication tokens.');
+    }
   }
 
   async refreshTokens(refreshTokenDto: RefreshTokenDto) {
@@ -207,36 +127,28 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token type');
       }
 
-      let user: any = null;
-      try {
-        user = await this.prisma.user.findUnique({
-          where: { id: payload.sub },
-          include: { role: true },
-        });
-      } catch {
-        // Fallback to dev memory users
-        user = Object.values(DEV_MEMORY_USERS).find((u) => u.id === payload.sub);
-      }
-
-      if (!user) {
-        user = Object.values(DEV_MEMORY_USERS).find((u) => u.id === payload.sub);
-      }
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        include: { role: true },
+      });
 
       if (!user || !user.active) {
         throw new UnauthorizedException('User no longer active');
       }
 
+      const roleName = user.role?.name || 'Doctor';
+
       const accessPayload: JwtPayload = {
         sub: user.id,
         identifier: user.identifier,
         roleId: user.roleId,
-        roleName: user.role.name,
+        roleName,
         type: 'access',
       };
 
       const newAccessToken = this.jwtService.sign(accessPayload, {
         secret: process.env.JWT_ACCESS_SECRET || 'dev_jwt_access_secret_key_12345',
-        expiresIn: '15m',
+        expiresIn: (process.env.JWT_EXPIRES_IN as any) || '8h',
       });
 
       return {

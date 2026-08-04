@@ -15,6 +15,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { UserModule } from './modules/user/user.module';
+import { PatientModule } from './modules/patient/patient.module';
 import { BrandingController } from './modules/auth/branding.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RbacGuard } from './common/guards/rbac.guard';
@@ -27,6 +29,7 @@ import { SecurityMiddleware } from './common/middleware/security.middleware';
     HealthModule,
     AuthModule,
     EmployeeModule,
+    PatientModule,
     FacilityModule,
     BenefitModule,
     PrescriptionModule,
@@ -38,6 +41,7 @@ import { SecurityMiddleware } from './common/middleware/security.middleware';
     ProcurementModule,
     BillingModule,
     DashboardModule,
+    UserModule,
   ],
   controllers: [BrandingController],
   providers: [

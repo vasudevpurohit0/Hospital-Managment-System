@@ -37,105 +37,111 @@ export class PatientLookupService {
   async lookupByUid(uidInput: string): Promise<PatientLookupResult> {
     const trimmed = uidInput.trim();
 
-    try {
-      const employee = await this.prisma.employee.findFirst({
-        where: {
-          OR: [{ hospitalUid: { uidCode: trimmed } }, { employeeId: trimmed }],
+    let employee = await this.prisma.employee.findFirst({
+      where: {
+        OR: [
+          { hospitalUid: { uidCode: { equals: trimmed, mode: 'insensitive' } } },
+          { employeeId: { equals: trimmed, mode: 'insensitive' } },
+          { id: trimmed },
+        ],
+      },
+      include: {
+        hospitalUid: true,
+        patientProfile: true,
+        post: true,
+        grade: true,
+        employmentType: true,
+        visits: {
+          orderBy: { createdAt: 'desc' },
+          take: 20,
         },
-        include: {
-          hospitalUid: true,
-          patientProfile: true,
-          post: true,
-          grade: true,
-          employmentType: true,
-          visits: {
-            orderBy: { createdAt: 'desc' },
-            take: 20,
-          },
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`No patient profile found for UID / Employee ID: ${trimmed}`);
+    }
+
+    if (!employee.hospitalUid) {
+      const numPart = employee.employeeId.replace(/[^0-9]/g, '') || '1001';
+      const generatedUid = `ESIC-2026-${numPart.padStart(6, '0')}`;
+      const uidRecord = await this.prisma.hospitalUID.create({
+        data: {
+          employeeId: employee.id,
+          uidCode: generatedUid,
+          qrPayload: generatedUid,
         },
       });
-
-      if (employee && employee.hospitalUid) {
-        const openVisit = employee.visits.find((v) => v.status === 'OPEN') || null;
-        const lastVisit = employee.visits[0] || null;
-
-        return {
-          employee: {
-            id: employee.id,
-            employeeId: employee.employeeId,
-            uid: employee.hospitalUid.uidCode,
-            name: employee.name,
-            department: employee.department,
-            post: employee.post.title,
-            grade: employee.grade.payLevel,
-            employmentType: employee.employmentType.name,
-            eligibilityCategory: employee.patientProfile?.eligibilityCategory || 'C',
-          },
-          lastVisit: lastVisit
-            ? {
-                id: lastVisit.id,
-                date: lastVisit.createdAt.toISOString().split('T')[0],
-                type: lastVisit.type,
-                status: lastVisit.status,
-              }
-            : null,
-          openVisit: openVisit
-            ? {
-                id: openVisit.id,
-                date: openVisit.createdAt.toISOString().split('T')[0],
-                type: openVisit.type,
-                status: openVisit.status,
-              }
-            : null,
-          activeAdmission: null,
-          openPrescriptions: [],
-          historySummary: employee.visits.map((v) => ({
-            visitId: v.id,
-            date: v.createdAt.toISOString().split('T')[0],
-            type: v.type,
-            status: v.status,
-          })),
-        };
-      }
-    } catch {
-      // Fall through to dev memory fallback
+      (employee as any).hospitalUid = uidRecord;
     }
 
-    // Dev memory fallback for testing
-    if (trimmed === 'ESIC-2026-000001' || trimmed === 'EMP-1001') {
-      return {
-        employee: {
-          id: '00000000-0000-0000-0000-000000000100',
-          employeeId: 'EMP-1001',
-          uid: 'ESIC-2026-000001',
-          name: 'Rajesh Kumar',
-          department: 'Public Works Department',
-          post: 'Clerk',
-          grade: 'Pay Level 4',
-          employmentType: 'Permanent Employee',
+    if (!employee.patientProfile) {
+      const profileRecord = await this.prisma.patientProfile.create({
+        data: {
+          employeeId: employee.id,
           eligibilityCategory: 'C',
         },
-        lastVisit: {
-          id: 'v-1001',
-          date: new Date().toISOString().split('T')[0],
-          type: 'OPD',
-          status: 'CLOSED',
-        },
-        openVisit: null,
-        activeAdmission: null,
-        openPrescriptions: [],
-        historySummary: [
-          {
-            visitId: 'v-1001',
-            date: new Date().toISOString().split('T')[0],
-            type: 'OPD',
-            status: 'CLOSED',
-            diagnosis: 'General Health Checkup & Consultation',
-          },
-        ],
-      };
+      });
+      (employee as any).patientProfile = profileRecord;
     }
 
-    throw new NotFoundException(`No patient profile found for UID / Employee ID: ${trimmed}`);
+    const openVisit = employee.visits.find((v) => v.status === 'OPEN') || null;
+    const lastVisit = employee.visits[0] || null;
+
+    const [activeAdmission, openPrescriptions] = await Promise.all([
+      this.prisma.admission.findFirst({
+        where: {
+          visit: { employeeId: employee.id },
+          status: { in: ['ALLOCATED', 'UNDER_TREATMENT'] },
+        },
+        orderBy: { requestedAt: 'desc' },
+      }),
+      this.prisma.prescription.findMany({
+        where: {
+          visit: { employeeId: employee.id },
+          status: { in: ['DRAFT', 'SIGNED', 'PARTIALLY_DISPENSED'] },
+        },
+        include: { items: true },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      employee: {
+        id: employee.id,
+        employeeId: employee.employeeId,
+        uid: employee.hospitalUid?.uidCode || 'ESIC-2026-000000',
+        name: employee.name,
+        department: employee.department,
+        post: employee.post.title,
+        grade: employee.grade.payLevel,
+        employmentType: employee.employmentType.name,
+        eligibilityCategory: employee.patientProfile?.eligibilityCategory || 'C',
+      },
+      lastVisit: lastVisit
+        ? {
+            id: lastVisit.id,
+            date: lastVisit.createdAt.toISOString().split('T')[0],
+            type: lastVisit.type,
+            status: lastVisit.status,
+          }
+        : null,
+      openVisit: openVisit
+        ? {
+            id: openVisit.id,
+            date: openVisit.createdAt.toISOString().split('T')[0],
+            type: openVisit.type,
+            status: openVisit.status,
+          }
+        : null,
+      activeAdmission,
+      openPrescriptions,
+      historySummary: employee.visits.map((v) => ({
+        visitId: v.id,
+        date: v.createdAt.toISOString().split('T')[0],
+        type: v.type,
+        status: v.status,
+      })),
+    };
   }
 }

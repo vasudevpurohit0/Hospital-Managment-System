@@ -1,12 +1,3 @@
-// ============================================================
-// ESIC Hospital Management System — Prisma Schema
-// ============================================================
-// Phase 1: Core Data Model & RBAC Foundation
-// Includes Identity, Employee, Patient Profile, Hospital UID,
-// Employment Type, Post, Grade, User, Role, Permission, Audit Log.
-// See docs/03-data-model.md §1–2 & §10 for field specifications.
-// ============================================================
-
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
@@ -17,9 +8,613 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ------------------------------------------------------------
-// Enums
-// ------------------------------------------------------------
+model User {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  identifier           String                    @unique
+  passwordHash         String                    @map("password_hash")
+  roleId               String                    @map("role_id") @db.Uuid
+  employeeId           String?                   @unique @map("employee_id") @db.Uuid
+  active               Boolean                   @default(true)
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  admissionNotes       AdmissionNote[]
+  admissionsDoctor     Admission[]               @relation("AdmissionDoctor")
+  admissionsNurse      Admission[]               @relation("AdmissionNurse")
+  approvals            Approval[]
+  auditLogs            AuditLog[]
+  dischargeSummaries   DischargeSummary[]
+  facilityRulesCreated FacilityEligibilityRule[]
+  verifiedGRNs         GoodsReceiptNote[]
+  issuedPOs            PurchaseOrder[]
+  raisedRequisitions   PurchaseRequisition[]
+  stockTransactions    StockTransaction[]
+  storeTransfers       StoreTransfer[]
+  employee             Employee?                 @relation(fields: [employeeId], references: [id])
+  role                 Role                      @relation(fields: [roleId], references: [id])
+
+  @@map("users")
+}
+
+model Role {
+  id           String       @id @default(uuid()) @db.Uuid
+  name         String       @unique
+  isSystemRole Boolean      @default(false) @map("is_system_role")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  permissions  Permission[]
+  users        User[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        String   @id @default(uuid()) @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  resource  String
+  action    String
+  createdAt DateTime @default(now()) @map("created_at")
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, resource, action])
+  @@map("permissions")
+}
+
+model EmploymentType {
+  id           String             @id @default(uuid()) @db.Uuid
+  code         EmploymentTypeCode @unique
+  name         String
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  benefitRules BenefitRule[]
+  employees    Employee[]
+
+  @@map("employment_types")
+}
+
+model BenefitRule {
+  id               String         @id @default(uuid()) @db.Uuid
+  employmentTypeId String         @map("employment_type_id") @db.Uuid
+  medicineCategory String?        @map("medicine_category")
+  outcome          BenefitOutcome @default(COVERED)
+  active           Boolean        @default(true)
+  version          Int            @default(1)
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  employmentType   EmploymentType @relation(fields: [employmentTypeId], references: [id], onDelete: Cascade)
+
+  @@index([employmentTypeId, active])
+  @@map("benefit_rules")
+}
+
+model Post {
+  id            String                    @id @default(uuid()) @db.Uuid
+  title         String                    @unique
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+  employees     Employee[]
+  facilityRules FacilityEligibilityRule[]
+  grades        Grade[]
+
+  @@map("posts")
+}
+
+model Grade {
+  id            String                    @id @default(uuid()) @db.Uuid
+  payLevel      String                    @map("pay_level")
+  postId        String?                   @map("post_id") @db.Uuid
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+  employees     Employee[]
+  facilityRules FacilityEligibilityRule[]
+  post          Post?                     @relation(fields: [postId], references: [id])
+
+  @@map("grades")
+}
+
+model Employee {
+  id               String          @id @default(uuid()) @db.Uuid
+  employeeId       String          @unique @map("employee_id")
+  name             String
+  department       String
+  postId           String          @map("post_id") @db.Uuid
+  gradeId          String          @map("grade_id") @db.Uuid
+  employmentTypeId String          @map("employment_type_id") @db.Uuid
+  contactPhone     String?         @map("contact_phone")
+  contactEmail     String?         @map("contact_email")
+  registrationDate DateTime        @default(now()) @map("registration_date")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  employmentType   EmploymentType  @relation(fields: [employmentTypeId], references: [id])
+  grade            Grade           @relation(fields: [gradeId], references: [id])
+  post             Post            @relation(fields: [postId], references: [id])
+  hospitalUid      HospitalUID?
+  patientProfile   PatientProfile?
+  user             User?
+  visits           Visit[]
+
+  @@map("employees")
+}
+
+model HospitalUID {
+  id         String   @id @default(uuid()) @db.Uuid
+  uidCode    String   @unique @map("uid_code")
+  employeeId String   @unique @map("employee_id") @db.Uuid
+  qrPayload  String   @map("qr_payload")
+  issuedAt   DateTime @default(now()) @map("issued_at")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("hospital_uids")
+}
+
+model PatientProfile {
+  id                  String    @id @default(uuid()) @db.Uuid
+  employeeId          String    @unique @map("employee_id") @db.Uuid
+  eligibilityCategory String    @default("C") @map("eligibility_category")
+  dob                 DateTime?
+  gender              String?
+  address             String?
+  allergies           String?
+  chronicDiseases     String?   @map("chronic_diseases")
+  bloodGroup          String?   @map("blood_group")
+  notes               String?
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  employee            Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("patient_profiles")
+}
+
+model ManualVerificationCase {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @map("employee_id")
+  reason     String
+  status     String   @default("PENDING")
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("manual_verification_cases")
+}
+
+model Visit {
+  id            String         @id @default(uuid()) @db.Uuid
+  employeeId    String         @map("employee_id") @db.Uuid
+  type          VisitType
+  status        VisitStatus    @default(OPEN)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  closedAt      DateTime?      @map("closed_at")
+  admissions    Admission[]
+  diagnoses     Diagnosis[]
+  labOrders     LabOrder[]
+  opdVisit      OPDVisit?
+  prescriptions Prescription[]
+  employee      Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, status])
+  @@map("visits")
+}
+
+model Department {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String     @unique
+  code      String     @unique
+  createdAt DateTime   @default(now()) @map("created_at")
+  opdVisits OPDVisit[]
+
+  @@map("departments")
+}
+
+model OPDVisit {
+  id           String     @id @default(uuid()) @db.Uuid
+  visitId      String     @unique @map("visit_id") @db.Uuid
+  departmentId String     @map("department_id") @db.Uuid
+  tokenNumber  String     @map("token_number")
+  calledAt     DateTime?  @map("called_at")
+  closedAt     DateTime?  @map("closed_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  department   Department @relation(fields: [departmentId], references: [id])
+  visit        Visit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([departmentId, createdAt])
+  @@map("opd_visits")
+}
+
+model Diagnosis {
+  id                   String   @id @default(uuid()) @db.Uuid
+  visitId              String   @map("visit_id") @db.Uuid
+  doctorId             String   @map("doctor_id") @db.Uuid
+  symptoms             String?
+  examinationNotes     String?  @map("examination_notes")
+  diagnosisText        String   @map("diagnosis_text")
+  followUpFlag         Boolean  @default(false) @map("follow_up_flag")
+  admissionRecommended Boolean  @default(false) @map("admission_recommended")
+  createdAt            DateTime @default(now()) @map("created_at")
+  visit                Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@map("diagnoses")
+}
+
+model Prescription {
+  id        String             @id @default(uuid()) @db.Uuid
+  visitId   String             @map("visit_id") @db.Uuid
+  doctorId  String             @map("doctor_id") @db.Uuid
+  status    PrescriptionStatus @default(DRAFT)
+  signedAt  DateTime?          @map("signed_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+  items     PrescriptionItem[]
+  visit     Visit              @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@map("prescriptions")
+}
+
+model PrescriptionItem {
+  id                  String                 @id @default(uuid()) @db.Uuid
+  prescriptionId      String                 @map("prescription_id") @db.Uuid
+  medicineName        String                 @map("medicine_name")
+  dose                String
+  frequency           String
+  duration            String
+  dispensedQuantity   Int                    @default(0) @map("dispensed_quantity")
+  benefitOutcome      BenefitOutcome         @default(COVERED) @map("benefit_outcome")
+  dispenseStatus      PrescriptionItemStatus @default(PENDING) @map("dispense_status")
+  billingTransactions BillingTransaction[]
+  prescription        Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  stockTransactions   StockTransaction[]
+
+  @@map("prescription_items")
+}
+
+model LabOrder {
+  id        String   @id @default(uuid()) @db.Uuid
+  visitId   String   @map("visit_id") @db.Uuid
+  testName  String   @map("test_name")
+  orderedBy String   @map("ordered_by") @db.Uuid
+  status    String   @default("ORDERED")
+  createdAt DateTime @default(now()) @map("created_at")
+  visit     Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@map("lab_orders")
+}
+
+model Admission {
+  id                  String            @id @default(uuid()) @db.Uuid
+  visitId             String            @map("visit_id") @db.Uuid
+  status              AdmissionStatus   @default(REQUESTED)
+  eligibleCategory    String            @default("C") @map("eligible_category")
+  requestedAt         DateTime          @default(now()) @map("requested_at")
+  allocatedAt         DateTime?         @map("allocated_at")
+  dischargedAt        DateTime?         @map("discharged_at")
+  wardId              String?           @map("ward_id") @db.Uuid
+  roomId              String?           @map("room_id") @db.Uuid
+  bedId               String?           @map("bed_id") @db.Uuid
+  assignedDoctorId    String?           @map("assigned_doctor_id") @db.Uuid
+  assignedNurseId     String?           @map("assigned_nurse_id") @db.Uuid
+  notes               AdmissionNote[]
+  assignedDoctor      User?             @relation("AdmissionDoctor", fields: [assignedDoctorId], references: [id])
+  assignedNurse       User?             @relation("AdmissionNurse", fields: [assignedNurseId], references: [id])
+  bed                 Bed?              @relation("AdmissionBed", fields: [bedId], references: [id])
+  room                Room?             @relation(fields: [roomId], references: [id])
+  visit               Visit             @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  ward                Ward?             @relation(fields: [wardId], references: [id])
+  currentAdmissionBed Bed?              @relation("CurrentAdmission")
+  dischargeSummary    DischargeSummary?
+
+  @@map("admissions")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorRole      String   @map("actor_role")
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id")
+  beforeSnapshot Json?    @map("before_snapshot")
+  afterSnapshot  Json?    @map("after_snapshot")
+  createdAt      DateTime @default(now()) @map("created_at")
+  actorUser      User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model Ward {
+  id         String           @id @default(uuid()) @db.Uuid
+  name       String
+  category   FacilityCategory
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+  admissions Admission[]
+  rooms      Room[]
+
+  @@map("wards")
+}
+
+model Room {
+  id         String      @id @default(uuid()) @db.Uuid
+  wardId     String      @map("ward_id") @db.Uuid
+  roomNumber String      @map("room_number")
+  type       RoomType
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  admissions Admission[]
+  beds       Bed[]
+  ward       Ward        @relation(fields: [wardId], references: [id], onDelete: Cascade)
+
+  @@map("rooms")
+}
+
+model Bed {
+  id                 String      @id @default(uuid()) @db.Uuid
+  roomId             String      @map("room_id") @db.Uuid
+  bedNumber          String      @map("bed_number")
+  status             BedStatus   @default(AVAILABLE)
+  currentAdmissionId String?     @unique @map("current_admission_id") @db.Uuid
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+  admissions         Admission[] @relation("AdmissionBed")
+  currentAdmission   Admission?  @relation("CurrentAdmission", fields: [currentAdmissionId], references: [id])
+  room               Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("beds")
+}
+
+model FacilityEligibilityRule {
+  id              String           @id @default(uuid()) @db.Uuid
+  postId          String?          @map("post_id") @db.Uuid
+  gradeId         String?          @map("grade_id") @db.Uuid
+  category        FacilityCategory
+  wardEligibility String           @map("ward_eligibility")
+  room            String
+  facilityLevel   String           @map("facility_level")
+  active          Boolean          @default(true)
+  version         Int              @default(1)
+  createdById     String?          @map("created_by_id") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  createdBy       User?            @relation(fields: [createdById], references: [id])
+  grade           Grade?           @relation(fields: [gradeId], references: [id])
+  post            Post?            @relation(fields: [postId], references: [id])
+
+  @@index([postId, active])
+  @@index([gradeId, active])
+  @@map("facility_eligibility_rules")
+}
+
+model AdmissionNote {
+  id          String    @id @default(uuid()) @db.Uuid
+  admissionId String    @map("admission_id") @db.Uuid
+  authoredBy  String    @map("authored_by") @db.Uuid
+  note        String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  author      User      @relation(fields: [authoredBy], references: [id])
+
+  @@map("admission_notes")
+}
+
+model DischargeSummary {
+  id          String    @id @default(uuid()) @db.Uuid
+  admissionId String    @unique @map("admission_id") @db.Uuid
+  approvedBy  String    @map("approved_by") @db.Uuid
+  summaryText String    @map("summary_text")
+  generatedAt DateTime  @default(now()) @map("generated_at")
+  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  approver    User      @relation(fields: [approvedBy], references: [id])
+
+  @@map("discharge_summaries")
+}
+
+model Supplier {
+  id             String          @id @default(uuid()) @db.Uuid
+  name           String
+  contactPerson  String?         @map("contact_person")
+  phone          String?
+  email          String?
+  address        String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  batches        MedicineBatch[]
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model Medicine {
+  id               String            @id @default(uuid()) @db.Uuid
+  genericName      String            @map("generic_name")
+  brandName        String?           @map("brand_name")
+  category         String
+  strength         String
+  dosageForm       String            @map("dosage_form")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  grnItems         GRNItem[]
+  batches          MedicineBatch[]
+  poItems          POItem[]
+  requisitionItems RequisitionItem[]
+
+  @@map("medicines")
+}
+
+model MedicineBatch {
+  id                String             @id @default(uuid()) @db.Uuid
+  medicineId        String             @map("medicine_id") @db.Uuid
+  batchNumber       String             @map("batch_number")
+  manufacturer      String
+  supplierId        String?            @map("supplier_id") @db.Uuid
+  manufacturingDate DateTime           @default(now()) @map("manufacturing_date")
+  expiryDate        DateTime           @map("expiry_date")
+  purchasePrice     Decimal            @default(10.00) @map("purchase_price") @db.Decimal(10, 2)
+  issuePrice        Decimal            @map("issue_price") @db.Decimal(10, 2)
+  currentStock      Int                @map("current_stock")
+  minimumStockLevel Int                @default(50) @map("minimum_stock_level")
+  reorderLevel      Int                @default(100) @map("reorder_level")
+  storageLocation   String?            @map("storage_location")
+  stockStatus       StockStatus        @default(IN_STOCK) @map("stock_status")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  medicine          Medicine           @relation(fields: [medicineId], references: [id], onDelete: Cascade)
+  supplier          Supplier?          @relation(fields: [supplierId], references: [id])
+  pharmacyStocks    PharmacyStock[]
+  stockTransactions StockTransaction[]
+  storeTransfers    StoreTransfer[]
+
+  @@index([expiryDate])
+  @@index([stockStatus])
+  @@map("medicine_batches")
+}
+
+model PharmacyStock {
+  id              String           @id @default(uuid()) @db.Uuid
+  medicineBatchId String           @map("medicine_batch_id") @db.Uuid
+  location        PharmacyLocation @default(PHARMACY)
+  quantity        Int
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  batch           MedicineBatch    @relation(fields: [medicineBatchId], references: [id], onDelete: Cascade)
+
+  @@map("pharmacy_stocks")
+}
+
+model StockTransaction {
+  id                 String               @id @default(uuid()) @db.Uuid
+  type               StockTransactionType
+  medicineBatchId    String               @map("medicine_batch_id") @db.Uuid
+  quantity           Int
+  prescriptionItemId String?              @map("prescription_item_id") @db.Uuid
+  performedBy        String               @map("performed_by") @db.Uuid
+  createdAt          DateTime             @default(now()) @map("created_at")
+  batch              MedicineBatch        @relation(fields: [medicineBatchId], references: [id], onDelete: Cascade)
+  user               User                 @relation(fields: [performedBy], references: [id])
+  prescriptionItem   PrescriptionItem?    @relation(fields: [prescriptionItemId], references: [id])
+
+  @@map("stock_transactions")
+}
+
+model PurchaseRequisition {
+  id               String            @id @default(uuid()) @db.Uuid
+  raisedBy         String            @map("raised_by") @db.Uuid
+  status           RequisitionStatus @default(PENDING)
+  triggeredByAlert Boolean           @default(false) @map("triggered_by_alert")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  approvals        Approval[]
+  purchaseOrders   PurchaseOrder[]
+  raisedByUser     User              @relation(fields: [raisedBy], references: [id])
+  items            RequisitionItem[]
+
+  @@map("purchase_requisitions")
+}
+
+model RequisitionItem {
+  id            String              @id @default(uuid()) @db.Uuid
+  requisitionId String              @map("requisition_id") @db.Uuid
+  medicineId    String              @map("medicine_id") @db.Uuid
+  quantity      Int
+  medicine      Medicine            @relation(fields: [medicineId], references: [id])
+  requisition   PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@map("requisition_items")
+}
+
+model Approval {
+  id            String              @id @default(uuid()) @db.Uuid
+  requisitionId String              @map("requisition_id") @db.Uuid
+  approvedBy    String              @map("approved_by") @db.Uuid
+  decision      ApprovalDecision
+  notes         String?
+  decidedAt     DateTime            @default(now()) @map("decided_at")
+  approver      User                @relation(fields: [approvedBy], references: [id])
+  requisition   PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  @@map("approvals")
+}
+
+model PurchaseOrder {
+  id                String              @id @default(uuid()) @db.Uuid
+  requisitionId     String              @map("requisition_id") @db.Uuid
+  supplierId        String              @map("supplier_id") @db.Uuid
+  issuedBy          String              @map("issued_by") @db.Uuid
+  status            POStatus            @default(ISSUED)
+  issuedAt          DateTime            @default(now()) @map("issued_at")
+  goodsReceiptNotes GoodsReceiptNote[]
+  items             POItem[]
+  issuer            User                @relation(fields: [issuedBy], references: [id])
+  requisition       PurchaseRequisition @relation(fields: [requisitionId], references: [id])
+  supplier          Supplier            @relation(fields: [supplierId], references: [id])
+
+  @@map("purchase_orders")
+}
+
+model POItem {
+  id              String        @id @default(uuid()) @db.Uuid
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  medicineId      String        @map("medicine_id") @db.Uuid
+  quantity        Int
+  unitPrice       Decimal       @map("unit_price") @db.Decimal(10, 2)
+  medicine        Medicine      @relation(fields: [medicineId], references: [id])
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@map("po_items")
+}
+
+model GoodsReceiptNote {
+  id              String        @id @default(uuid()) @db.Uuid
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  verifiedBy      String        @map("verified_by") @db.Uuid
+  receivedAt      DateTime      @default(now()) @map("received_at")
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  verifier        User          @relation(fields: [verifiedBy], references: [id])
+  items           GRNItem[]
+
+  @@map("goods_receipt_notes")
+}
+
+model GRNItem {
+  id                String           @id @default(uuid()) @db.Uuid
+  grnId             String           @map("grn_id") @db.Uuid
+  medicineId        String           @map("medicine_id") @db.Uuid
+  batchNumber       String           @map("batch_number")
+  manufacturer      String
+  quantity          Int
+  manufacturingDate DateTime         @map("manufacturing_date")
+  expiryDate        DateTime         @map("expiry_date")
+  purchasePrice     Decimal          @map("purchase_price") @db.Decimal(10, 2)
+  issuePrice        Decimal          @map("issue_price") @db.Decimal(10, 2)
+  qualityCheckPass  Boolean          @default(true) @map("quality_check_pass")
+  grn               GoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  medicine          Medicine         @relation(fields: [medicineId], references: [id])
+
+  @@map("grn_items")
+}
+
+model StoreTransfer {
+  id              String           @id @default(uuid()) @db.Uuid
+  medicineBatchId String           @map("medicine_batch_id") @db.Uuid
+  fromLocation    PharmacyLocation @map("from_location")
+  toLocation      PharmacyLocation @map("to_location")
+  quantity        Int
+  transferredBy   String           @map("transferred_by") @db.Uuid
+  createdAt       DateTime         @default(now()) @map("created_at")
+  batch           MedicineBatch    @relation(fields: [medicineBatchId], references: [id])
+  user            User             @relation(fields: [transferredBy], references: [id])
+
+  @@map("store_transfers")
+}
+
+model BillingTransaction {
+  id                 String           @id @default(uuid()) @db.Uuid
+  prescriptionItemId String           @map("prescription_item_id") @db.Uuid
+  outcome            BenefitOutcome
+  amount             Decimal?         @db.Decimal(10, 2)
+  receiptReference   String?          @map("receipt_reference")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  prescriptionItem   PrescriptionItem @relation(fields: [prescriptionItemId], references: [id], onDelete: Cascade)
+
+  @@map("billing_transactions")
+}
 
 enum EmploymentTypeCode {
   PERMANENT
@@ -122,675 +717,4 @@ enum BedStatus {
   AVAILABLE
   OCCUPIED
   MAINTENANCE
-}
-
-// ------------------------------------------------------------
-// Identity & Access Control (RBAC)
-// ------------------------------------------------------------
-
-model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  identifier   String    @unique // Email or Staff ID
-  passwordHash String    @map("password_hash")
-  roleId       String    @map("role_id") @db.Uuid
-  employeeId   String?   @unique @map("employee_id") @db.Uuid
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  role         Role        @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  employee     Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-  auditLogs    AuditLog[]
-  facilityRulesCreated FacilityEligibilityRule[]
-  
-  admissionsDoctor     Admission[]        @relation("AdmissionDoctor")
-  admissionsNurse      Admission[]        @relation("AdmissionNurse")
-  admissionNotes       AdmissionNote[]
-  dischargeSummaries   DischargeSummary[]
-  stockTransactions    StockTransaction[]
-  raisedRequisitions   PurchaseRequisition[]
-  approvals            Approval[]
-  issuedPOs            PurchaseOrder[]
-  verifiedGRNs         GoodsReceiptNote[]
-  storeTransfers       StoreTransfer[]
-
-  @@map("users")
-}
-
-model Role {
-  id           String       @id @default(uuid()) @db.Uuid
-  name         String       @unique // Data-driven (e.g., "Reception", "Doctor", "DataEntryOperator")
-  isSystemRole Boolean      @default(false) @map("is_system_role")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
-
-  users        User[]
-  permissions  Permission[]
-
-  @@map("roles")
-}
-
-model Permission {
-  id        String   @id @default(uuid()) @db.Uuid
-  roleId    String   @map("role_id") @db.Uuid
-  resource  String   // e.g. "Employee", "Prescription", "FacilityEligibilityRule"
-  action    String   // e.g. "create", "read", "update", "delete", "sign", "dispense", "approve"
-  createdAt DateTime @default(now()) @map("created_at")
-
-  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@unique([roleId, resource, action])
-  @@map("permissions")
-}
-
-// ------------------------------------------------------------
-// Employee & Patient Identity
-// ------------------------------------------------------------
-
-model EmploymentType {
-  id           String             @id @default(uuid()) @db.Uuid
-  code         EmploymentTypeCode @unique
-  name         String
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
-
-  employees    Employee[]
-  benefitRules BenefitRule[]
-
-  @@map("employment_types")
-}
-
-model BenefitRule {
-  id               String         @id @default(uuid()) @db.Uuid
-  employmentTypeId String         @map("employment_type_id") @db.Uuid
-  medicineCategory String?        @map("medicine_category") // Nullable: null/blank = all categories
-  outcome          BenefitOutcome @default(COVERED)
-  active           Boolean        @default(true)
-  version          Int            @default(1)
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
-
-  employmentType   EmploymentType @relation(fields: [employmentTypeId], references: [id], onDelete: Cascade)
-
-  @@index([employmentTypeId, active])
-  @@map("benefit_rules")
-}
-
-model Post {
-  id        String   @id @default(uuid()) @db.Uuid
-  title     String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  grades        Grade[]
-  employees     Employee[]
-  facilityRules FacilityEligibilityRule[]
-
-  @@map("posts")
-}
-
-model Grade {
-  id        String   @id @default(uuid()) @db.Uuid
-  payLevel  String   @map("pay_level")
-  postId    String?  @map("post_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  post          Post?                     @relation(fields: [postId], references: [id], onDelete: SetNull)
-  employees     Employee[]
-  facilityRules FacilityEligibilityRule[]
-
-  @@map("grades")
-}
-
-model Employee {
-  id               String   @id @default(uuid()) @db.Uuid
-  employeeId       String   @unique @map("employee_id") // Official Labour Dept ID
-  name             String
-  department       String
-  postId           String   @map("post_id") @db.Uuid
-  gradeId          String   @map("grade_id") @db.Uuid
-  employmentTypeId String   @map("employment_type_id") @db.Uuid
-  contactPhone     String?  @map("contact_phone")
-  contactEmail     String?  @map("contact_email")
-  registrationDate DateTime @default(now()) @map("registration_date")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-
-  post             Post           @relation(fields: [postId], references: [id], onDelete: Restrict)
-  grade            Grade          @relation(fields: [gradeId], references: [id], onDelete: Restrict)
-  employmentType   EmploymentType @relation(fields: [employmentTypeId], references: [id], onDelete: Restrict)
-  
-  user             User?
-  hospitalUid      HospitalUID?
-  patientProfile   PatientProfile?
-  visits           Visit[]
-
-  @@map("employees")
-}
-
-model HospitalUID {
-  id         String   @id @default(uuid()) @db.Uuid
-  uidCode    String   @unique @map("uid_code") // Format: ESIC-{year}-{seq}
-  employeeId String   @unique @map("employee_id") @db.Uuid
-  qrPayload  String   @map("qr_payload")
-  issuedAt   DateTime @default(now()) @map("issued_at")
-
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@map("hospital_uids")
-}
-
-model PatientProfile {
-  id                  String   @id @default(uuid()) @db.Uuid
-  employeeId          String   @unique @map("employee_id") @db.Uuid
-  eligibilityCategory String   @default("C") @map("eligibility_category")
-  notes               String?  @db.Text
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  employee            Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  @@map("patient_profiles")
-}
-
-model ManualVerificationCase {
-  id         String   @id @default(uuid()) @db.Uuid
-  employeeId String   @map("employee_id")
-  reason     String
-  status     String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  createdBy  String?  @map("created_by") @db.Uuid
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  @@map("manual_verification_cases")
-}
-
-model Visit {
-  id           String         @id @default(uuid()) @db.Uuid
-  employeeId   String         @map("employee_id") @db.Uuid
-  type         VisitType
-  status       VisitStatus    @default(OPEN)
-  createdAt    DateTime       @default(now()) @map("created_at")
-  closedAt     DateTime?      @map("closed_at")
-
-  employee     Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  opdVisit     OPDVisit?
-  diagnoses    Diagnosis[]
-  prescriptions Prescription[]
-  labOrders    LabOrder[]
-  admissions   Admission[]
-
-  @@index([employeeId, status])
-  @@map("visits")
-}
-
-model Department {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String     @unique
-  code      String     @unique // e.g., CARDIO, ORTHO, GENMED
-  createdAt DateTime   @default(now()) @map("created_at")
-
-  opdVisits OPDVisit[]
-
-  @@map("departments")
-}
-
-model OPDVisit {
-  id           String      @id @default(uuid()) @db.Uuid
-  visitId      String      @unique @map("visit_id") @db.Uuid
-  departmentId String      @map("department_id") @db.Uuid
-  tokenNumber  String      @map("token_number") // e.g. CARDIO-014
-  calledAt     DateTime?   @map("called_at")
-  closedAt     DateTime?   @map("closed_at")
-  createdAt    DateTime    @default(now()) @map("created_at")
-
-  visit        Visit       @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  department   Department  @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-
-  @@index([departmentId, createdAt])
-  @@map("opd_visits")
-}
-
-model Diagnosis {
-  id                   String   @id @default(uuid()) @db.Uuid
-  visitId              String   @map("visit_id") @db.Uuid
-  doctorId             String   @map("doctor_id") @db.Uuid
-  symptoms             String?  @db.Text
-  examinationNotes     String?  @map("examination_notes") @db.Text
-  diagnosisText        String   @map("diagnosis_text") @db.Text
-  followUpFlag         Boolean  @default(false) @map("follow_up_flag")
-  admissionRecommended Boolean  @default(false) @map("admission_recommended")
-  createdAt            DateTime @default(now()) @map("created_at")
-
-  visit                Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
-
-  @@map("diagnoses")
-}
-
-model Prescription {
-  id        String             @id @default(uuid()) @db.Uuid
-  visitId   String             @map("visit_id") @db.Uuid
-  doctorId  String             @map("doctor_id") @db.Uuid
-  status    PrescriptionStatus @default(DRAFT)
-  signedAt  DateTime?          @map("signed_at")
-  createdAt DateTime           @default(now()) @map("created_at")
-  updatedAt DateTime           @updatedAt @map("updated_at")
-
-  visit     Visit              @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  items     PrescriptionItem[]
-
-  @@map("prescriptions")
-}
-
-model PrescriptionItem {
-  id                String                 @id @default(uuid()) @db.Uuid
-  prescriptionId    String                 @map("prescription_id") @db.Uuid
-  medicineName      String                 @map("medicine_name")
-  dose              String
-  frequency         String
-  duration          String
-  dispensedQuantity Int                    @default(0) @map("dispensed_quantity")
-  benefitOutcome    BenefitOutcome         @default(COVERED) @map("benefit_outcome")
-  dispenseStatus    PrescriptionItemStatus @default(PENDING) @map("dispense_status")
-
-  prescription      Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
-  stockTransactions StockTransaction[]
-  billingTransactions BillingTransaction[]
-
-  @@map("prescription_items")
-}
-
-model LabOrder {
-  id        String   @id @default(uuid()) @db.Uuid
-  visitId   String   @map("visit_id") @db.Uuid
-  testName  String   @map("test_name")
-  orderedBy String   @map("ordered_by") @db.Uuid
-  status    String   @default("ORDERED")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  visit     Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
-
-  @@map("lab_orders")
-}
-
-model Admission {
-  id               String          @id @default(uuid()) @db.Uuid
-  visitId          String          @map("visit_id") @db.Uuid
-  status           AdmissionStatus @default(REQUESTED)
-  eligibleCategory String          @default("C") @map("eligible_category")
-  requestedAt      DateTime        @default(now()) @map("requested_at")
-  allocatedAt      DateTime?       @map("allocated_at")
-  dischargedAt     DateTime?       @map("discharged_at")
-  wardId           String?         @map("ward_id") @db.Uuid
-  roomId           String?         @map("room_id") @db.Uuid
-  bedId            String?         @map("bed_id") @db.Uuid
-  assignedDoctorId String?         @map("assigned_doctor_id") @db.Uuid
-  assignedNurseId  String?         @map("assigned_nurse_id") @db.Uuid
-
-  visit            Visit           @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  ward             Ward?           @relation(fields: [wardId], references: [id], onDelete: SetNull)
-  room             Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  bed              Bed?            @relation("AdmissionBed", fields: [bedId], references: [id], onDelete: SetNull)
-  currentAdmissionBed Bed?         @relation("CurrentAdmission")
-  assignedDoctor   User?           @relation("AdmissionDoctor", fields: [assignedDoctorId], references: [id], onDelete: SetNull)
-  assignedNurse    User?           @relation("AdmissionNurse", fields: [assignedNurseId], references: [id], onDelete: SetNull)
-  notes            AdmissionNote[]
-  dischargeSummary DischargeSummary?
-
-  @@map("admissions")
-}
-
-// ------------------------------------------------------------
-// Audit Log (Append-Only)
-// ------------------------------------------------------------
-
-model AuditLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  actorUserId    String?  @map("actor_user_id") @db.Uuid
-  actorRole      String   @map("actor_role") // Denormalized role name
-  action         String   // e.g. "employee.create", "role.update"
-  entityType     String   @map("entity_type")
-  entityId       String   @map("entity_id")
-  beforeSnapshot Json?    @map("before_snapshot")
-  afterSnapshot  Json?    @map("after_snapshot")
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  actorUser      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-
-  @@index([createdAt])
-  @@index([entityType, entityId])
-  @@map("audit_logs")
-}
-
-// ------------------------------------------------------------
-// Facility Eligibility & Admission (IPD) - Wards, Rooms, Beds
-// ------------------------------------------------------------
-
-model Ward {
-  id        String           @id @default(uuid()) @db.Uuid
-  name      String
-  category  FacilityCategory
-  createdAt DateTime         @default(now()) @map("created_at")
-  updatedAt DateTime         @updatedAt @map("updated_at")
-
-  rooms      Room[]
-  admissions Admission[]
-
-  @@map("wards")
-}
-
-model Room {
-  id         String   @id @default(uuid()) @db.Uuid
-  wardId     String   @map("ward_id") @db.Uuid
-  roomNumber String   @map("room_number")
-  type       RoomType
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  ward       Ward        @relation(fields: [wardId], references: [id], onDelete: Cascade)
-  beds       Bed[]
-  admissions Admission[]
-
-  @@map("rooms")
-}
-
-model Bed {
-  id                 String    @id @default(uuid()) @db.Uuid
-  roomId             String    @map("room_id") @db.Uuid
-  bedNumber          String    @map("bed_number")
-  status             BedStatus @default(AVAILABLE)
-  currentAdmissionId String?   @unique @map("current_admission_id") @db.Uuid
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-
-  room               Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  currentAdmission   Admission? @relation("CurrentAdmission", fields: [currentAdmissionId], references: [id], onDelete: SetNull)
-  admissions         Admission[] @relation("AdmissionBed")
-
-  @@map("beds")
-}
-
-model FacilityEligibilityRule {
-  id              String           @id @default(uuid()) @db.Uuid
-  postId          String?          @map("post_id") @db.Uuid
-  gradeId         String?          @map("grade_id") @db.Uuid
-  category        FacilityCategory
-  wardEligibility String           @map("ward_eligibility") // e.g. "Private Ward"
-  room            String           // e.g. "Single Room"
-  facilityLevel   String           @map("facility_level") // e.g. "Premium"
-  active          Boolean          @default(true)
-  version         Int              @default(1)
-  createdById     String?          @map("created_by_id") @db.Uuid
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  post            Post?            @relation(fields: [postId], references: [id], onDelete: SetNull)
-  grade           Grade?           @relation(fields: [gradeId], references: [id], onDelete: SetNull)
-  createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
-
-  @@index([postId, active])
-  @@index([gradeId, active])
-  @@map("facility_eligibility_rules")
-}
-
-model AdmissionNote {
-  id          String    @id @default(uuid()) @db.Uuid
-  admissionId String    @map("admission_id") @db.Uuid
-  authoredBy  String    @map("authored_by") @db.Uuid
-  note        String    @db.Text
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
-  author      User      @relation(fields: [authoredBy], references: [id], onDelete: Restrict)
-
-  @@map("admission_notes")
-}
-
-model DischargeSummary {
-  id          String    @id @default(uuid()) @db.Uuid
-  admissionId String    @unique @map("admission_id") @db.Uuid
-  approvedBy  String    @map("approved_by") @db.Uuid
-  summaryText String    @map("summary_text") @db.Text
-  generatedAt DateTime  @default(now()) @map("generated_at")
-
-  admission   Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
-  approver    User      @relation(fields: [approvedBy], references: [id], onDelete: Restrict)
-
-  @@map("discharge_summaries")
-}
-
-// ------------------------------------------------------------
-// Inventory, Pharmacy & Dispensing
-// ------------------------------------------------------------
-
-model Supplier {
-  id            String   @id @default(uuid()) @db.Uuid
-  name          String
-  contactPerson String?  @map("contact_person")
-  phone         String?
-  email         String?
-  address       String?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  batches        MedicineBatch[]
-  purchaseOrders PurchaseOrder[]
-
-  @@map("suppliers")
-}
-
-model Medicine {
-  id          String   @id @default(uuid()) @db.Uuid
-  genericName String   @map("generic_name")
-  brandName   String?  @map("brand_name")
-  category    String   // Matches BenefitRule category
-  strength    String   // e.g. "500mg"
-  dosageForm  String   @map("dosage_form") // e.g. "Tablet"
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  batches          MedicineBatch[]
-  requisitionItems RequisitionItem[]
-  poItems          POItem[]
-  grnItems         GRNItem[]
-
-  @@map("medicines")
-}
-
-model MedicineBatch {
-  id                String             @id @default(uuid()) @db.Uuid
-  medicineId        String             @map("medicine_id") @db.Uuid
-  batchNumber       String             @map("batch_number")
-  manufacturer      String
-  supplierId        String?            @map("supplier_id") @db.Uuid
-  manufacturingDate DateTime           @default(now()) @map("manufacturing_date")
-  expiryDate        DateTime           @map("expiry_date")
-  purchasePrice     Decimal            @default(10.00) @map("purchase_price") @db.Decimal(10, 2)
-  issuePrice        Decimal            @map("issue_price") @db.Decimal(10, 2)
-  currentStock      Int                @map("current_stock")
-  minimumStockLevel Int                @default(50) @map("minimum_stock_level")
-  reorderLevel      Int                @default(100) @map("reorder_level")
-  storageLocation   String?            @map("storage_location")
-  stockStatus       StockStatus        @default(IN_STOCK) @map("stock_status")
-  createdAt         DateTime           @default(now()) @map("created_at")
-
-  medicine          Medicine           @relation(fields: [medicineId], references: [id], onDelete: Cascade)
-  supplier          Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  stockTransactions StockTransaction[]
-  pharmacyStocks    PharmacyStock[]
-  storeTransfers    StoreTransfer[]
-
-  @@index([expiryDate])
-  @@index([stockStatus])
-  @@map("medicine_batches")
-}
-
-model PharmacyStock {
-  id              String           @id @default(uuid()) @db.Uuid
-  medicineBatchId String           @map("medicine_batch_id") @db.Uuid
-  location        PharmacyLocation @default(PHARMACY)
-  quantity        Int
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  batch           MedicineBatch    @relation(fields: [medicineBatchId], references: [id], onDelete: Cascade)
-
-  @@map("pharmacy_stocks")
-}
-
-model StockTransaction {
-  id                 String               @id @default(uuid()) @db.Uuid
-  type               StockTransactionType
-  medicineBatchId    String               @map("medicine_batch_id") @db.Uuid
-  quantity           Int                  // Negative for DISPENSE
-  prescriptionItemId String?              @map("prescription_item_id") @db.Uuid
-  performedBy        String               @map("performed_by") @db.Uuid
-  createdAt          DateTime             @default(now()) @map("created_at")
-
-  batch              MedicineBatch        @relation(fields: [medicineBatchId], references: [id], onDelete: Cascade)
-  user               User                 @relation(fields: [performedBy], references: [id], onDelete: Restrict)
-  prescriptionItem   PrescriptionItem?    @relation(fields: [prescriptionItemId], references: [id], onDelete: SetNull)
-
-  @@map("stock_transactions")
-}
-
-// ------------------------------------------------------------
-// Supply Chain & Procurement
-// ------------------------------------------------------------
-
-model PurchaseRequisition {
-  id               String            @id @default(uuid()) @db.Uuid
-  raisedBy         String            @map("raised_by") @db.Uuid
-  status           RequisitionStatus @default(PENDING)
-  triggeredByAlert Boolean           @default(false) @map("triggered_by_alert")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
-
-  raisedByUser     User              @relation(fields: [raisedBy], references: [id])
-  items            RequisitionItem[]
-  approvals        Approval[]
-  purchaseOrders   PurchaseOrder[]
-
-  @@map("purchase_requisitions")
-}
-
-model RequisitionItem {
-  id            String              @id @default(uuid()) @db.Uuid
-  requisitionId String              @map("requisition_id") @db.Uuid
-  medicineId    String              @map("medicine_id") @db.Uuid
-  quantity      Int
-
-  requisition   PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-  medicine      Medicine            @relation(fields: [medicineId], references: [id])
-
-  @@map("requisition_items")
-}
-
-model Approval {
-  id            String              @id @default(uuid()) @db.Uuid
-  requisitionId String              @map("requisition_id") @db.Uuid
-  approvedBy    String              @map("approved_by") @db.Uuid
-  decision      ApprovalDecision
-  notes         String?
-  decidedAt     DateTime            @default(now()) @map("decided_at")
-
-  requisition   PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
-  approver      User                @relation(fields: [approvedBy], references: [id])
-
-  @@map("approvals")
-}
-
-model PurchaseOrder {
-  id                String              @id @default(uuid()) @db.Uuid
-  requisitionId     String              @map("requisition_id") @db.Uuid
-  supplierId        String              @map("supplier_id") @db.Uuid
-  issuedBy          String              @map("issued_by") @db.Uuid
-  status            POStatus            @default(ISSUED)
-  issuedAt          DateTime            @default(now()) @map("issued_at")
-
-  requisition       PurchaseRequisition @relation(fields: [requisitionId], references: [id])
-  supplier          Supplier            @relation(fields: [supplierId], references: [id])
-  issuer            User                @relation(fields: [issuedBy], references: [id])
-  items             POItem[]
-  goodsReceiptNotes GoodsReceiptNote[]
-
-  @@map("purchase_orders")
-}
-
-model POItem {
-  id              String        @id @default(uuid()) @db.Uuid
-  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
-  medicineId      String        @map("medicine_id") @db.Uuid
-  quantity        Int
-  unitPrice       Decimal       @map("unit_price") @db.Decimal(10, 2)
-
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  medicine        Medicine      @relation(fields: [medicineId], references: [id])
-
-  @@map("po_items")
-}
-
-model GoodsReceiptNote {
-  id              String        @id @default(uuid()) @db.Uuid
-  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
-  verifiedBy      String        @map("verified_by") @db.Uuid
-  receivedAt      DateTime      @default(now()) @map("received_at")
-
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  verifier        User          @relation(fields: [verifiedBy], references: [id])
-  items           GRNItem[]
-
-  @@map("goods_receipt_notes")
-}
-
-model GRNItem {
-  id                String           @id @default(uuid()) @db.Uuid
-  grnId             String           @map("grn_id") @db.Uuid
-  medicineId        String           @map("medicine_id") @db.Uuid
-  batchNumber       String           @map("batch_number")
-  manufacturer      String
-  quantity          Int
-  manufacturingDate DateTime         @map("manufacturing_date")
-  expiryDate        DateTime         @map("expiry_date")
-  purchasePrice     Decimal          @map("purchase_price") @db.Decimal(10, 2)
-  issuePrice        Decimal          @map("issue_price") @db.Decimal(10, 2)
-  qualityCheckPass  Boolean          @default(true) @map("quality_check_pass")
-
-  grn               GoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
-  medicine          Medicine         @relation(fields: [medicineId], references: [id])
-
-  @@map("grn_items")
-}
-
-model StoreTransfer {
-  id              String           @id @default(uuid()) @db.Uuid
-  medicineBatchId String           @map("medicine_batch_id") @db.Uuid
-  fromLocation    PharmacyLocation @map("from_location")
-  toLocation      PharmacyLocation @map("to_location")
-  quantity        Int
-  transferredBy   String           @map("transferred_by") @db.Uuid
-  createdAt       DateTime         @default(now()) @map("created_at")
-
-  batch           MedicineBatch    @relation(fields: [medicineBatchId], references: [id])
-  user            User             @relation(fields: [transferredBy], references: [id])
-
-  @@map("store_transfers")
-}
-
-// ------------------------------------------------------------
-// Billing & Benefit Ledger
-// ------------------------------------------------------------
-
-model BillingTransaction {
-  id                 String           @id @default(uuid()) @db.Uuid
-  prescriptionItemId String           @map("prescription_item_id") @db.Uuid
-  outcome            BenefitOutcome
-  amount             Decimal?         @db.Decimal(10, 2)
-  receiptReference   String?          @map("receipt_reference")
-  createdAt          DateTime         @default(now()) @map("created_at")
-
-  prescriptionItem   PrescriptionItem @relation(fields: [prescriptionItemId], references: [id], onDelete: Cascade)
-
-  @@map("billing_transactions")
 }

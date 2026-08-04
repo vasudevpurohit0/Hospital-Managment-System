@@ -3,7 +3,12 @@ import {
   fetchAdmissions,
   addAdmissionNote,
   dischargePatient,
+  fetchAllWards,
+  createWardAndBed,
+  deleteWard,
+  deleteBed,
   AdmissionRecord,
+  WardManagementRecord,
 } from '../../api/admission.api';
 
 interface WardStaffScreenProps {
@@ -11,51 +16,11 @@ interface WardStaffScreenProps {
   userRole: string; // Used to restrict Discharge approval to Doctors/SuperAdmin
 }
 
-const MOCK_WARD_ADMISSIONS: AdmissionRecord[] = [
-  {
-    id: 'adm-101',
-    visitId: 'v-1003',
-    status: 'ALLOCATED',
-    eligibleCategory: 'GENERAL_WARD',
-    requestedAt: new Date(Date.now() - 86400000).toISOString(),
-    allocatedAt: new Date(Date.now() - 3600000).toISOString(),
-    dischargedAt: null,
-    wardId: 'ward-general-male',
-    roomId: 'room-1',
-    bedId: 'bed-101',
-    assignedDoctorId: 'doc-1',
-    assignedNurseId: 'nurse-1',
-    visit: {
-      id: 'v-1003',
-      employee: {
-        id: 'emp-1001',
-        employeeId: 'EMP-1001',
-        name: 'Rahul Kumar',
-        department: 'Labour Dept',
-        post: { title: 'Senior Assistant' },
-        grade: { payLevel: 'Level 6' },
-      },
-    },
-    bed: {
-      id: 'bed-101',
-      bedNumber: 'B-101 (Male General Ward)',
-      status: 'OCCUPIED',
-    },
-    notes: [
-      {
-        id: 'note-1',
-        admissionId: 'adm-101',
-        authoredBy: 'Ns. Priya Singh',
-        note: 'Patient admitted to Male General Ward Bed B-101. Vitals stable. IV fluids started.',
-        createdAt: new Date(Date.now() - 1800000).toISOString(),
-        author: { id: 'nurse-1', identifier: 'Ns. Priya Singh' },
-      },
-    ],
-  },
-];
-
 export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, userRole }) => {
+  const [activeTab, setActiveTab] = useState<'rounds' | 'management'>('rounds');
+
   const [admissions, setAdmissions] = useState<AdmissionRecord[]>([]);
+  const [wards, setWards] = useState<WardManagementRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,18 +36,28 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const [summaryText, setSummaryText] = useState('');
   const [submittingDischarge, setSubmittingDischarge] = useState(false);
 
-  const loadAdmissions = useCallback(async () => {
+  // Ward creation modal state
+  const [showAddWardModal, setShowAddWardModal] = useState(false);
+  const [selectedWardId, setSelectedWardId] = useState<string>('');
+  const [wardName, setWardName] = useState('');
+  const [wardCategory, setWardCategory] = useState('C');
+  const [roomNumber, setRoomNumber] = useState('Room 101');
+  const [bedNumber, setBedNumber] = useState('');
+  const [bedCount, setBedCount] = useState('3');
+  const [submittingWard, setSubmittingWard] = useState(false);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAdmissions(authToken);
-      if (data && data.length > 0) {
-        setAdmissions(data);
-      } else {
-        setAdmissions(MOCK_WARD_ADMISSIONS);
-      }
-    } catch {
-      setAdmissions(MOCK_WARD_ADMISSIONS);
+      const [admData, wardData] = await Promise.all([
+        fetchAdmissions(authToken),
+        fetchAllWards(authToken),
+      ]);
+      setAdmissions(admData);
+      setWards(wardData);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load ward console data');
     } finally {
       setLoading(false);
     }
@@ -90,9 +65,62 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
 
   useEffect(() => {
     if (authToken) {
-      loadAdmissions();
+      loadData();
     }
-  }, [authToken, loadAdmissions]);
+  }, [authToken, loadData]);
+
+  const handleCreateWardBedSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedWardId && !wardName.trim()) return;
+
+    setSubmittingWard(true);
+    setError(null);
+    try {
+      await createWardAndBed(
+        {
+          wardId: selectedWardId || undefined,
+          wardName: !selectedWardId ? wardName.trim() : undefined,
+          wardCategory: !selectedWardId ? wardCategory : undefined,
+          roomNumber: roomNumber.trim(),
+          bedNumber: bedNumber.trim() || undefined,
+          count: parseInt(bedCount, 10) || 1,
+        },
+        authToken,
+      );
+      setShowAddWardModal(false);
+      setSelectedWardId('');
+      setWardName('');
+      setRoomNumber('');
+      setBedNumber('');
+      await loadData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create ward/beds');
+    } finally {
+      setSubmittingWard(false);
+    }
+  };
+
+  const handleDeleteWard = async (wardId: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete Ward "${name}" and all its beds?`)) return;
+    setError(null);
+    try {
+      await deleteWard(wardId, authToken);
+      await loadData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete ward');
+    }
+  };
+
+  const handleDeleteBed = async (bedId: string, bedNum: string) => {
+    if (!window.confirm(`Delete Bed ${bedNum}?`)) return;
+    setError(null);
+    try {
+      await deleteBed(bedId, authToken);
+      await loadData();
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete bed');
+    }
+  };
 
   const handleAddNoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +132,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
       await addAdmissionNote(selectedAdmissionForNote.id, { note: newNote.trim() }, authToken);
       setNewNote('');
       setSelectedAdmissionForNote(null);
-      await loadAdmissions();
+      await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -127,7 +155,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
       );
       setSummaryText('');
       setDischargingAdmission(null);
-      await loadAdmissions();
+      await loadData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
@@ -140,23 +168,74 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const isDoctorOrAdmin =
     userRole === 'Doctor' || userRole === 'SuperAdmin' || userRole === 'Administrator';
 
+  // Stats calculation for Ward Management
+  const totalWards = wards.length;
+  const totalBeds = wards.reduce(
+    (acc, w) => acc + w.rooms.reduce((rAcc, r) => rAcc + r.beds.length, 0),
+    0,
+  );
+  const availableBedsCount = wards.reduce(
+    (acc, w) =>
+      acc +
+      w.rooms.reduce(
+        (rAcc, r) => rAcc + r.beds.filter((b) => b.status === 'AVAILABLE').length,
+        0,
+      ),
+    0,
+  );
+  const occupiedBedsCount = totalBeds - availableBedsCount;
+
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+      {/* Console Header */}
+      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 pb-4 border-b border-gray-200">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
-            Ward & Clinical Round Console
+            Ward & Inpatient Care Console
           </h2>
           <p className="text-sm text-gray-500">
-            Log daily observation notes and authorize doctor-approved discharge for active ward
-            patients.
+            Log daily observation notes, manage hospital ward beds, and authorize patient discharge.
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          {activeTab === 'management' && (
+            <button
+              onClick={() => setShowAddWardModal(true)}
+              className="px-4 py-2 bg-esic-primary hover:bg-esic-primary-dark text-white rounded-lg text-sm font-semibold shadow-sm transition-all flex items-center gap-2"
+            >
+              <span>+ Add New Ward / Bed</span>
+            </button>
+          )}
+          <button
+            onClick={loadData}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 text-gray-700 bg-white shadow-sm transition-all"
+          >
+            🔄 Refresh Console
+          </button>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-gray-200 gap-4">
         <button
-          onClick={loadAdmissions}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 text-gray-700 bg-white shadow-sm transition-all"
+          onClick={() => setActiveTab('rounds')}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'rounds'
+              ? 'border-esic-primary text-esic-primary'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
         >
-          🔄 Refresh Ward
+          <span>🧑‍⚕️</span> Clinical Rounds & Active Patients ({activeAdmissions.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('management')}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'management'
+              ? 'border-esic-primary text-esic-primary'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <span>🏥</span> Ward & Bed Management Master ({totalWards} Wards, {totalBeds} Beds)
         </button>
       </div>
 
@@ -202,7 +281,8 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
             ></path>
           </svg>
         </div>
-      ) : (
+      ) : activeTab === 'rounds' ? (
+        /* TAB 1: CLINICAL ROUNDS & PATIENTS */
         <div className="space-y-4">
           <h3 className="text-lg font-bold text-gray-800">
             Patients Under Treatment ({activeAdmissions.length})
@@ -220,7 +300,6 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                   key={adm.id}
                   className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row justify-between gap-6 hover:border-gray-200 transition-all"
                 >
-                  {/* Left Column: Demographics & Allocation details */}
                   <div className="flex-grow space-y-4">
                     <div className="flex justify-between items-start">
                       <div>
@@ -266,7 +345,6 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                       </div>
                     </div>
 
-                    {/* Notes history */}
                     <div className="space-y-2">
                       <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">
                         Clinical Round Notes ({adm.notes?.length || 0})
@@ -292,7 +370,6 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                     </div>
                   </div>
 
-                  {/* Right Column: Actions */}
                   <div className="flex flex-row md:flex-col justify-end gap-3 min-w-[150px]">
                     <button
                       onClick={() => setSelectedAdmissionForNote(adm)}
@@ -321,6 +398,132 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
               ))}
             </div>
           )}
+        </div>
+      ) : (
+        /* TAB 2: WARD & BED MANAGEMENT CONSOLE */
+        <div className="space-y-6">
+          {/* Summary KPI Bar */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <span className="text-xs font-bold text-gray-400 uppercase">Hospital Wards</span>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{totalWards}</p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <span className="text-xs font-bold text-gray-400 uppercase">Total Ward Beds</span>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{totalBeds}</p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <span className="text-xs font-bold text-gray-400 uppercase">Available Beds</span>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">{availableBedsCount}</p>
+            </div>
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <span className="text-xs font-bold text-gray-400 uppercase">Occupied Beds</span>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{occupiedBedsCount}</p>
+            </div>
+          </div>
+
+          {/* Wards Catalog Grid */}
+          <div className="space-y-6">
+            {wards.map((w) => {
+              const wardTotalBeds = w.rooms.reduce((acc, r) => acc + r.beds.length, 0);
+              const wardAvailable = w.rooms.reduce(
+                (acc, r) => acc + r.beds.filter((b) => b.status === 'AVAILABLE').length,
+                0,
+              );
+
+              return (
+                <div
+                  key={w.id}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+                >
+                  <div className="p-4 bg-gray-50 border-b border-gray-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-gray-900">{w.name}</h3>
+                        <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                          Category {w.category}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {w.rooms.length} Rooms • {wardTotalBeds} Total Beds
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold">
+                        {wardAvailable} Available / {wardTotalBeds} Beds
+                      </span>
+                      <button
+                        onClick={() => {
+                          setSelectedWardId(w.id);
+                          setShowAddWardModal(true);
+                        }}
+                        className="px-3 py-1.5 bg-esic-primary hover:bg-esic-primary-dark text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
+                      >
+                        + Add Beds
+                      </button>
+                      <button
+                        onClick={() => handleDeleteWard(w.id, w.name)}
+                        className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-semibold transition-all"
+                        title="Delete Ward"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Rooms & Beds Layout */}
+                  <div className="p-5 space-y-4">
+                    {w.rooms.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic">No rooms registered in this ward.</p>
+                    ) : (
+                      w.rooms.map((r) => (
+                        <div key={r.id} className="space-y-2">
+                          <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                            🚪 Room {r.roomNumber} ({r.type} Room)
+                          </h4>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                            {r.beds.map((b) => (
+                              <div
+                                key={b.id}
+                                className={`p-3 rounded-lg border text-xs flex flex-col justify-between relative group ${
+                                  b.status === 'AVAILABLE'
+                                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-900'
+                                    : 'bg-red-50/70 border-red-300 text-red-900'
+                                }`}
+                              >
+                                <div className="font-bold flex justify-between items-center">
+                                  <span>🛏️ {b.bedNumber}</span>
+                                  {b.status === 'AVAILABLE' ? (
+                                    <button
+                                      onClick={() => handleDeleteBed(b.id, b.bedNumber)}
+                                      className="text-red-500 hover:text-red-700 font-bold px-1 text-xs opacity-80 hover:opacity-100"
+                                      title="Delete Available Bed"
+                                    >
+                                      ✖
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-red-700 font-bold">🔴 Occupied</span>
+                                  )}
+                                </div>
+                                {b.currentAdmission?.visit?.employee?.name ? (
+                                  <div className="mt-2 text-[10px] truncate font-medium">
+                                    {b.currentAdmission.visit.employee.name}
+                                  </div>
+                                ) : (
+                                  <span className="mt-2 text-[10px] text-emerald-700 font-medium">🟢 Free</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -411,6 +614,139 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                   className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all"
                 >
                   {submittingDischarge ? 'Discharging...' : 'Approve Discharge & Free Bed'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Ward & Beds Modal */}
+      {showAddWardModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-gray-900">
+                {selectedWardId ? 'Add Multiple Beds to Existing Ward' : 'Register New Hospital Ward & Beds'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAddWardModal(false);
+                  setSelectedWardId('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✖
+              </button>
+            </div>
+            <form onSubmit={handleCreateWardBedSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Target Ward *</label>
+                <select
+                  value={selectedWardId}
+                  onChange={(e) => setSelectedWardId(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm font-medium"
+                >
+                  <option value="">+ Create a Brand New Ward</option>
+                  {wards.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} (Category {w.category})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!selectedWardId && (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">New Ward Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={wardName}
+                      onChange={(e) => setWardName(e.target.value)}
+                      placeholder="e.g. ICU / Special Care Ward"
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Eligibility Category *</label>
+                    <select
+                      value={wardCategory}
+                      onChange={(e) => setWardCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
+                    >
+                      <option value="A">Category A (Private Single Room)</option>
+                      <option value="B">Category B (Semi-Private Shared)</option>
+                      <option value="C">Category C (General Ward C)</option>
+                      <option value="D">Category D (General Ward D)</option>
+                      <option value="CONTRACTUAL">Contractual Policy Ward</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Room Number *</label>
+                  <input
+                    type="text"
+                    required
+                    value={roomNumber}
+                    onChange={(e) => setRoomNumber(e.target.value)}
+                    placeholder="e.g. Room 101"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">Number of Beds *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    required
+                    value={bedCount}
+                    onChange={(e) => setBedCount(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Custom Bed Numbers (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={bedNumber}
+                  onChange={(e) => setBedNumber(e.target.value)}
+                  placeholder="e.g. B1, B2, B3 (or leave blank to auto-number)"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
+                />
+                <span className="text-[11px] text-gray-400">
+                  Separate multiple bed numbers with commas, or use auto-numbering above.
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddWardModal(false);
+                    setSelectedWardId('');
+                  }}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingWard}
+                  className="px-4 py-2 bg-esic-primary hover:bg-esic-primary-dark text-white rounded-lg text-xs font-semibold shadow-sm"
+                >
+                  {submittingWard ? 'Saving Beds...' : 'Save Ward & Create Beds'}
                 </button>
               </div>
             </form>

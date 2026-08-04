@@ -6,24 +6,29 @@ export interface BrandingConfigRecord {
   updatedAt: string;
 }
 
+import { apiFetch } from './client';
+
 export async function fetchBranding(): Promise<BrandingConfigRecord> {
-  const res = await fetch('/api/branding');
-  if (!res.ok) throw new Error('Failed to fetch branding configuration');
+  const res = await apiFetch('/api/branding');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch branding configuration');
+  }
   return res.json();
 }
 
 export async function updateBranding(
   payload: Partial<BrandingConfigRecord>,
-  token: string,
+  token?: string,
 ): Promise<unknown> {
-  const res = await fetch('/api/branding', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    '/api/branding',
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    token,
+  );
   if (!res.ok) {
     const errData = (await res.json().catch(() => ({}))) as { message?: string };
     throw new Error(errData.message || 'Failed to update branding configuration');

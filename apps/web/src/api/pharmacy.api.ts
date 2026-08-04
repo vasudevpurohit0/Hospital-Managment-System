@@ -5,17 +5,18 @@ export interface PharmacyQueueRecord {
   signedAt: string;
   visit: {
     id: string;
-    patientProfile: {
+    employee: {
       id: string;
-      fullName: string;
-      hospitalUid: string;
-      employee: {
-        employeeId: string;
-        employmentType: {
-          code: string;
-          name: string;
-        };
+      employeeId: string;
+      name: string;
+      employmentType: {
+        code: string;
+        name: string;
       };
+      patientProfile?: {
+        id: string;
+        gender?: string;
+      } | null;
     };
   };
   items: Array<{
@@ -41,41 +42,45 @@ export interface MedicineBatchOption {
   stockStatus: string;
 }
 
-export async function fetchPharmacyQueue(token: string): Promise<PharmacyQueueRecord[]> {
-  const res = await fetch('/api/pharmacy/queue', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch pharmacy queue');
+import { apiFetch } from './client';
+
+export async function fetchPharmacyQueue(token?: string): Promise<PharmacyQueueRecord[]> {
+  const res = await apiFetch('/api/pharmacy/queue', {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch pharmacy queue');
+  }
   return res.json();
 }
 
 export async function fetchBatchOptions(
   prescriptionId: string,
-  token: string,
+  token?: string,
 ): Promise<Record<string, MedicineBatchOption[]>> {
-  const res = await fetch(`/api/pharmacy/prescriptions/${prescriptionId}/batches`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch batch options');
+  const res = await apiFetch(`/api/pharmacy/prescriptions/${prescriptionId}/batches`, {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch batch options');
+  }
   return res.json();
 }
 
 export async function dispenseMedicines(
   prescriptionId: string,
   items: Array<{ prescriptionItemId: string; medicineBatchId: string; dispenseQuantity: number }>,
-  token: string,
+  token?: string,
 ) {
-  const res = await fetch('/api/pharmacy/dispense', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    '/api/pharmacy/dispense',
+    {
+      method: 'POST',
+      body: JSON.stringify({ prescriptionId, items }),
     },
-    body: JSON.stringify({ prescriptionId, items }),
-  });
+    token,
+  );
 
   if (!res.ok) {
-    const err = await res.json();
+    const err = await res.json().catch(() => ({}));
     throw new Error(err.message || 'Failed to dispense medicines');
   }
 

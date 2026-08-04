@@ -33,18 +33,20 @@ export interface PrescriptionRecord {
   }[];
 }
 
+import { apiFetch } from './client';
+
 export async function createPrescription(
   payload: CreatePrescriptionPayload,
-  token: string,
+  token?: string,
 ): Promise<{ diagnosis: Record<string, unknown>; prescription: PrescriptionRecord }> {
-  const res = await fetch('/api/prescriptions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    '/api/prescriptions',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    token,
+  );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -54,11 +56,14 @@ export async function createPrescription(
   return res.json();
 }
 
-export async function signPrescription(id: string, token: string): Promise<PrescriptionRecord> {
-  const res = await fetch(`/api/prescriptions/${id}/sign`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export async function signPrescription(id: string, token?: string): Promise<PrescriptionRecord> {
+  const res = await apiFetch(
+    `/api/prescriptions/${id}/sign`,
+    {
+      method: 'POST',
+    },
+    token,
+  );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

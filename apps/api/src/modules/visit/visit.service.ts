@@ -1,9 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { VisitStatus } from '@prisma/client';
-
-const DEV_VISITS_STORE: any[] = [];
 
 @Injectable()
 export class VisitService {
@@ -14,46 +12,33 @@ export class VisitService {
   async createVisit(dto: CreateVisitDto) {
     const trimmedId = dto.employeeId.trim();
 
-    // 1. Resolve employee
-    let employeeId = trimmedId;
-    try {
-      const emp = await this.prisma.employee.findFirst({
-        where: {
-          OR: [
-            { id: trimmedId },
-            { employeeId: trimmedId },
-            { hospitalUid: { uidCode: trimmedId } },
-          ],
-        },
-      });
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedId);
+    const orConditions: any[] = [
+      { employeeId: { equals: trimmedId, mode: 'insensitive' } },
+      { hospitalUid: { uidCode: { equals: trimmedId, mode: 'insensitive' } } },
+    ];
+    if (isUuid) {
+      orConditions.push({ id: trimmedId });
+    }
 
-      if (emp) {
-        employeeId = emp.id;
-      }
-    } catch {
-      // Offline fallback
+    let employeeId = trimmedId;
+    const emp = await this.prisma.employee.findFirst({
+      where: {
+        OR: orConditions,
+      },
+    });
+
+    if (emp) {
+      employeeId = emp.id;
     }
 
     // 2. Check for existing OPEN visit (Spec §5 Module 2)
-    let openVisit: any = null;
-    try {
-      openVisit = await this.prisma.visit.findFirst({
-        where: {
-          employeeId,
-          status: VisitStatus.OPEN,
-        },
-      });
-    } catch {
-      openVisit = DEV_VISITS_STORE.find(
-        (v) => v.employeeId === employeeId && v.status === VisitStatus.OPEN,
-      );
-    }
-
-    if (!openVisit) {
-      openVisit = DEV_VISITS_STORE.find(
-        (v) => v.employeeId === employeeId && v.status === VisitStatus.OPEN,
-      );
-    }
+    const openVisit = await this.prisma.visit.findFirst({
+      where: {
+        employeeId,
+        status: VisitStatus.OPEN,
+      },
+    });
 
     // Warn (don't hard block) if an open visit already exists
     if (openVisit && !dto.ignoreOpenVisitWarning) {
@@ -67,48 +52,66 @@ export class VisitService {
     }
 
     // 3. Create Visit
-    try {
-      const visit = await this.prisma.visit.create({
-        data: {
-          employeeId,
-          type: dto.type,
-          status: VisitStatus.OPEN,
-        },
-      });
-
-      this.logger.log(`✅ Created Visit ${visit.id} (${dto.type}) for Employee ${employeeId}`);
-      return {
-        status: 'CREATED',
-        visit,
-      };
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Dev fallback for visit creation: ${message}`);
-
-      const mockVisit = {
-        id: `00000000-0000-0000-0000-${Date.now().toString().padStart(12, '0')}`,
+    const visit = await this.prisma.visit.create({
+      data: {
         employeeId,
         type: dto.type,
         status: VisitStatus.OPEN,
-        createdAt: new Date().toISOString(),
-      };
-      DEV_VISITS_STORE.push(mockVisit);
+      },
+    });
 
-      return {
-        status: 'CREATED',
-        visit: mockVisit,
-      };
-    }
+    this.logger.log(`✅ Created Visit ${visit.id} (${dto.type}) for Employee ${employeeId}`);
+    return {
+      status: 'CREATED',
+      visit,
+    };
   }
 
   async findVisitsByEmployee(employeeId: string) {
-    try {
-      return await this.prisma.visit.findMany({
-        where: { employeeId },
-        orderBy: { createdAt: 'desc' },
-      });
-    } catch {
-      return DEV_VISITS_STORE.filter((v) => v.employeeId === employeeId);
+    return this.prisma.visit.findMany({
+      where: { employeeId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findOne(identifier: string) {
+    const trimmed = identifier.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+
+    const orConditions: any[] = [
+      { opdVisit: { tokenNumber: { equals: trimmed, mode: 'insensitive' } } },
+      { employee: { employeeId: { equals: trimmed, mode: 'insensitive' } } },
+      { employee: { hospitalUid: { uidCode: { equals: trimmed, mode: 'insensitive' } } } },
+    ];
+
+    if (isUuid) {
+      orConditions.push({ id: trimmed });
     }
+
+    const visit = await this.prisma.visit.findFirst({
+      where: {
+        OR: orConditions,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        employee: {
+          include: {
+            post: true,
+            grade: true,
+            employmentType: true,
+            patientProfile: true,
+            hospitalUid: true,
+          },
+        },
+        opdVisit: { include: { department: true } },
+        diagnoses: { orderBy: { createdAt: 'desc' } },
+        prescriptions: { include: { items: true }, orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!visit) {
+      throw new NotFoundException(`No visit record found matching '${trimmed}'`);
+    }
+    return visit;
   }
 }

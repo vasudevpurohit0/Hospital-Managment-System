@@ -1,25 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Badge } from '../../components/ui/Badge';
 import {
   UserPlus,
   Search,
   AlertTriangle,
-  Clock,
   Printer,
   ShieldCheck,
   CheckCircle2,
-  Calendar,
+  Clock,
   Activity,
-  Zap,
   Users,
-  Bell,
-  ChevronRight,
+  Ticket,
   Sparkles,
 } from 'lucide-react';
+import {
+  verifyEmployeeId,
+  registerEmployee,
+  VerifiedEmployeeData,
+  RegistrationResponse,
+} from '../../api/employee.api';
+import { registerPatient } from '../../api/patient.api';
+import {
+  lookupPatientByUid,
+  createVisit,
+  PatientLookupResponse,
+  CreateVisitResponse,
+} from '../../api/patient-lookup.api';
+import {
+  fetchDepartments,
+  fetchOpdQueue,
+  createOpdVisit,
+  Department,
+  OPDVisitRecord,
+} from '../../api/opd.api';
+import { fetchDashboardMetrics, DashboardMetrics } from '../../api/dashboard.api';
+import { PatientWorkspace } from '../PatientWorkspace';
 
 /* ═══════════════════════════════════════════════════════════
-   Enterprise Reception Desk Workspace (Production Grade)
-   Modeled after Epic EMR, Cerner, Oracle Health, Bahmni & Apollo HMS
+   Reception Workspace — Employee-ID verification/registration,
+   universal patient search + repeat-visit token issue, and a
+   real-time OPD queue overview. Every value below is sourced
+   from a live backend call; nothing here is fabricated.
    ═══════════════════════════════════════════════════════════ */
 
 interface EnterpriseReceptionDeskProps {
@@ -27,27 +48,10 @@ interface EnterpriseReceptionDeskProps {
   initialWorkflow?: ActiveWorkflow;
 }
 
-type ActiveWorkflow =
-  | 'dashboard'
-  | 'esic-beneficiary'
-  | 'walkin-registration'
-  | 'universal-search'
-  | 'emergency-registration'
-  | 'appointments'
-  | 'success-slip';
-
-interface Dependent {
-  id: string;
-  relation: string;
-  name: string;
-  age: number;
-  gender: string;
-  eligibility: 'ELIGIBLE' | 'EXPIRED';
-  registered: boolean;
-  uhid?: string;
-}
+type ActiveWorkflow = 'dashboard' | 'esic-beneficiary' | 'universal-search' | 'success-slip';
 
 export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = ({
+  authToken,
   initialWorkflow = 'dashboard',
 }) => {
   const [activeWorkflow, setActiveWorkflow] = useState<ActiveWorkflow>(initialWorkflow);
@@ -58,88 +62,216 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     }
   }, [initialWorkflow]);
 
-  // Universal Search State
-  const [searchQuery, setSearchQuery] = useState('ESIC-MH-001042');
+  /* ── Departments, live OPD queue & dashboard metrics (real) ── */
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState('');
+  const [liveQueue, setLiveQueue] = useState<OPDVisitRecord[]>([]);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
 
-  // ESIC Verification State
-  const [esicIpInput, setEsicIpInput] = useState('1234567890');
-  const [verifyingEsic, setVerifyingEsic] = useState(false);
-  const [verifiedEmployee, setVerifiedEmployee] = useState<Record<string, unknown> | null>(null);
-  const [dependents, setDependents] = useState<Dependent[]>([]);
+  useEffect(() => {
+    fetchDepartments(authToken)
+      .then((depts) => {
+        setDepartments(depts);
+        if (depts.length > 0) setSelectedDeptId(depts[0].id);
+      })
+      .catch(() => {});
+  }, [authToken]);
 
-  // Walk-in Registration State
-  const [walkinData, setWalkinData] = useState({
-    fullName: '',
-    dob: '1992-06-15',
-    gender: 'MALE',
-    bloodGroup: 'O+',
-    mobile: '',
-    address: '',
-    emergencyContact: '',
-    insuranceType: 'ESIC Covered (100%)',
-    department: 'General Medicine',
-    doctorPreference: 'Dr. S. Sharma',
-    chiefComplaint: 'Fever, cough, body pain',
-  });
+  const loadQueue = useCallback(async () => {
+    if (!selectedDeptId) return;
+    try {
+      const q = await fetchOpdQueue(selectedDeptId, authToken);
+      setLiveQueue(q);
+    } catch {
+      // transient polling failure — keep last known queue on screen
+    }
+  }, [selectedDeptId, authToken]);
 
-  // Success Registration Result
-  const [registrationResult, setRegistrationResult] = useState<{
-    uhid: string;
-    visitId: string;
-    tokenNumber: string;
-    patientName: string;
-    dept: string;
-    doctor: string;
-    waitTime: string;
-    issuedAt: string;
-  } | null>(null);
+  useEffect(() => {
+    loadQueue();
+    const interval = setInterval(loadQueue, 5000);
+    return () => clearInterval(interval);
+  }, [loadQueue]);
 
-  // Active Patient Selected for Right-Panel Preview
-  const [activePatientPreview, setActivePatientPreview] = useState({
-    name: 'Rahul Kumar',
-    uhid: 'ESIC-MH-001042',
-    ipNo: '1234567890',
-    age: 42,
-    gender: 'Male',
-    bloodGroup: 'B+',
-    insurance: 'ESIC 100% Covered',
-    status: 'Waiting in OPD Queue',
-    token: 'T-0045',
-    dept: 'General Medicine',
-    doctor: 'Dr. S. Sharma',
-    allergies: ['Penicillin', 'Amoxicillin'],
-    alerts: ['High Fever (101°F)', 'Chronic URTI'],
-    lastVisit: '20 Jul 2026',
-    outstandingBills: '₹0.00 (Covered)',
-  });
+  useEffect(() => {
+    fetchDashboardMetrics(authToken)
+      .then(setMetrics)
+      .catch(() => {});
+  }, [authToken]);
 
-  // Live Queue Data
-  const [liveQueue] = useState([
-    {
-      id: '1',
-      token: 'T-0043',
-      name: 'Suresh Patel',
-      status: 'IN_CONSULTATION',
-      doctor: 'Dr. S. Sharma',
-    },
-    { id: '2', token: 'T-0044', name: 'Priya Devi', status: 'CALLED', doctor: 'Dr. S. Sharma' },
-    { id: '3', token: 'T-0045', name: 'Rahul Kumar', status: 'WAITING', doctor: 'Dr. S. Sharma' },
-    { id: '4', token: 'T-0046', name: 'Anita Singh', status: 'WAITING', doctor: 'Dr. A. Verma' },
-    {
-      id: '5',
-      token: 'EMG-01',
-      name: 'Rajesh Kumar (Emergency)',
-      status: 'EMERGENCY',
-      doctor: 'Dr. K. Rao',
-    },
-  ]);
+  /* ── Employee-ID Verification & Registration Form ── */
+  const [employeeIdInput, setEmployeeIdInput] = useState('EMP-1001');
+  const [verifying, setVerifying] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [verifiedData, setVerifiedData] = useState<VerifiedEmployeeData | null>(null);
+  const [registrationResult, setRegistrationResult] = useState<RegistrationResponse | null>(null);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [issuedToken, setIssuedToken] = useState<string | null>(null);
 
-  // Global Keyboard Shortcuts (Ctrl+N, Ctrl+F, Ctrl+P, Ctrl+Q)
+  /* Form Fields */
+  const [dob, setDob] = useState('');
+  const [gender, setGender] = useState('');
+  const [bloodGroup, setBloodGroup] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [address, setAddress] = useState('');
+  const [allergies, setAllergies] = useState('');
+  const [chronicDiseases, setChronicDiseases] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!employeeIdInput.trim()) return;
+
+    setVerifying(true);
+    setRegistrationError(null);
+    setVerifiedData(null);
+    setRegistrationResult(null);
+    setIssuedToken(null);
+
+    try {
+      const res = await verifyEmployeeId(employeeIdInput.trim(), authToken);
+      if (res.status === 'VERIFIED' && res.verifiedData) {
+        setVerifiedData(res.verifiedData);
+        setContactPhone(res.verifiedData.contactPhone || '');
+        setContactEmail(res.verifiedData.contactEmail || '');
+      } else {
+        setRegistrationError(res.message || 'Employee ID not found in Labour Dept database.');
+      }
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleRegisterAndIssueToken = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!employeeIdInput.trim() || registering) return;
+
+    setRegistering(true);
+    setRegistrationError(null);
+
+    try {
+      const res = await registerPatient(
+        {
+          employeeId: employeeIdInput.trim(),
+          dob: dob || undefined,
+          gender: gender || undefined,
+          address: address || undefined,
+          allergies: allergies || undefined,
+          chronicDiseases: chronicDiseases || undefined,
+          bloodGroup: bloodGroup || undefined,
+          contactPhone: contactPhone || undefined,
+          contactEmail: contactEmail || undefined,
+          notes: notes || undefined,
+        },
+        authToken,
+      );
+      setRegistrationResult(res);
+
+      const empId = res.employee?.id || res.patient?.id;
+      if (empId && selectedDeptId) {
+        const visitRes = await createVisit(
+          { employeeId: empId, type: 'OPD' },
+          authToken,
+        );
+        if (visitRes.status === 'CREATED' && visitRes.visit) {
+          const opdRes = await createOpdVisit(
+            { visitId: visitRes.visit.id, departmentId: selectedDeptId },
+            authToken,
+          );
+          setIssuedToken(opdRes.tokenNumber);
+        }
+      }
+
+      setActiveWorkflow('success-slip');
+    } catch (err: unknown) {
+      setRegistrationError(err instanceof Error ? err.message : 'Registration failed');
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  /* ── Universal Patient Search & Repeat-Visit Token ── */
+  const [searchInput, setSearchInput] = useState('EMP-1001');
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [patientData, setPatientData] = useState<PatientLookupResponse | null>(null);
+  const [visitType, setVisitType] = useState<'OPD' | 'IPD'>('OPD');
+  const [creatingVisit, setCreatingVisit] = useState(false);
+  const [openVisitWarning, setOpenVisitWarning] = useState<CreateVisitResponse | null>(null);
+  const [visitSuccessMessage, setVisitSuccessMessage] = useState<string | null>(null);
+
+  const performSearch = async (query: string) => {
+    if (!query.trim()) return;
+
+    setSearching(true);
+    setSearchError(null);
+    setOpenVisitWarning(null);
+    setVisitSuccessMessage(null);
+    setPatientData(null);
+
+    try {
+      const result = await lookupPatientByUid(query.trim(), authToken);
+      setPatientData(result);
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : 'Patient lookup failed');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    performSearch(searchInput);
+  };
+
+  const handleCreateVisit = async (ignoreWarning = false) => {
+    if (!patientData || creatingVisit) return;
+
+    setCreatingVisit(true);
+    setSearchError(null);
+    setVisitSuccessMessage(null);
+
+    try {
+      const res = await createVisit(
+        {
+          employeeId: patientData.employee.id,
+          type: visitType,
+          ignoreOpenVisitWarning: ignoreWarning,
+        },
+        authToken,
+      );
+
+      if (res.status === 'OPEN_VISIT_WARNING' && !ignoreWarning) {
+        setOpenVisitWarning(res);
+      } else if (res.status === 'CREATED' && res.visit) {
+        setOpenVisitWarning(null);
+
+        if (visitType === 'OPD' && selectedDeptId) {
+          const opdRes = await createOpdVisit(
+            { visitId: res.visit.id, departmentId: selectedDeptId },
+            authToken,
+          );
+          setVisitSuccessMessage(`New OPD Visit Created! Queue Token issued: ${opdRes.tokenNumber}`);
+        } else {
+          setVisitSuccessMessage(`New ${res.visit.type} Visit created successfully!`);
+        }
+      }
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : 'Failed to create visit');
+    } finally {
+      setCreatingVisit(false);
+    }
+  };
+
+  /* ── Global Keyboard Shortcuts ── */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        setActiveWorkflow('walkin-registration');
+        setActiveWorkflow('esic-beneficiary');
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         setActiveWorkflow('universal-search');
@@ -156,190 +288,50 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // ESIC Verification Handler
-  const handleVerifyEsic = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!esicIpInput.trim()) return;
+  const selectedDept = departments.find((d) => d.id === selectedDeptId);
 
-    setVerifyingEsic(true);
-    setTimeout(() => {
-      const emp = {
-        name: 'Rahul Kumar',
-        ipNo: esicIpInput.trim(),
-        employer: 'Tata Consultancy Services - ESIC Delhi',
-        designation: 'Senior Specialist',
-        benefitCategory: 'PERMANENT (Full Benefit Covered)',
-      };
-      const deps: Dependent[] = [
-        {
-          id: 'dep-1',
-          relation: 'Self',
-          name: 'Rahul Kumar',
-          age: 42,
-          gender: 'Male',
-          eligibility: 'ELIGIBLE',
-          registered: true,
-          uhid: 'ESIC-MH-001042',
-        },
-        {
-          id: 'dep-2',
-          relation: 'Spouse',
-          name: 'Sunita Devi',
-          age: 38,
-          gender: 'Female',
-          eligibility: 'ELIGIBLE',
-          registered: true,
-          uhid: 'ESIC-MH-001043',
-        },
-        {
-          id: 'dep-3',
-          relation: 'Son',
-          name: 'Aarav Kumar',
-          age: 12,
-          gender: 'Male',
-          eligibility: 'ELIGIBLE',
-          registered: false,
-        },
-        {
-          id: 'dep-4',
-          relation: 'Daughter',
-          name: 'Ananya Kumar',
-          age: 8,
-          gender: 'Female',
-          eligibility: 'ELIGIBLE',
-          registered: false,
-        },
-        {
-          id: 'dep-5',
-          relation: 'Mother',
-          name: 'Kausalya Devi',
-          age: 68,
-          gender: 'Female',
-          eligibility: 'ELIGIBLE',
-          registered: false,
-        },
-      ];
-
-      setVerifiedEmployee(emp);
-      setDependents(deps);
-      setVerifyingEsic(false);
-    }, 600);
-  };
-
-  // Complete Dependent Registration & Create Visit
-  const handleSelectDependent = (dep: Dependent) => {
-    const generatedUhid = dep.uhid || `ESIC-MH-00${Math.floor(1000 + Math.random() * 9000)}`;
-    const result = {
-      uhid: generatedUhid,
-      visitId: `v-${Math.floor(1000 + Math.random() * 9000)}`,
-      tokenNumber: `T-00${Math.floor(40 + Math.random() * 20)}`,
-      patientName: dep.name,
-      dept: 'General Medicine',
-      doctor: 'Dr. S. Sharma',
-      waitTime: '12 mins',
-      issuedAt: new Date().toISOString(),
-    };
-    setRegistrationResult(result);
-    setActivePatientPreview({
-      name: dep.name,
-      uhid: generatedUhid,
-      ipNo: esicIpInput,
-      age: dep.age,
-      gender: dep.gender,
-      bloodGroup: 'B+',
-      insurance: 'ESIC 100% Covered',
-      status: 'Queue Token Issued',
-      token: result.tokenNumber,
-      dept: 'General Medicine',
-      doctor: 'Dr. S. Sharma',
-      allergies: ['Penicillin'],
-      alerts: ['ESIC Beneficiary Verified'],
-      lastVisit: 'Today',
-      outstandingBills: '₹0.00 (Covered)',
-    });
-    setActiveWorkflow('success-slip');
-  };
-
-  // Emergency Fast Registration
-  const handleEmergencyRegistration = () => {
-    const tempUhid = `TEMP-EMG-${Math.floor(1000 + Math.random() * 9000)}`;
-    const result = {
-      uhid: tempUhid,
-      visitId: `v-emg-${Math.floor(100 + Math.random() * 900)}`,
-      tokenNumber: 'EMG-02',
-      patientName: 'Emergency Patient (Temporary Record)',
-      dept: 'Emergency Trauma Unit',
-      doctor: 'Dr. Emergency On-Duty',
-      waitTime: 'IMMEDIATE / ZERO WAIT',
-      issuedAt: new Date().toISOString(),
-    };
-    setRegistrationResult(result);
-    setActivePatientPreview({
-      name: 'Emergency Patient (Temp)',
-      uhid: tempUhid,
-      ipNo: 'UNVERIFIED (Emergency)',
-      age: 30,
-      gender: 'Male',
-      bloodGroup: 'O-',
-      insurance: 'Emergency Override',
-      status: 'Direct Trauma Admission',
-      token: 'EMG-02',
-      dept: 'Emergency Trauma Unit',
-      doctor: 'Dr. Emergency On-Duty',
-      allergies: ['UNKNOWN'],
-      alerts: ['CRITICAL EMERGENCY OVERRIDE'],
-      lastVisit: 'None',
-      outstandingBills: 'Deferred',
-    });
-    setActiveWorkflow('success-slip');
-  };
-
-  // Walk-in Form Submit
-  const handleWalkinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const generatedUhid = `ESIC-MH-00${Math.floor(1000 + Math.random() * 9000)}`;
-    const result = {
-      uhid: generatedUhid,
-      visitId: `v-${Math.floor(1000 + Math.random() * 9000)}`,
-      tokenNumber: `T-00${Math.floor(50 + Math.random() * 20)}`,
-      patientName: walkinData.fullName || 'Walk-in Patient',
-      dept: walkinData.department,
-      doctor: walkinData.doctorPreference,
-      waitTime: '15 mins',
-      issuedAt: new Date().toISOString(),
-    };
-    setRegistrationResult(result);
-    setActivePatientPreview({
-      name: walkinData.fullName || 'Walk-in Patient',
-      uhid: generatedUhid,
-      ipNo: 'Walk-in / General',
-      age: 30,
-      gender: walkinData.gender,
-      bloodGroup: walkinData.bloodGroup,
-      insurance: walkinData.insuranceType,
-      status: 'Queue Token Issued',
-      token: result.tokenNumber,
-      dept: walkinData.department,
-      doctor: walkinData.doctorPreference,
-      allergies: [],
-      alerts: ['Walk-in Registration Completed'],
-      lastVisit: 'Today (First Visit)',
-      outstandingBills: '₹0.00',
-    });
-    setActiveWorkflow('success-slip');
-  };
+  /* Whichever patient is currently in view, for the right-panel preview */
+  const previewEmployee =
+    patientData?.employee ||
+    registrationResult?.employee ||
+    (verifiedData
+      ? {
+          employeeId: verifiedData.employeeId,
+          name: verifiedData.name,
+          department: verifiedData.department,
+          employmentType: verifiedData.employmentTypeCode,
+        }
+      : null);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
-      {/* ── Top Operational Reception KPI Bar ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* ── Top Operational Reception KPI Bar (real dashboard metrics) ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Patients Waiting', val: '14', color: 'text-warning-600', icon: Clock },
-          { label: "Today's Registrations", val: '38', color: 'text-primary-600', icon: UserPlus },
-          { label: "Today's Appointments", val: '22', color: 'text-secondary-600', icon: Calendar },
-          { label: 'Walk-in Patients', val: '16', color: 'text-info-600', icon: Users },
-          { label: 'Avg Wait Time', val: '12 mins', color: 'text-success-600', icon: Activity },
-          { label: 'Emergency Patients', val: '2 Active', color: 'text-danger-600', icon: Zap },
+          {
+            label: 'Patients Waiting (OPD)',
+            val: metrics ? String(metrics.opd.waitingQueue) : '—',
+            color: 'text-warning-600',
+            icon: Clock,
+          },
+          {
+            label: "Today's OPD Visits",
+            val: metrics ? String(metrics.opd.totalVisits) : '—',
+            color: 'text-primary-600',
+            icon: UserPlus,
+          },
+          {
+            label: 'Active Admissions',
+            val: metrics ? String(metrics.ipd.activeAdmissions) : '—',
+            color: 'text-info-600',
+            icon: Users,
+          },
+          {
+            label: 'Bed Occupancy',
+            val: metrics ? `${metrics.ipd.bedOccupancyRate}%` : '—',
+            color: 'text-success-600',
+            icon: Activity,
+          },
         ].map((kpi, idx) => (
           <div key={idx} className="card p-3 flex items-center justify-between">
             <div>
@@ -355,9 +347,8 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
       {/* ── Main 3-Column Enterprise Workspace ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* ── LEFT COLUMN: Quick Actions & Notices (3 cols) ── */}
+        {/* ── LEFT COLUMN: Quick Actions ── */}
         <div className="lg:col-span-3 space-y-4">
-          {/* Quick Action Buttons */}
           <div className="card p-4 space-y-2.5">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] mb-3">
               Front-Office Actions
@@ -370,17 +361,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               }`}
             >
               <ShieldCheck className="w-4 h-4 text-secondary-500" />
-              <span>ESIC Beneficiary Registration</span>
-            </button>
-
-            <button
-              onClick={() => setActiveWorkflow('walkin-registration')}
-              className={`w-full btn btn-md justify-start gap-2.5 ${
-                activeWorkflow === 'walkin-registration' ? 'btn-primary' : 'btn-secondary'
-              }`}
-            >
-              <UserPlus className="w-4 h-4 text-primary-500" />
-              <span>Walk-in Patient Form (Ctrl+N)</span>
+              <span>Verify & Register (Ctrl+N)</span>
             </button>
 
             <button
@@ -394,14 +375,6 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             </button>
 
             <button
-              onClick={handleEmergencyRegistration}
-              className="w-full btn btn-danger btn-md justify-start gap-2.5 bg-danger-600 hover:bg-danger-700 text-white"
-            >
-              <Zap className="w-4 h-4" />
-              <span>Emergency 1-Click Override</span>
-            </button>
-
-            <button
               onClick={() => setActiveWorkflow('dashboard')}
               className={`w-full btn btn-md justify-start gap-2.5 ${
                 activeWorkflow === 'dashboard' ? 'btn-primary' : 'btn-secondary'
@@ -411,28 +384,11 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               <span>Reception Live Queue (Ctrl+Q)</span>
             </button>
           </div>
-
-          {/* Hospital Notices & Alerts */}
-          <div className="card p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] flex items-center gap-1.5">
-              <Bell className="w-3.5 h-3.5 text-warning-500" /> Hospital Announcements
-            </h3>
-            <div className="space-y-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-warning-50 text-warning-800 border border-warning-100">
-                <span className="font-semibold block">Dr. A. Verma (Pediatrics)</span>
-                <span className="text-[11px]">On leave today. Route to Dr. Sharma.</span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-primary-50 text-primary-800 border border-primary-100">
-                <span className="font-semibold block">OPD Room #4 Maintenance</span>
-                <span className="text-[11px]">Token calls shifted to Room #6.</span>
-              </div>
-            </div>
-          </div>
         </div>
 
-        {/* ── CENTER COLUMN: Operational Workflow Manager (6 cols) ── */}
+        {/* ── CENTER COLUMN: Operational Workflow Manager ── */}
         <div className="lg:col-span-6 space-y-5">
-          {/* WORKFLOW 1: Operational Reception Dashboard */}
+          {/* WORKFLOW: Reception Live OPD Queue Overview */}
           {activeWorkflow === 'dashboard' && (
             <div className="card p-5 space-y-5">
               <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-3">
@@ -441,7 +397,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                     Reception Operational Queue Console
                   </h2>
                   <p className="text-xs text-[var(--color-text-secondary)]">
-                    Real-time OPD token flow & doctor availability status
+                    Real-time OPD token flow, sourced live from the department queue
                   </p>
                 </div>
                 <Badge variant="success" dot>
@@ -449,315 +405,400 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                 </Badge>
               </div>
 
-              {/* Active Doctors Status */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
-                  Active Attending Doctors
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { name: 'Dr. S. Sharma', dept: 'General Med', queue: 5, status: 'AVAILABLE' },
-                    { name: 'Dr. P. Joshi', dept: 'Orthopedics', queue: 8, status: 'BUSY' },
-                    { name: 'Dr. K. Rao', dept: 'Cardiology', queue: 2, status: 'AVAILABLE' },
-                    { name: 'Dr. M. Gupta', dept: 'Pediatrics', queue: 4, status: 'BUSY' },
-                  ].map((doc, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-1 text-xs"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-[var(--color-text-primary)]">
-                          {doc.name}
-                        </span>
-                        <Badge variant={doc.status === 'AVAILABLE' ? 'success' : 'warning'}>
-                          {doc.status}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-[var(--color-text-secondary)]">
-                        {doc.dept} • Queue: {doc.queue} Patients
-                      </p>
-                    </div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium text-[var(--color-text-secondary)]">
+                  Department:
+                </label>
+                <select
+                  value={selectedDeptId}
+                  onChange={(e) => setSelectedDeptId(e.target.value)}
+                  className="input text-xs font-semibold py-1.5"
+                >
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.code})
+                    </option>
                   ))}
-                </div>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                {liveQueue.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[var(--color-text-tertiary)]">
+                    No patients currently in the {selectedDept?.name || 'selected'} queue.
+                  </div>
+                ) : (
+                  liveQueue.map((q) => (
+                    <div
+                      key={q.id}
+                      className="p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <span className="font-mono font-bold text-primary-600 block">
+                          {q.tokenNumber}
+                        </span>
+                        <span className="text-[var(--color-text-primary)] font-medium">
+                          {q.visit?.employee?.name || 'Patient'}
+                        </span>
+                      </div>
+                      <Badge variant={q.calledAt ? 'success' : 'warning'}>
+                        {q.calledAt ? 'CALLED' : 'WAITING'}
+                      </Badge>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
 
-          {/* WORKFLOW 2: ESIC Beneficiary Selection & Verification */}
+          {/* WORKFLOW: Employee-ID Verification & Registration */}
           {activeWorkflow === 'esic-beneficiary' && (
             <div className="card p-5 space-y-5">
               <div className="border-b border-[var(--color-border)] pb-3">
                 <Badge variant="info" className="mb-1">
-                  ESIC Beneficiary Portal
+                  Labour Department Verification
                 </Badge>
                 <h2 className="text-base font-bold text-[var(--color-text-primary)]">
-                  ESIC Insurance IP Verification & Dependent Selector
+                  Employee ID Verification & Hospital UID Registration
                 </h2>
                 <p className="text-xs text-[var(--color-text-secondary)]">
-                  Enter Insurance IP number or scan smart card to view employee & dependents
+                  Enter the ESIC Labour Department Employee ID to verify and register the patient
                 </p>
               </div>
 
-              <form onSubmit={handleVerifyEsic} className="flex gap-2">
+              <form onSubmit={handleVerify} className="flex gap-2">
                 <input
                   type="text"
-                  value={esicIpInput}
-                  onChange={(e) => setEsicIpInput(e.target.value)}
-                  placeholder="Enter 10-digit ESIC IP Number (e.g. 1234567890)..."
+                  value={employeeIdInput}
+                  onChange={(e) => setEmployeeIdInput(e.target.value)}
+                  placeholder="Enter Employee ID (e.g. EMP-1001)..."
                   className="input font-mono flex-1 text-xs py-2"
                 />
-                <button type="submit" disabled={verifyingEsic} className="btn btn-primary btn-md">
-                  {verifyingEsic ? 'Verifying...' : 'Verify IP'}
+                <button type="submit" disabled={verifying} className="btn btn-primary btn-md">
+                  {verifying ? 'Verifying...' : 'Verify ID'}
                 </button>
               </form>
 
-              {/* Dependents Cards Grid */}
-              {verifiedEmployee && (
-                <div className="space-y-3 pt-2">
-                  <div className="p-3 rounded-xl bg-primary-50 text-primary-900 border border-primary-200 text-xs">
-                    <span className="font-bold block text-sm">
-                      Insured Employee: {verifiedEmployee.name as string}
-                    </span>
-                    <span className="text-[11px] font-mono">
-                      IP: {verifiedEmployee.ipNo as string} • Employer:{' '}
-                      {verifiedEmployee.employer as string}
-                    </span>
+              {registrationError && <div className="alert alert-danger">{registrationError}</div>}
+
+              {verifiedData && (
+                <form onSubmit={handleRegisterAndIssueToken} className="space-y-4 pt-3 border-t border-[var(--color-border)]">
+                  <div className="p-3 rounded-xl bg-primary-50 text-primary-900 border border-primary-200 text-xs flex justify-between items-center">
+                    <div>
+                      <span className="font-bold block text-sm">{verifiedData.name}</span>
+                      <span className="text-[11px] font-mono">
+                        Employee ID: {verifiedData.employeeId} • Department: {verifiedData.department}
+                      </span>
+                    </div>
+                    <Badge variant="success">Verified Beneficiary</Badge>
                   </div>
 
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
-                    Family Dependents (Select Patient to Issue Visit)
-                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs p-3 rounded-lg bg-[var(--color-surface-secondary)]">
+                    <div>
+                      <span className="text-[var(--color-text-secondary)] block">Post / Grade:</span>
+                      <span className="font-semibold text-sm">
+                        {verifiedData.postTitle} ({verifiedData.gradePayLevel})
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[var(--color-text-secondary)] block">Employment Type:</span>
+                      <span className="font-semibold text-sm">{verifiedData.employmentTypeCode}</span>
+                    </div>
+                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {dependents.map((dep) => (
-                      <div
-                        key={dep.id}
-                        onClick={() => handleSelectDependent(dep)}
-                        className="p-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] hover:border-primary-500 hover:bg-primary-50/50 cursor-pointer transition-all space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-[var(--color-text-primary)]">
-                            {dep.name}
-                          </span>
-                          <Badge variant={dep.registered ? 'success' : 'warning'}>
-                            {dep.registered ? 'Registered' : 'First Visit'}
-                          </Badge>
-                        </div>
+                  {/* Patient Profile Form Controls */}
+                  <div className="card p-4 bg-gray-50/60 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 space-y-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-primary-700 dark:text-primary-400">
+                      Patient Profile & Medical Details Form
+                    </h3>
 
-                        <div className="text-[11px] text-[var(--color-text-secondary)] space-y-0.5">
-                          <p>
-                            Relation:{' '}
-                            <span className="font-semibold text-primary-600">{dep.relation}</span> •
-                            Age: {dep.age} yrs • {dep.gender}
-                          </p>
-                          {dep.uhid && (
-                            <p className="font-mono text-[10px] text-primary-700">
-                              UHID: {dep.uhid}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="pt-1 flex items-center justify-between text-[11px] font-semibold text-primary-600">
-                          <span>
-                            {dep.registered
-                              ? 'Open Profile & Create Visit'
-                              : 'Generate UHID & Create Visit'}
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Initial OPD Department *
+                        </label>
+                        <select
+                          value={selectedDeptId}
+                          onChange={(e) => setSelectedDeptId(e.target.value)}
+                          className="input text-xs font-semibold py-2 w-full"
+                          required
+                        >
+                          {departments.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name} ({d.code})
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                    ))}
+
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Date of Birth
+                        </label>
+                        <input
+                          type="date"
+                          value={dob}
+                          onChange={(e) => setDob(e.target.value)}
+                          className="input text-xs py-2 w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Gender
+                        </label>
+                        <select
+                          value={gender}
+                          onChange={(e) => setGender(e.target.value)}
+                          className="input text-xs py-2 w-full"
+                        >
+                          <option value="">Select Gender</option>
+                          <option value="MALE">Male</option>
+                          <option value="FEMALE">Female</option>
+                          <option value="OTHER">Other</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Blood Group
+                        </label>
+                        <select
+                          value={bloodGroup}
+                          onChange={(e) => setBloodGroup(e.target.value)}
+                          className="input text-xs py-2 w-full"
+                        >
+                          <option value="">Select Blood Group</option>
+                          <option value="A+">A+</option>
+                          <option value="A-">A-</option>
+                          <option value="B+">B+</option>
+                          <option value="B-">B-</option>
+                          <option value="O+">O+</option>
+                          <option value="O-">O-</option>
+                          <option value="AB+">AB+</option>
+                          <option value="AB-">AB-</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Contact Phone Number
+                        </label>
+                        <input
+                          type="text"
+                          value={contactPhone}
+                          onChange={(e) => setContactPhone(e.target.value)}
+                          placeholder="+91 9876543210"
+                          className="input text-xs py-2 w-full"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Email Address
+                        </label>
+                        <input
+                          type="email"
+                          value={contactEmail}
+                          onChange={(e) => setContactEmail(e.target.value)}
+                          placeholder="patient@example.com"
+                          className="input text-xs py-2 w-full"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Residential Address
+                        </label>
+                        <input
+                          type="text"
+                          value={address}
+                          onChange={(e) => setAddress(e.target.value)}
+                          placeholder="Street Address, City, State, PIN"
+                          className="input text-xs py-2 w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Known Allergies / Medical Notes
+                        </label>
+                        <input
+                          type="text"
+                          value={allergies}
+                          onChange={(e) => setAllergies(e.target.value)}
+                          placeholder="e.g. Penicillin allergy, Diabetic"
+                          className="input text-xs py-2 w-full"
+                        />
+                      </div>
+                    </div>
                   </div>
+
+                  <div className="pt-2 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setVerifiedData(null)}
+                      className="btn btn-secondary btn-md"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={registering}
+                      className="btn btn-primary btn-lg gap-2 bg-secondary-500 hover:bg-secondary-600 border-none px-6"
+                    >
+                      <Sparkles className="w-5 h-5" />
+                      {registering ? 'Registering Patient...' : 'Submit Form & Issue Hospital UID + OPD Token'}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* WORKFLOW: Universal Patient Search & Repeat-Visit Token */}
+          {activeWorkflow === 'universal-search' && (
+            <div className="card p-5 space-y-4">
+              <div className="border-b border-[var(--color-border)] pb-3">
+                <h2 className="text-base font-bold text-[var(--color-text-primary)]">
+                  Universal Patient Search
+                </h2>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  Search by UHID or Employee ID to load the patient's record and issue a repeat
+                  visit token
+                </p>
+              </div>
+
+              <form onSubmit={handleSearchSubmit} className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    placeholder="Enter UHID or Employee ID..."
+                    className="input input-with-icon text-xs py-2.5 font-mono w-full"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={searching || !searchInput.trim()}
+                  className="btn btn-primary btn-md"
+                >
+                  {searching ? 'Searching...' : 'Search'}
+                </button>
+              </form>
+
+              {searchError && <div className="alert alert-danger">{searchError}</div>}
+
+              {patientData && (
+                <div className="p-4 rounded-xl border border-primary-200 bg-primary-50/40 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="font-bold text-sm text-[var(--color-text-primary)]">
+                        {patientData.employee.name}
+                      </h4>
+                      <p className="text-xs font-mono text-primary-700">
+                        UHID: {patientData.employee.uid} • Emp ID: {patientData.employee.employeeId}
+                      </p>
+                    </div>
+                    <Badge variant={patientData.openVisit ? 'danger' : 'success'}>
+                      {patientData.openVisit ? 'Active Open Visit' : 'Ready for Visit'}
+                    </Badge>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1">
+                          Visit Type
+                        </label>
+                        <select
+                          value={visitType}
+                          onChange={(e) => setVisitType(e.target.value as 'OPD' | 'IPD')}
+                          className="input text-xs py-2 font-semibold"
+                        >
+                          <option value="OPD">OPD (Outpatient)</option>
+                          <option value="IPD">IPD (Inpatient)</option>
+                        </select>
+                      </div>
+                      {visitType === 'OPD' && (
+                        <div>
+                          <label className="text-xs font-semibold text-[var(--color-text-secondary)] block mb-1">
+                            Department
+                          </label>
+                          <select
+                            value={selectedDeptId}
+                            onChange={(e) => setSelectedDeptId(e.target.value)}
+                            className="input text-xs py-2"
+                          >
+                            {departments.map((dept) => (
+                              <option key={dept.id} value={dept.id}>
+                                {dept.name} ({dept.code})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => handleCreateVisit(false)}
+                          disabled={creatingVisit}
+                          className="btn btn-primary btn-md w-full gap-2"
+                        >
+                          <Ticket className="w-4 h-4" />
+                          {creatingVisit ? 'Creating...' : 'Issue Visit Token'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {openVisitWarning && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-2">
+                        <p className="font-semibold flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          Patient already has an active open visit ({openVisitWarning.openVisit?.id}
+                          ).
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleCreateVisit(true)}
+                          className="btn btn-warning btn-sm"
+                        >
+                          Override & Force Create Visit
+                        </button>
+                      </div>
+                    )}
+
+                    {visitSuccessMessage && (
+                      <div className="alert alert-success text-xs">{visitSuccessMessage}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {patientData && (
+                <div className="pt-2">
+                  <PatientWorkspace patientData={patientData} />
                 </div>
               )}
             </div>
           )}
 
-          {/* WORKFLOW 3: Comprehensive Walk-in Registration Form */}
-          {activeWorkflow === 'walkin-registration' && (
-            <form onSubmit={handleWalkinSubmit} className="card p-5 space-y-4">
-              <div className="border-b border-[var(--color-border)] pb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-[var(--color-text-primary)]">
-                    Direct Walk-in Patient Registration
-                  </h2>
-                  <p className="text-xs text-[var(--color-text-secondary)]">
-                    1-Screen registration form for non-employee or walk-in patients
-                  </p>
-                </div>
-                <Badge variant="info">Walk-in Form</Badge>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
-                <div className="space-y-1">
-                  <label className="font-semibold text-[var(--color-text-secondary)]">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={walkinData.fullName}
-                    onChange={(e) => setWalkinData({ ...walkinData, fullName: e.target.value })}
-                    placeholder="Patient full name"
-                    className="input text-xs py-1.5"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[var(--color-text-secondary)]">
-                      Gender *
-                    </label>
-                    <select
-                      value={walkinData.gender}
-                      onChange={(e) => setWalkinData({ ...walkinData, gender: e.target.value })}
-                      className="input text-xs py-1.5"
-                    >
-                      <option value="MALE">Male</option>
-                      <option value="FEMALE">Female</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="font-semibold text-[var(--color-text-secondary)]">
-                      Blood Group
-                    </label>
-                    <select
-                      value={walkinData.bloodGroup}
-                      onChange={(e) => setWalkinData({ ...walkinData, bloodGroup: e.target.value })}
-                      className="input text-xs py-1.5 font-bold"
-                    >
-                      <option value="A+">A+</option>
-                      <option value="B+">B+</option>
-                      <option value="O+">O+</option>
-                      <option value="AB+">AB+</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-[var(--color-text-secondary)]">
-                    Contact Phone
-                  </label>
-                  <input
-                    type="text"
-                    value={walkinData.mobile}
-                    onChange={(e) => setWalkinData({ ...walkinData, mobile: e.target.value })}
-                    placeholder="+91 98765 43210"
-                    className="input text-xs font-mono py-1.5"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-[var(--color-text-secondary)]">
-                    Department Specialty
-                  </label>
-                  <select
-                    value={walkinData.department}
-                    onChange={(e) => setWalkinData({ ...walkinData, department: e.target.value })}
-                    className="input text-xs py-1.5 font-semibold"
-                  >
-                    <option value="General Medicine">General Medicine</option>
-                    <option value="Orthopedics">Orthopedics</option>
-                    <option value="Pediatrics">Pediatrics</option>
-                    <option value="Cardiology">Cardiology</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1 col-span-2">
-                  <label className="font-semibold text-[var(--color-text-secondary)]">
-                    Chief Medical Complaint
-                  </label>
-                  <input
-                    type="text"
-                    value={walkinData.chiefComplaint}
-                    onChange={(e) =>
-                      setWalkinData({ ...walkinData, chiefComplaint: e.target.value })
-                    }
-                    placeholder="Symptoms e.g. Fever, cough, injury..."
-                    className="input text-xs py-1.5"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2 flex justify-end">
-                <button type="submit" className="btn btn-primary btn-md gap-2 px-6">
-                  <Sparkles className="w-4 h-4" /> Generate UHID & Issue Token
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* WORKFLOW 4: Universal Patient Search */}
-          {activeWorkflow === 'universal-search' && (
-            <div className="card p-5 space-y-4">
-              <div className="border-b border-[var(--color-border)] pb-3">
-                <h2 className="text-base font-bold text-[var(--color-text-primary)]">
-                  Universal Patient Search (8 Attributes)
-                </h2>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Search by UHID, ESIC IP, Aadhaar, Mobile, Name, QR code, Barcode, or Token
-                </p>
-              </div>
-
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Enter UHID / IP No / Aadhaar / Mobile / Name / Token..."
-                  className="input input-with-icon text-xs py-2.5 font-mono"
-                />
-              </div>
-
-              {/* Found Patient Result Card */}
-              <div className="p-4 rounded-xl border border-primary-200 bg-primary-50/40 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h4 className="font-bold text-sm text-[var(--color-text-primary)]">
-                      Rahul Kumar
-                    </h4>
-                    <p className="text-xs font-mono text-primary-700">
-                      UHID: ESIC-MH-001042 • IP: 1234567890
-                    </p>
-                    <p className="text-xs text-[var(--color-text-secondary)]">
-                      Male • 42 yrs • Blood: B+ • Phone: +91 98765 43210
-                    </p>
-                  </div>
-                  <Badge variant="success">ESIC Covered</Badge>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2 border-t border-primary-100">
-                  <button
-                    onClick={() => setActiveWorkflow('esic-beneficiary')}
-                    className="btn btn-primary btn-sm text-xs gap-1"
-                  >
-                    Create Visit
-                  </button>
-                  <button
-                    onClick={() => window.print()}
-                    className="btn btn-secondary btn-sm text-xs gap-1"
-                  >
-                    <Printer className="w-3.5 h-3.5" /> Print UHID Card
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* WORKFLOW 5: Registration Success View (Print Slip & Card) */}
-          {activeWorkflow === 'success-slip' && registrationResult && (
+          {/* WORKFLOW: Registration / Visit Success View */}
+          {activeWorkflow === 'success-slip' && registrationResult?.employee && (
             <div className="card p-6 space-y-6 animate-fade-in">
               <div className="alert alert-success flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-success-600" />
                   <div>
                     <span className="font-bold text-sm block">
-                      Registration & OPD Token Issued Successfully!
+                      Registration Successful! Hospital UID Issued.
                     </span>
                     <span className="text-xs">
-                      UHID: {registrationResult.uhid} • Token: {registrationResult.tokenNumber}
+                      UHID: {registrationResult.hospitalUid?.uidCode}
+                      {issuedToken ? ` • Token: ${issuedToken}` : ''}
                     </span>
                   </div>
                 </div>
@@ -766,7 +807,6 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                 </button>
               </div>
 
-              {/* Printable Registration Slip Preview */}
               <div className="p-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-4">
                 <div className="flex items-center justify-between border-b pb-3">
                   <div>
@@ -777,51 +817,48 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                       Ministry of Labour & Employment, Govt. of India
                     </p>
                   </div>
-                  <Badge variant="info" className="font-mono text-xs">
-                    {registrationResult.tokenNumber}
-                  </Badge>
+                  {issuedToken && (
+                    <Badge variant="info" className="font-mono text-xs">
+                      {issuedToken}
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <span className="text-[var(--color-text-secondary)] block">Patient Name:</span>{' '}
-                    <span className="font-bold text-sm">{registrationResult.patientName}</span>
+                    <span className="font-bold text-sm">{registrationResult.employee.name}</span>
                   </div>
                   <div>
                     <span className="text-[var(--color-text-secondary)] block">Hospital UHID:</span>{' '}
                     <span className="font-mono font-bold text-sm text-primary-600">
-                      {registrationResult.uhid}
+                      {registrationResult.hospitalUid?.uidCode}
                     </span>
                   </div>
                   <div>
                     <span className="text-[var(--color-text-secondary)] block">Department:</span>{' '}
-                    <span className="font-semibold">{registrationResult.dept}</span>
+                    <span className="font-semibold">{registrationResult.employee.department}</span>
                   </div>
                   <div>
                     <span className="text-[var(--color-text-secondary)] block">
-                      Attending Doctor:
+                      Employment Type:
                     </span>{' '}
-                    <span className="font-semibold">{registrationResult.doctor}</span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--color-text-secondary)] block">Visit ID:</span>{' '}
-                    <span className="font-mono">{registrationResult.visitId}</span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--color-text-secondary)] block">
-                      Estimated Wait:
-                    </span>{' '}
-                    <span className="font-semibold text-warning-600">
-                      {registrationResult.waitTime}
+                    <span className="font-semibold">
+                      {registrationResult.employee.employmentType.name}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex justify-end gap-3 pt-2">
                 <button
-                  onClick={() => setActiveWorkflow('esic-beneficiary')}
+                  onClick={() => {
+                    setVerifiedData(null);
+                    setRegistrationResult(null);
+                    setIssuedToken(null);
+                    setEmployeeIdInput('');
+                    setActiveWorkflow('esic-beneficiary');
+                  }}
                   className="btn btn-secondary btn-md"
                 >
                   Register Another Patient
@@ -837,62 +874,43 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
           )}
         </div>
 
-        {/* ── RIGHT COLUMN: Patient Context Preview & Live Queue (3 cols) ── */}
+        {/* ── RIGHT COLUMN: Patient Context Preview & Live Queue ── */}
         <div className="lg:col-span-3 space-y-4">
-          {/* Patient Context Preview Card */}
           <div className="card p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] border-b border-[var(--color-border)] pb-2 flex items-center justify-between">
-              <span>Patient Profile Preview</span>
-              <Badge variant="neutral">360° View</Badge>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)] border-b border-[var(--color-border)] pb-2">
+              Patient Profile Preview
             </h3>
 
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center font-bold text-primary-600 text-sm">
-                {activePatientPreview.name.charAt(0)}
-              </div>
-              <div className="min-w-0">
-                <h4 className="font-bold text-sm text-[var(--color-text-primary)] truncate">
-                  {activePatientPreview.name}
-                </h4>
-                <p className="text-[11px] font-mono text-primary-600 truncate">
-                  {activePatientPreview.uhid}
-                </p>
-              </div>
-            </div>
+            {previewEmployee ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center font-bold text-primary-600 text-sm">
+                    {previewEmployee.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-bold text-sm text-[var(--color-text-primary)] truncate">
+                      {previewEmployee.name}
+                    </h4>
+                    <p className="text-[11px] font-mono text-primary-600 truncate">
+                      {'uid' in previewEmployee ? previewEmployee.uid : previewEmployee.employeeId}
+                    </p>
+                  </div>
+                </div>
 
-            <div className="space-y-1.5 text-xs border-t border-[var(--color-border)] pt-2.5">
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-secondary)]">Insurance:</span>{' '}
-                <span className="font-semibold text-success-600">
-                  {activePatientPreview.insurance}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-secondary)]">Token:</span>{' '}
-                <span className="font-mono font-bold text-primary-600">
-                  {activePatientPreview.token}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-secondary)]">Department:</span>{' '}
-                <span className="font-semibold">{activePatientPreview.dept}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[var(--color-text-secondary)]">Last Visit:</span>{' '}
-                <span>{activePatientPreview.lastVisit}</span>
-              </div>
-            </div>
-
-            {/* Patient Alerts */}
-            {activePatientPreview.allergies.length > 0 && (
-              <div className="p-2 rounded-lg bg-danger-50 text-danger-700 border border-danger-100 text-[11px] flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>Allergy: {activePatientPreview.allergies.join(', ')}</span>
-              </div>
+                <div className="space-y-1.5 text-xs border-t border-[var(--color-border)] pt-2.5">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--color-text-secondary)]">Department:</span>
+                    <span className="font-semibold">{previewEmployee.department}</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-[var(--color-text-tertiary)] py-2">
+                No patient loaded yet. Verify or search for a patient to preview their record here.
+              </p>
             )}
           </div>
 
-          {/* Live Queue Tracker */}
           <div className="card p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-secondary)]">
@@ -902,32 +920,30 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             </div>
 
             <div className="space-y-2 max-h-64 overflow-y-auto">
-              {liveQueue.map((q) => (
-                <div
-                  key={q.id}
-                  className="p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <span className="font-mono font-bold text-primary-600 block">{q.token}</span>
-                    <span className="text-[11px] text-[var(--color-text-primary)] font-medium truncate block max-w-[110px]">
-                      {q.name}
-                    </span>
-                  </div>
-                  <Badge
-                    variant={
-                      q.status === 'IN_CONSULTATION'
-                        ? 'success'
-                        : q.status === 'EMERGENCY'
-                          ? 'danger'
-                          : q.status === 'CALLED'
-                            ? 'warning'
-                            : 'neutral'
-                    }
+              {liveQueue.length === 0 ? (
+                <p className="text-xs text-[var(--color-text-tertiary)] py-2">
+                  No patients currently in queue.
+                </p>
+              ) : (
+                liveQueue.map((q) => (
+                  <div
+                    key={q.id}
+                    className="p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs"
                   >
-                    {q.status}
-                  </Badge>
-                </div>
-              ))}
+                    <div>
+                      <span className="font-mono font-bold text-primary-600 block">
+                        {q.tokenNumber}
+                      </span>
+                      <span className="text-[11px] text-[var(--color-text-primary)] font-medium truncate block max-w-[110px]">
+                        {q.visit?.employee?.name || 'Patient'}
+                      </span>
+                    </div>
+                    <Badge variant={q.calledAt ? 'success' : 'warning'}>
+                      {q.calledAt ? 'CALLED' : 'WAITING'}
+                    </Badge>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

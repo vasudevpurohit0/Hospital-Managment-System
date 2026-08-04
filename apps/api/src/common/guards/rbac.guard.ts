@@ -31,8 +31,12 @@ export class RbacGuard implements CanActivate {
       throw new ForbiddenException('Access denied: unauthenticated or missing user role');
     }
 
-    // SuperAdmin bypasses role/permission checks
-    if (user.roleName === 'SuperAdmin') {
+    // SuperAdmin & Administrator bypass role/permission checks
+    if (
+      user.roleName === 'SuperAdmin' ||
+      user.roleName === 'Administrator' ||
+      user.roleName === 'Admin'
+    ) {
       return true;
     }
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { AdmissionService } from './admission.service';
 import { AllocateBedDto } from './dto/allocate-bed.dto';
 import { CreateNoteDto } from './dto/create-note.dto';
@@ -34,6 +34,41 @@ export class AdmissionController {
   @RequirePermission('Admission', 'read')
   async findAvailableBeds(@Param('id') id: string) {
     return this.service.findAvailableBeds(id);
+  }
+
+  @Get('wards/all')
+  @RequirePermission('Admission', 'read')
+  async findAllWards() {
+    return this.service.findAllWards();
+  }
+
+  @Post('beds')
+  @RequirePermission('Admission', 'update')
+  async createWardAndBed(
+    @Body()
+    dto: {
+      wardId?: string;
+      wardName?: string;
+      wardCategory?: string;
+      roomNumber: string;
+      bedNumber?: string;
+      bedNumbers?: string[];
+      count?: number;
+    },
+  ) {
+    return this.service.createWardAndBed(dto);
+  }
+
+  @Delete('wards/:id')
+  @RequirePermission('Admission', 'update')
+  async deleteWard(@Param('id') id: string) {
+    return this.service.deleteWard(id);
+  }
+
+  @Delete('beds/:id')
+  @RequirePermission('Admission', 'update')
+  async deleteBed(@Param('id') id: string) {
+    return this.service.deleteBed(id);
   }
 
   @Post(':id/allocate')

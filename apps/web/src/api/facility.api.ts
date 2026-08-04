@@ -18,12 +18,13 @@ export interface FacilityEligibilityRuleRecord {
   } | null;
 }
 
-export async function fetchFacilityRules(token: string): Promise<FacilityEligibilityRuleRecord[]> {
-  const res = await fetch('/api/facility-rules', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+import { apiFetch } from './client';
+
+export async function fetchFacilityRules(token?: string): Promise<FacilityEligibilityRuleRecord[]> {
+  const res = await apiFetch('/api/facility-rules', {}, token);
   if (!res.ok) {
-    throw new Error('Failed to fetch facility rules');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch facility rules');
   }
   return res.json();
 }
@@ -36,25 +37,26 @@ export async function updateFacilityRule(
     room: string;
     facilityLevel: string;
   },
-  token: string,
+  token?: string,
 ): Promise<FacilityEligibilityRuleRecord> {
-  const res = await fetch(`/api/facility-rules/${id}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    `/api/facility-rules/${id}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    token,
+  );
   if (!res.ok) {
-    throw new Error('Failed to update facility rule');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to update facility rule');
   }
   return res.json();
 }
 
 export async function resolveFacilityRule(
   employeeId: string,
-  token: string,
+  token?: string,
 ): Promise<{
   category: 'A' | 'B' | 'C' | 'D' | 'CONTRACTUAL';
   wardEligibility: string;
@@ -63,14 +65,14 @@ export async function resolveFacilityRule(
   ruleId: string;
   version: number;
 }> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/facility-rules/resolve?employeeId=${encodeURIComponent(employeeId)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
+    {},
+    token,
   );
   if (!res.ok) {
-    throw new Error('Failed to resolve facility eligibility rule');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to resolve facility eligibility rule');
   }
   return res.json();
 }

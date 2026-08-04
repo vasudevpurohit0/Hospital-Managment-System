@@ -10,6 +10,7 @@ import {
   RequisitionRecord,
   PurchaseOrderRecord,
 } from '../../api/procurement.api';
+import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
 
 interface ProcurementScreenProps {
   authToken?: string;
@@ -20,6 +21,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const activeToken = authToken || token || '';
   const [requisitions, setRequisitions] = useState<RequisitionRecord[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRecord[]>([]);
+  const [medicines, setMedicines] = useState<MedicineRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'REQUISITIONS' | 'POS' | 'GRN' | 'TRANSFER'>(
@@ -33,12 +35,12 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [showTransferModal, setShowTransferModal] = useState(false);
 
   // Form states
-  const [reqMedicineId, setReqMedicineId] = useState('med-paracetamol');
+  const [reqMedicineId, setReqMedicineId] = useState('');
   const [reqQuantity, setReqQuantity] = useState('500');
 
   const [poReqId, setPoReqId] = useState('');
-  const [poSupplierId, setPoSupplierId] = useState('sup-01');
-  const [poUnitPrice, setPoUnitPrice] = useState('10.00');
+  const [poSupplierId, setPoSupplierId] = useState('00000000-0000-0000-0000-000000000801');
+  const [poUnitPrice, setPoUnitPrice] = useState('8.50');
 
   const [grnPOId, setGrnPOId] = useState('');
   const [grnBatchNum, setGrnBatchNum] = useState('GRN-BATCH-2026-X1');
@@ -46,26 +48,33 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [grnQty, setGrnQty] = useState('500');
   const [grnMfgDate, setGrnMfgDate] = useState('2026-01-01');
   const [grnExpDate, setGrnExpDate] = useState('2028-06-30');
-  const [grnPurchasePrice, setGrnPurchasePrice] = useState('10.00');
+  const [grnPurchasePrice, setGrnPurchasePrice] = useState('8.50');
   const [grnIssuePrice, setGrnIssuePrice] = useState('15.00');
 
-  const [transferBatchId, setTransferBatchId] = useState('batch-p-500-01');
-  const [transferQty, setTransferQty] = useState('100');
+  const [transferBatchId, setTransferBatchId] = useState('00000000-0000-0000-0000-000000000712');
+  const [transferQty, setTransferQty] = useState('50');
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const reqs = await fetchRequisitions(activeToken);
+      const [reqs, pos, meds] = await Promise.all([
+        fetchRequisitions(activeToken),
+        fetchPurchaseOrders(activeToken),
+        fetchMedicines(activeToken),
+      ]);
       setRequisitions(reqs);
-      const pos = await fetchPurchaseOrders(activeToken);
       setPurchaseOrders(pos);
+      setMedicines(meds);
+      if (meds.length > 0 && !reqMedicineId) {
+        setReqMedicineId(meds[0].id);
+      }
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to load procurement data');
     } finally {
       setLoading(false);
     }
-  }, [activeToken]);
+  }, [activeToken, reqMedicineId]);
 
   useEffect(() => {
     loadData();
@@ -490,14 +499,18 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
             <form onSubmit={handleCreateRequisition} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">Medicine *</label>
-                <input
-                  type="text"
+                <select
                   required
-                  placeholder="Medicine ID e.g. med-paracetamol"
                   value={reqMedicineId}
                   onChange={(e) => setReqMedicineId(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
-                />
+                >
+                  {medicines.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.genericName} ({m.strength} {m.dosageForm}) — {m.brandName || m.category}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">Quantity *</label>
@@ -545,17 +558,25 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
             <form onSubmit={handleCreatePO} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">
-                  Requisition ID *
+                  Select Approved Requisition *
                 </label>
-                <input
-                  type="text"
+                <select
                   required
                   value={poReqId}
                   onChange={(e) => setPoReqId(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm font-mono"
-                />
+                >
+                  <option value="">-- Choose Approved Requisition --</option>
+                  {requisitions
+                    .filter((r) => r.status === 'APPROVED')
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        Req #{r.id.substring(0, 8)}... — {r.items[0]?.medicine?.genericName || 'Medicine'} ({r.items[0]?.quantity} units)
+                      </option>
+                    ))}
+                </select>
                 <span className="text-[11px] text-gray-400">
-                  Must be an APPROVED requisition (FR-SCM-03)
+                  Only APPROVED requisitions can be converted into Purchase Orders (FR-SCM-03)
                 </span>
               </div>
               <div>

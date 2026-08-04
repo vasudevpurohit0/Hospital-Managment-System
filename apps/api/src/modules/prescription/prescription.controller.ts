@@ -12,7 +12,7 @@ export class PrescriptionController {
   @Post()
   @RequirePermission('Prescription', 'create')
   async createPrescription(@Body() dto: CreatePrescriptionDto, @Req() req: any) {
-    const doctorId = req.user?.id || '00000000-0000-0000-0000-000000000010';
+    const doctorId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
     return this.prescriptionService.createPrescription(dto, doctorId);
   }
 

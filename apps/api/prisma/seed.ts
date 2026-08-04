@@ -92,6 +92,9 @@ export async function main() {
     { roleName: 'Pharmacist', resource: 'MedicineBatch', action: 'read' },
 
     // --- StoreManager ---
+    { roleName: 'StoreManager', resource: 'Inventory', action: 'create' },
+    { roleName: 'StoreManager', resource: 'Inventory', action: 'read' },
+    { roleName: 'StoreManager', resource: 'Inventory', action: 'update' },
     { roleName: 'StoreManager', resource: 'Medicine', action: 'create' },
     { roleName: 'StoreManager', resource: 'Medicine', action: 'read' },
     { roleName: 'StoreManager', resource: 'Medicine', action: 'update' },
@@ -107,9 +110,15 @@ export async function main() {
     { roleName: 'ProcurementOfficer', resource: 'PurchaseOrder', action: 'create' },
     { roleName: 'ProcurementOfficer', resource: 'PurchaseOrder', action: 'read' },
 
-    // --- Administrator ---
+    // --- Administrator (hospital-wide operational & administrative privileges) ---
+    { roleName: 'Administrator', resource: 'Employee', action: 'create' },
     { roleName: 'Administrator', resource: 'Employee', action: 'read' },
     { roleName: 'Administrator', resource: 'Employee', action: 'update' },
+    { roleName: 'Administrator', resource: 'HospitalUID', action: 'create' },
+    { roleName: 'Administrator', resource: 'HospitalUID', action: 'read' },
+    { roleName: 'Administrator', resource: 'Inventory', action: 'create' },
+    { roleName: 'Administrator', resource: 'Inventory', action: 'read' },
+    { roleName: 'Administrator', resource: 'Inventory', action: 'update' },
     { roleName: 'Administrator', resource: 'FacilityEligibilityRule', action: 'create' },
     { roleName: 'Administrator', resource: 'FacilityEligibilityRule', action: 'read' },
     { roleName: 'Administrator', resource: 'FacilityEligibilityRule', action: 'update' },
@@ -117,6 +126,38 @@ export async function main() {
     { roleName: 'Administrator', resource: 'BenefitRule', action: 'read' },
     { roleName: 'Administrator', resource: 'BenefitRule', action: 'update' },
     { roleName: 'Administrator', resource: 'AuditLog', action: 'read' },
+    { roleName: 'Administrator', resource: 'Visit', action: 'create' },
+    { roleName: 'Administrator', resource: 'Visit', action: 'read' },
+    { roleName: 'Administrator', resource: 'Visit', action: 'update' },
+    { roleName: 'Administrator', resource: 'OPDVisit', action: 'create' },
+    { roleName: 'Administrator', resource: 'OPDVisit', action: 'read' },
+    { roleName: 'Administrator', resource: 'Diagnosis', action: 'create' },
+    { roleName: 'Administrator', resource: 'Diagnosis', action: 'read' },
+    { roleName: 'Administrator', resource: 'Diagnosis', action: 'update' },
+    { roleName: 'Administrator', resource: 'Prescription', action: 'create' },
+    { roleName: 'Administrator', resource: 'Prescription', action: 'read' },
+    { roleName: 'Administrator', resource: 'Prescription', action: 'update' },
+    { roleName: 'Administrator', resource: 'Prescription', action: 'sign' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'create' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'read' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'update' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'approve' },
+    { roleName: 'Administrator', resource: 'AdmissionNote', action: 'create' },
+    { roleName: 'Administrator', resource: 'AdmissionNote', action: 'read' },
+    { roleName: 'Administrator', resource: 'Medicine', action: 'create' },
+    { roleName: 'Administrator', resource: 'Medicine', action: 'read' },
+    { roleName: 'Administrator', resource: 'Medicine', action: 'update' },
+    { roleName: 'Administrator', resource: 'MedicineBatch', action: 'create' },
+    { roleName: 'Administrator', resource: 'MedicineBatch', action: 'read' },
+    { roleName: 'Administrator', resource: 'MedicineBatch', action: 'update' },
+    { roleName: 'Administrator', resource: 'StockTransaction', action: 'create' },
+    { roleName: 'Administrator', resource: 'StockTransaction', action: 'read' },
+    { roleName: 'Administrator', resource: 'StockTransaction', action: 'dispense' },
+    { roleName: 'Administrator', resource: 'PurchaseRequisition', action: 'create' },
+    { roleName: 'Administrator', resource: 'PurchaseRequisition', action: 'read' },
+    { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'create' },
+    { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'read' },
+    { roleName: 'Administrator', resource: 'Approval', action: 'approve' },
 
     // --- SuperAdmin (Wildcard / all permissions) ---
     { roleName: 'SuperAdmin', resource: '*', action: '*' },
@@ -578,6 +619,116 @@ export async function main() {
 
   console.log(`  ✓ Seeded AdmissionDesk user: admission@esic.gov.in (${admissionUser.id})`);
 
+  const adminPasswordHash = await bcrypt.hash('AdminPass123!', 10);
+  const adminUser = await prisma.user.upsert({
+    where: { identifier: 'admin@esic.gov.in' },
+    update: {
+      passwordHash: adminPasswordHash,
+      roleId: roleMap['Administrator'],
+      active: true,
+    },
+    create: {
+      identifier: 'admin@esic.gov.in',
+      passwordHash: adminPasswordHash,
+      roleId: roleMap['Administrator'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Administrator user: admin@esic.gov.in (${adminUser.id})`);
+
+  const pharmacistPasswordHash = await bcrypt.hash('PharmacistPass123!', 10);
+  const pharmacistUser = await prisma.user.upsert({
+    where: { identifier: 'pharmacist@esic.gov.in' },
+    update: {
+      passwordHash: pharmacistPasswordHash,
+      roleId: roleMap['Pharmacist'],
+      active: true,
+    },
+    create: {
+      identifier: 'pharmacist@esic.gov.in',
+      passwordHash: pharmacistPasswordHash,
+      roleId: roleMap['Pharmacist'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Pharmacist user: pharmacist@esic.gov.in (${pharmacistUser.id})`);
+
+  const storeManagerPasswordHash = await bcrypt.hash('StoreManagerPass123!', 10);
+  const storeManagerUser = await prisma.user.upsert({
+    where: { identifier: 'storemanager@esic.gov.in' },
+    update: {
+      passwordHash: storeManagerPasswordHash,
+      roleId: roleMap['StoreManager'],
+      active: true,
+    },
+    create: {
+      identifier: 'storemanager@esic.gov.in',
+      passwordHash: storeManagerPasswordHash,
+      roleId: roleMap['StoreManager'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded StoreManager user: storemanager@esic.gov.in (${storeManagerUser.id})`);
+
+  const procurementPasswordHash = await bcrypt.hash('ProcurementPass123!', 10);
+  const procurementUser = await prisma.user.upsert({
+    where: { identifier: 'procurement@esic.gov.in' },
+    update: {
+      passwordHash: procurementPasswordHash,
+      roleId: roleMap['ProcurementOfficer'],
+      active: true,
+    },
+    create: {
+      identifier: 'procurement@esic.gov.in',
+      passwordHash: procurementPasswordHash,
+      roleId: roleMap['ProcurementOfficer'],
+      active: true,
+    },
+  });
+
+  console.log(
+    `  ✓ Seeded ProcurementOfficer user: procurement@esic.gov.in (${procurementUser.id})`,
+  );
+
+  const receptionPasswordHash = await bcrypt.hash('ReceptionPass123!', 10);
+  const receptionUser = await prisma.user.upsert({
+    where: { identifier: 'reception@esic.gov.in' },
+    update: {
+      passwordHash: receptionPasswordHash,
+      roleId: roleMap['Reception'],
+      active: true,
+    },
+    create: {
+      identifier: 'reception@esic.gov.in',
+      passwordHash: receptionPasswordHash,
+      roleId: roleMap['Reception'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Reception user: reception@esic.gov.in (${receptionUser.id})`);
+
+  const dataEntryPasswordHash = await bcrypt.hash('DataEntryPass123!', 10);
+  const dataEntryUser = await prisma.user.upsert({
+    where: { identifier: 'dataentry@esic.gov.in' },
+    update: {
+      passwordHash: dataEntryPasswordHash,
+      roleId: roleMap['DataEntryOperator'],
+      active: true,
+    },
+    create: {
+      identifier: 'dataentry@esic.gov.in',
+      passwordHash: dataEntryPasswordHash,
+      roleId: roleMap['DataEntryOperator'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded DataEntryOperator user: dataentry@esic.gov.in (${dataEntryUser.id})`);
+
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   const genMedDept = await prisma.department.findUnique({ where: { code: 'GENMED' } });
   if (genMedDept) {
@@ -626,6 +777,26 @@ export async function main() {
         },
       });
 
+      await prisma.patientProfile.upsert({
+        where: { employeeId: emp.id },
+        update: {},
+        create: {
+          employeeId: emp.id,
+          eligibilityCategory: 'C',
+        },
+      });
+
+      const uidCode = `ESIC-2026-${p.empId.replace(/[^0-9]/g, '').padStart(6, '0')}`;
+      await prisma.hospitalUID.upsert({
+        where: { employeeId: emp.id },
+        update: {},
+        create: {
+          employeeId: emp.id,
+          uidCode,
+          qrPayload: uidCode,
+        },
+      });
+
       const visit = await prisma.visit.upsert({
         where: { id: p.visitId },
         update: {},
@@ -649,8 +820,195 @@ export async function main() {
         },
       });
     }
-    console.log(`  ✓ Seeded sample Patients & OPD Visits for General Medicine`);
+    console.log(`  ✓ Seeded sample Patients, Hospital UIDs & OPD Visits for General Medicine`);
   }
+
+  // 12. Seed Medicine Master & Stock Batches
+  const pcmMed = await prisma.medicine.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000701' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000701',
+      genericName: 'Paracetamol',
+      brandName: 'Crocin / Calpol',
+      category: 'Analgesics & Antipyretics',
+      strength: '500mg',
+      dosageForm: 'Tablet',
+    },
+  });
+
+  await prisma.medicineBatch.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000711' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000711',
+      medicineId: pcmMed.id,
+      batchNumber: 'PCM-2026-A1',
+      manufacturer: 'Cipla India',
+      manufacturingDate: new Date('2026-01-01'),
+      expiryDate: new Date('2027-12-31'),
+      purchasePrice: 8.5,
+      issuePrice: 15.0,
+      currentStock: 450,
+      minimumStockLevel: 50,
+      reorderLevel: 100,
+      storageLocation: 'Rack A-01 (Pharmacy Store)',
+      stockStatus: 'IN_STOCK',
+    },
+  });
+
+  await prisma.medicineBatch.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000712' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000712',
+      medicineId: pcmMed.id,
+      batchNumber: 'PCM-2026-LOW',
+      manufacturer: 'Cipla India',
+      manufacturingDate: new Date('2026-01-01'),
+      expiryDate: new Date('2026-10-31'),
+      purchasePrice: 8.5,
+      issuePrice: 15.0,
+      currentStock: 25,
+      minimumStockLevel: 50,
+      reorderLevel: 100,
+      storageLocation: 'Rack A-02 (Central Store)',
+      stockStatus: 'CRITICAL_ALERT',
+    },
+  });
+
+  const amxMed = await prisma.medicine.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000702' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000702',
+      genericName: 'Amoxicillin',
+      brandName: 'Mox 500',
+      category: 'Antibiotics',
+      strength: '500mg',
+      dosageForm: 'Capsule',
+    },
+  });
+
+  await prisma.medicineBatch.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000721' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000721',
+      medicineId: amxMed.id,
+      batchNumber: 'AMX-2026-B1',
+      manufacturer: 'Sun Pharma',
+      manufacturingDate: new Date('2026-01-01'),
+      expiryDate: new Date('2027-08-31'),
+      purchasePrice: 22.0,
+      issuePrice: 35.0,
+      currentStock: 350,
+      minimumStockLevel: 50,
+      reorderLevel: 100,
+      storageLocation: 'Rack B-04',
+      stockStatus: 'IN_STOCK',
+    },
+  });
+
+  const aziMed = await prisma.medicine.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000703' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000703',
+      genericName: 'Azithromycin',
+      brandName: 'Azee 500',
+      category: 'Antibiotics',
+      strength: '500mg',
+      dosageForm: 'Tablet',
+    },
+  });
+
+  await prisma.medicineBatch.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000731' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000731',
+      medicineId: aziMed.id,
+      batchNumber: 'AZI-2026-C1',
+      manufacturer: 'Torrent Pharma',
+      manufacturingDate: new Date('2026-01-01'),
+      expiryDate: new Date('2027-06-30'),
+      purchasePrice: 42.0,
+      issuePrice: 65.0,
+      currentStock: 120,
+      minimumStockLevel: 30,
+      reorderLevel: 80,
+      storageLocation: 'Rack B-12',
+      stockStatus: 'IN_STOCK',
+    },
+  });
+
+  console.log(`  ✓ Seeded Medicine Master & Stock Batches (Paracetamol, Amoxicillin, Azithromycin)`);
+
+  // 13. Seed Suppliers & Procurement Purchase Requisitions
+  const supplier1 = await prisma.supplier.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000801' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000801',
+      name: 'Cipla Healthcare Ltd',
+      contactPerson: 'Ramesh Shah',
+      email: 'orders@cipla.com',
+      phone: '+91-9820012345',
+      address: 'Industrial Estate, Mumbai, India',
+    },
+  });
+
+  const req1 = await prisma.purchaseRequisition.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000811' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000811',
+      raisedBy: storeManagerUser.id,
+      status: 'APPROVED',
+      triggeredByAlert: true,
+      items: {
+        create: [
+          {
+            medicineId: pcmMed.id,
+            quantity: 1000,
+          },
+        ],
+      },
+      approvals: {
+        create: [
+          {
+            approvedBy: adminUser.id,
+            decision: 'APPROVED',
+            notes: 'Approved for urgent central store restocking',
+          },
+        ],
+      },
+    },
+  });
+
+  await prisma.purchaseOrder.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000821' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000821',
+      requisitionId: req1.id,
+      supplierId: supplier1.id,
+      issuedBy: procurementUser.id,
+      status: 'ISSUED',
+      items: {
+        create: [
+          {
+            medicineId: pcmMed.id,
+            quantity: 1000,
+            unitPrice: 8.5,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log(`  ✓ Seeded Procurement Master (Suppliers, Purchase Requisitions & Issued Purchase Orders)`);
 
   console.log('✅ Seed completed successfully!');
 }

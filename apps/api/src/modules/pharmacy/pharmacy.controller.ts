@@ -24,7 +24,7 @@ export class PharmacyController {
   @Post('dispense')
   @RequirePermission('Pharmacy', 'dispense')
   async dispense(@Body() dto: DispenseMedicineDto, @Req() req: any) {
-    const userId = req.user?.id || '00000000-0000-0000-0000-000000000099';
+    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
     const userRole = req.user?.roleName || req.user?.role || 'Pharmacist';
     return this.pharmacyService.dispense(dto, userId, userRole);
   }

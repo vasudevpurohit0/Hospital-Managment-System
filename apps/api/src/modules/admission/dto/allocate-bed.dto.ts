@@ -1,15 +1,15 @@
-import { IsNotEmpty, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class AllocateBedDto {
-  @IsUUID()
+  @IsString()
   @IsNotEmpty()
   bedId!: string;
 
-  @IsUUID()
-  @IsNotEmpty()
-  assignedDoctorId!: string;
+  @IsString()
+  @IsOptional()
+  assignedDoctorId?: string;
 
-  @IsUUID()
-  @IsNotEmpty()
-  assignedNurseId!: string;
+  @IsString()
+  @IsOptional()
+  assignedNurseId?: string;
 }

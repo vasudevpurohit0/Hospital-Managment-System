@@ -70,6 +70,22 @@ describe('AuthService', () => {
       );
     });
 
+    it('should throw ServiceUnavailableException when database query fails', async () => {
+      mockPrismaService.user.findUnique.mockRejectedValue(new Error('Connection lost'));
+
+      await expect(service.validateUser('doctor@esic.gov.in', 'DoctorPass123!')).rejects.toThrow(
+        'Database service is currently unavailable.',
+      );
+    });
+
+    it('should throw UnauthorizedException when user does not exist', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(null);
+
+      await expect(service.validateUser('nonexistent@esic.gov.in', 'DoctorPass123!')).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
     it('should throw UnauthorizedException for inactive user', async () => {
       mockPrismaService.user.findUnique.mockResolvedValue({
         ...mockUser,

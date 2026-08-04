@@ -67,7 +67,7 @@ export class InventoryController {
   @Post('batches/:id/dispose')
   @RequirePermission('Inventory', 'create')
   async disposeBatch(@Param('id') id: string, @Body() dto: DisposeBatchDto, @Req() req: any) {
-    const userId = req.user?.sub || '00000000-0000-0000-0000-000000000001';
+    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
     return this.inventoryService.disposeBatch(id, dto, userId);
   }
 }

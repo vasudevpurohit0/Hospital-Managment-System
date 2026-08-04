@@ -41,18 +41,22 @@ export interface ReceiptRecord {
   status: string;
 }
 
-export async function fetchBillingTransactions(token: string): Promise<BillingTransactionRecord[]> {
-  const res = await fetch('/api/billing/transactions', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch billing transactions');
+import { apiFetch } from './client';
+
+export async function fetchBillingTransactions(token?: string): Promise<BillingTransactionRecord[]> {
+  const res = await apiFetch('/api/billing/transactions', {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch billing transactions');
+  }
   return res.json();
 }
 
-export async function fetchReceipt(transactionId: string, token: string): Promise<ReceiptRecord> {
-  const res = await fetch(`/api/billing/receipts/${transactionId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch receipt data');
+export async function fetchReceipt(transactionId: string, token?: string): Promise<ReceiptRecord> {
+  const res = await apiFetch(`/api/billing/receipts/${transactionId}`, {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch receipt data');
+  }
   return res.json();
 }

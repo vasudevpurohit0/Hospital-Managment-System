@@ -86,46 +86,121 @@ export interface AdmissionRecord {
   dischargeSummary?: DischargeSummaryRecord | null;
 }
 
-export async function fetchAdmissions(token: string): Promise<AdmissionRecord[]> {
-  const res = await fetch('/api/admissions', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+import { apiFetch } from './client';
+
+export async function fetchAdmissions(token?: string): Promise<AdmissionRecord[]> {
+  const res = await apiFetch('/api/admissions', {}, token);
   if (!res.ok) {
-    throw new Error('Failed to fetch admissions');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch admissions');
   }
   return res.json();
 }
 
-export async function fetchAdmissionById(id: string, token: string): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export async function fetchAdmissionById(id: string, token?: string): Promise<AdmissionRecord> {
+  const res = await apiFetch(`/api/admissions/${id}`, {}, token);
   if (!res.ok) {
-    throw new Error('Failed to fetch admission details');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch admission details');
   }
   return res.json();
 }
 
 export async function resolveAdmissionEligibility(
   id: string,
-  token: string,
+  token?: string,
 ): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}/resolve`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await apiFetch(`/api/admissions/${id}/resolve`, { method: 'POST' }, token);
   if (!res.ok) {
-    throw new Error('Failed to resolve admission eligibility');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to resolve admission eligibility');
   }
   return res.json();
 }
 
-export async function fetchEligibleBeds(id: string, token: string): Promise<BedRecord[]> {
-  const res = await fetch(`/api/admissions/${id}/eligible-beds`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export interface WardManagementRecord {
+  id: string;
+  name: string;
+  category: string;
+  rooms: Array<{
+    id: string;
+    roomNumber: string;
+    type: string;
+    beds: Array<{
+      id: string;
+      bedNumber: string;
+      status: string;
+      currentAdmission?: {
+        id: string;
+        visit?: {
+          employee?: {
+            name: string;
+            employeeId: string;
+          };
+        };
+      } | null;
+    }>;
+  }>;
+}
+
+export async function fetchEligibleBeds(id: string, token?: string): Promise<BedRecord[]> {
+  const res = await apiFetch(`/api/admissions/${id}/eligible-beds`, {}, token);
   if (!res.ok) {
-    throw new Error('Failed to fetch eligible available beds');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch eligible available beds');
+  }
+  return res.json();
+}
+
+export async function fetchAllWards(token?: string): Promise<WardManagementRecord[]> {
+  const res = await apiFetch('/api/admissions/wards/all', {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch ward management catalog');
+  }
+  return res.json();
+}
+
+export async function createWardAndBed(
+  body: {
+    wardId?: string;
+    wardName?: string;
+    wardCategory?: string;
+    roomNumber: string;
+    bedNumber?: string;
+    count?: number;
+  },
+  token?: string,
+): Promise<unknown> {
+  const res = await apiFetch(
+    '/api/admissions/beds',
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    token,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to create new ward/bed');
+  }
+  return res.json();
+}
+
+export async function deleteWard(wardId: string, token?: string): Promise<unknown> {
+  const res = await apiFetch(`/api/admissions/wards/${wardId}`, { method: 'DELETE' }, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to delete ward');
+  }
+  return res.json();
+}
+
+export async function deleteBed(bedId: string, token?: string): Promise<unknown> {
+  const res = await apiFetch(`/api/admissions/beds/${bedId}`, { method: 'DELETE' }, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to delete bed');
   }
   return res.json();
 }
@@ -134,19 +209,19 @@ export async function allocateBed(
   id: string,
   body: {
     bedId: string;
-    assignedDoctorId: string;
-    assignedNurseId: string;
+    assignedDoctorId?: string;
+    assignedNurseId?: string;
   },
-  token: string,
+  token?: string,
 ): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}/allocate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    `/api/admissions/${id}/allocate`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    token,
+  );
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
     throw new Error(errorBody.message || 'Failed to allocate bed');
@@ -157,18 +232,19 @@ export async function allocateBed(
 export async function addAdmissionNote(
   id: string,
   body: { note: string },
-  token: string,
+  token?: string,
 ): Promise<AdmissionNoteRecord> {
-  const res = await fetch(`/api/admissions/${id}/notes`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    `/api/admissions/${id}/notes`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    token,
+  );
   if (!res.ok) {
-    throw new Error('Failed to add admission note');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to add admission note');
   }
   return res.json();
 }
@@ -176,18 +252,19 @@ export async function addAdmissionNote(
 export async function dischargePatient(
   id: string,
   body: { summaryText: string },
-  token: string,
+  token?: string,
 ): Promise<AdmissionRecord> {
-  const res = await fetch(`/api/admissions/${id}/discharge`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    `/api/admissions/${id}/discharge`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    token,
+  );
   if (!res.ok) {
-    throw new Error('Failed to approve discharge');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to approve discharge');
   }
   return res.json();
 }

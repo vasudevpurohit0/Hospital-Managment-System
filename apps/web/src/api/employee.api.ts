@@ -54,18 +54,20 @@ export interface UidCardDataResponse {
   };
 }
 
+import { apiFetch } from './client';
+
 export async function verifyEmployeeId(
   employeeId: string,
-  token: string,
+  token?: string,
 ): Promise<VerificationResponse> {
-  const res = await fetch('/api/employees/verify', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    '/api/employees/verify',
+    {
+      method: 'POST',
+      body: JSON.stringify({ employeeId }),
     },
-    body: JSON.stringify({ employeeId }),
-  });
+    token,
+  );
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -77,19 +79,19 @@ export async function verifyEmployeeId(
 
 export async function registerEmployee(
   employeeId: string,
-  token: string,
+  token?: string,
 ): Promise<RegistrationResponse> {
-  const res = await fetch('/api/employees/register', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    '/api/employees/register',
+    {
+      method: 'POST',
+      body: JSON.stringify({ employeeId }),
     },
-    body: JSON.stringify({ employeeId }),
-  });
+    token,
+  );
 
   if (res.status === 409) {
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     throw new Error(data.message || 'Employee ID is already registered');
   }
 
@@ -101,15 +103,12 @@ export async function registerEmployee(
   return res.json();
 }
 
-export async function fetchUidCard(uidCode: string, token: string): Promise<UidCardDataResponse> {
-  const res = await fetch(`/api/employees/${encodeURIComponent(uidCode)}/card`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+export async function fetchUidCard(uidCode: string, token?: string): Promise<UidCardDataResponse> {
+  const res = await apiFetch(`/api/employees/${encodeURIComponent(uidCode)}/card`, {}, token);
 
   if (!res.ok) {
-    throw new Error('Failed to fetch Hospital UID Card data');
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.message || 'Failed to fetch Hospital UID Card data');
   }
 
   return res.json();

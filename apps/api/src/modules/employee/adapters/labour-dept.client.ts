@@ -67,11 +67,27 @@ export class MockLabourDeptClient implements LabourDeptClient {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const record = this.mockRecords[employeeId.trim()];
-    if (!record) {
-      this.logger.warn(`⚠️ [MockLabourDeptClient] Employee ID not found: ${employeeId}`);
-      return null;
+    if (record) {
+      return record;
     }
 
-    return record;
+    // Dynamically generate verified record for any new valid EMP-* identifier
+    const trimmedUpper = employeeId.trim().toUpperCase();
+    if (trimmedUpper.startsWith('EMP-') || trimmedUpper.startsWith('ESIC-')) {
+      const formattedId = employeeId.trim();
+      return {
+        employeeId: formattedId,
+        name: `Beneficiary ${formattedId}`,
+        department: 'Labour & State Services',
+        postTitle: 'Officer',
+        gradePayLevel: 'Pay Level 7',
+        employmentTypeCode: 'PERMANENT',
+        contactPhone: '+91 9876543299',
+        contactEmail: `${formattedId.toLowerCase()}@labour.gov.in`,
+      };
+    }
+
+    this.logger.warn(`⚠️ [MockLabourDeptClient] Employee ID not found: ${employeeId}`);
+    return null;
   }
 }

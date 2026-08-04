@@ -4,102 +4,15 @@ import {
   resolveAdmissionEligibility,
   fetchEligibleBeds,
   allocateBed,
+  createWardAndBed,
   AdmissionRecord,
   BedRecord,
 } from '../../api/admission.api';
+import { fetchUsersByRole, UserSummary } from '../../api/user.api';
 
 interface AdmissionDeskScreenProps {
   authToken: string;
 }
-
-const MOCK_ADMISSIONS: AdmissionRecord[] = [
-  {
-    id: 'adm-101',
-    visitId: 'v-1003',
-    status: 'AWAITING_BED',
-    eligibleCategory: 'GENERAL_WARD',
-    requestedAt: new Date(Date.now() - 3600000).toISOString(),
-    allocatedAt: null,
-    dischargedAt: null,
-    wardId: null,
-    roomId: null,
-    bedId: null,
-    assignedDoctorId: null,
-    assignedNurseId: null,
-    visit: {
-      id: 'v-1003',
-      employee: {
-        id: 'emp-1001',
-        employeeId: 'EMP-1001',
-        name: 'Rahul Kumar',
-        department: 'Labour Dept',
-        post: { title: 'Senior Assistant' },
-        grade: { payLevel: 'Level 6' },
-      },
-    },
-  },
-  {
-    id: 'adm-102',
-    visitId: 'v-1004',
-    status: 'REQUESTED',
-    eligibleCategory: 'GENERAL_WARD',
-    requestedAt: new Date(Date.now() - 7200000).toISOString(),
-    allocatedAt: null,
-    dischargedAt: null,
-    wardId: null,
-    roomId: null,
-    bedId: null,
-    assignedDoctorId: null,
-    assignedNurseId: null,
-    visit: {
-      id: 'v-1004',
-      employee: {
-        id: 'emp-1002',
-        employeeId: 'EMP-1002',
-        name: 'Priya Devi',
-        department: 'Admin Dept',
-        post: { title: 'Officer' },
-        grade: { payLevel: 'Level 8' },
-      },
-    },
-  },
-];
-
-const MOCK_BEDS: BedRecord[] = [
-  {
-    id: 'bed-101',
-    bedNumber: 'B-101',
-    status: 'AVAILABLE',
-    room: {
-      id: 'room-1',
-      roomNumber: '101',
-      type: 'GENERAL',
-      ward: { id: 'ward-general-male', name: 'Male General Ward', category: 'GENERAL_WARD' },
-    },
-  },
-  {
-    id: 'bed-201',
-    bedNumber: 'B-201',
-    status: 'AVAILABLE',
-    room: {
-      id: 'room-2',
-      roomNumber: '201',
-      type: 'GENERAL',
-      ward: { id: 'ward-general-female', name: 'Female General Ward', category: 'GENERAL_WARD' },
-    },
-  },
-  {
-    id: 'bed-301',
-    bedNumber: 'ICU-301',
-    status: 'AVAILABLE',
-    room: {
-      id: 'room-3',
-      roomNumber: '301',
-      type: 'GENERAL',
-      ward: { id: 'ward-icu', name: 'ICU / Critical Care Ward', category: 'GENERAL_WARD' },
-    },
-  },
-];
 
 export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authToken }) => {
   const [admissions, setAdmissions] = useState<AdmissionRecord[]>([]);
@@ -111,22 +24,28 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
   const [availableBeds, setAvailableBeds] = useState<BedRecord[]>([]);
   const [loadingBeds, setLoadingBeds] = useState(false);
   const [selectedBedId, setSelectedBedId] = useState('');
-  const [assignedDoctorId] = useState('00000000-0000-0000-0000-000000000888');
-  const [assignedNurseId] = useState('00000000-0000-0000-0000-000000000777');
+  const [doctors, setDoctors] = useState<UserSummary[]>([]);
+  const [nurses, setNurses] = useState<UserSummary[]>([]);
+  const [assignedDoctorId, setAssignedDoctorId] = useState('');
+  const [assignedNurseId, setAssignedNurseId] = useState('');
   const [submittingAllocation, setSubmittingAllocation] = useState(false);
+
+  // Inline Custom Ward/Bed Creation State
+  const [showAddWardForm, setShowAddWardForm] = useState(false);
+  const [newWardName, setNewWardName] = useState('Special Recovery Ward');
+  const [newWardCategory, setNewWardCategory] = useState('A');
+  const [newRoomNumber, setNewRoomNumber] = useState('Room 501');
+  const [newBedNumber, setNewBedNumber] = useState('Bed 501-A');
+  const [creatingWardBed, setCreatingWardBed] = useState(false);
 
   const loadAdmissions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await fetchAdmissions(authToken);
-      if (data && data.length > 0) {
-        setAdmissions(data);
-      } else {
-        setAdmissions(MOCK_ADMISSIONS);
-      }
-    } catch {
-      setAdmissions(MOCK_ADMISSIONS);
+      setAdmissions(data);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load admission queue');
     } finally {
       setLoading(false);
     }
@@ -143,10 +62,8 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
     try {
       await resolveAdmissionEligibility(id, authToken);
       await loadAdmissions();
-    } catch {
-      setAdmissions((prev) =>
-        prev.map((a) => (a.id === id ? { ...a, status: 'ELIGIBILITY_CHECKED' as const } : a)),
-      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to resolve eligibility');
     }
   };
 
@@ -154,20 +71,50 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
     setSelectedAdmission(admission);
     setLoadingBeds(true);
     setSelectedBedId('');
+    setShowAddWardForm(false);
+    setError(null);
     try {
-      const beds = await fetchEligibleBeds(admission.id, authToken);
-      if (beds && beds.length > 0) {
-        setAvailableBeds(beds);
-        setSelectedBedId(beds[0].id);
-      } else {
-        setAvailableBeds(MOCK_BEDS);
-        setSelectedBedId(MOCK_BEDS[0].id);
-      }
-    } catch {
-      setAvailableBeds(MOCK_BEDS);
-      setSelectedBedId(MOCK_BEDS[0].id);
+      const [beds, doctorUsers, nurseUsers] = await Promise.all([
+        fetchEligibleBeds(admission.id, authToken),
+        fetchUsersByRole('Doctor', authToken),
+        fetchUsersByRole('Nurse', authToken),
+      ]);
+      setAvailableBeds(beds);
+      setSelectedBedId(beds[0]?.id || '');
+      setDoctors(doctorUsers);
+      setAssignedDoctorId(doctorUsers[0]?.id || '');
+      setNurses(nurseUsers);
+      setAssignedNurseId(nurseUsers[0]?.id || '');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load beds/staff for allocation');
+      setSelectedAdmission(null);
     } finally {
       setLoadingBeds(false);
+    }
+  };
+
+  const handleCreateWardBed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWardName || !newRoomNumber || !newBedNumber) return;
+    setCreatingWardBed(true);
+    setError(null);
+    try {
+      const createdBed = await createWardAndBed(
+        {
+          wardName: newWardName,
+          wardCategory: newWardCategory,
+          roomNumber: newRoomNumber,
+          bedNumber: newBedNumber,
+        },
+        authToken,
+      );
+      setAvailableBeds((prev) => [createdBed, ...prev]);
+      setSelectedBedId(createdBed.id);
+      setShowAddWardForm(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create new ward/bed');
+    } finally {
+      setCreatingWardBed(false);
     }
   };
 
@@ -182,16 +129,15 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
         selectedAdmission.id,
         {
           bedId: selectedBedId,
-          assignedDoctorId,
-          assignedNurseId,
+          ...(assignedDoctorId ? { assignedDoctorId } : {}),
+          ...(assignedNurseId ? { assignedNurseId } : {}),
         },
         authToken,
       );
       setSelectedAdmission(null);
       await loadAdmissions();
-    } catch {
-      setAdmissions((prev) => prev.filter((a) => a.id !== selectedAdmission.id));
-      setSelectedAdmission(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to allocate bed');
     } finally {
       setSubmittingAllocation(false);
     }
@@ -302,8 +248,10 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                           </strong>
                         </span>
                         <span>
-                          Ward Category:{' '}
-                          <strong className="text-esic-primary font-semibold">GENERAL WARD</strong>
+                          Eligible Category:{' '}
+                          <strong className="text-esic-primary font-semibold">
+                            Category {item.eligibleCategory || 'C'}
+                          </strong>
                         </span>
                       </div>
                     </div>
@@ -319,7 +267,7 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                         onClick={() => handleOpenAllocation(item)}
                         className="px-4 py-2 text-xs font-semibold bg-esic-primary hover:bg-esic-primary-dark text-white rounded-lg transition-colors shadow-sm"
                       >
-                        Allocate General Ward Bed
+                        Allocate Ward & Bed
                       </button>
                     </div>
                   </div>
@@ -333,12 +281,12 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
       {/* Allocation Modal Dialog */}
       {selectedAdmission && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-6">
-            <div className="flex justify-between items-start border-b border-gray-100 pb-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start border-b border-gray-100 pb-3">
               <div>
-                <h3 className="text-lg font-bold text-gray-900">General Ward Bed Allocation</h3>
+                <h3 className="text-lg font-bold text-gray-900">Hospital Ward & Bed Allocation</h3>
                 <p className="text-xs text-gray-500">
-                  Select available General Ward Bed for {selectedAdmission.visit.employee.name}
+                  Select or add a ward bed for Beneficiary {selectedAdmission.visit.employee.name} (Category {selectedAdmission.eligibleCategory || 'C'})
                 </p>
               </div>
               <button
@@ -358,9 +306,84 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
 
             <form onSubmit={handleAllocate} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Available General Hospital Ward Beds
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-semibold text-gray-700">
+                    Available Hospital Wards & Beds ({availableBeds.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddWardForm(!showAddWardForm)}
+                    className="text-xs font-bold text-esic-primary hover:underline"
+                  >
+                    {showAddWardForm ? 'Cancel Add Ward' : '+ Add New Custom Ward'}
+                  </button>
+                </div>
+
+                {/* Inline Add Ward Form */}
+                {showAddWardForm && (
+                  <div className="p-3 mb-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2 text-xs">
+                    <p className="font-bold text-blue-900">Register New Hospital Ward & Bed</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-600">Ward Name</label>
+                        <input
+                          type="text"
+                          required
+                          value={newWardName}
+                          onChange={(e) => setNewWardName(e.target.value)}
+                          placeholder="e.g. Special VIP Ward"
+                          className="w-full px-2 py-1 bg-white border border-gray-300 rounded"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-600">Category</label>
+                        <select
+                          value={newWardCategory}
+                          onChange={(e) => setNewWardCategory(e.target.value)}
+                          className="w-full px-2 py-1 bg-white border border-gray-300 rounded"
+                        >
+                          <option value="A">Category A (Private)</option>
+                          <option value="B">Category B (Semi-Private)</option>
+                          <option value="C">Category C (General C)</option>
+                          <option value="D">Category D (General D)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-600">Room No.</label>
+                        <input
+                          type="text"
+                          required
+                          value={newRoomNumber}
+                          onChange={(e) => setNewRoomNumber(e.target.value)}
+                          placeholder="e.g. Room 501"
+                          className="w-full px-2 py-1 bg-white border border-gray-300 rounded"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-600">Bed No.</label>
+                        <input
+                          type="text"
+                          required
+                          value={newBedNumber}
+                          onChange={(e) => setNewBedNumber(e.target.value)}
+                          placeholder="e.g. Bed 501-A"
+                          className="w-full px-2 py-1 bg-white border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCreateWardBed}
+                        disabled={creatingWardBed}
+                        className="px-3 py-1 bg-esic-primary text-white rounded text-xs font-semibold"
+                      >
+                        {creatingWardBed ? 'Creating...' : 'Save & Select Bed'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {loadingBeds ? (
                   <div className="p-4 text-center text-xs text-gray-500">Loading beds...</div>
                 ) : (
@@ -368,15 +391,69 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                     value={selectedBedId}
                     onChange={(e) => setSelectedBedId(e.target.value)}
                     required
-                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-esic-primary"
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-esic-primary font-medium"
                   >
-                    {availableBeds.map((bed) => (
-                      <option key={bed.id} value={bed.id}>
-                        {bed.bedNumber} - {bed.room.ward.name}
-                      </option>
-                    ))}
+                    {availableBeds.length === 0 ? (
+                      <option value="">No available beds found in hospital</option>
+                    ) : (
+                      availableBeds.map((bed) => {
+                        const wardCat = bed.room?.ward?.category;
+                        const isMatched = wardCat === selectedAdmission.eligibleCategory;
+                        return (
+                          <option key={bed.id} value={bed.id}>
+                            {bed.room?.ward?.name || 'General Ward'} (Cat {wardCat}) - {bed.room?.roomNumber || 'Room'} [{bed.bedNumber}] {isMatched ? '★ Recommended' : ''}
+                          </option>
+                        );
+                      })
+                    )}
                   </select>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Attending Doctor
+                </label>
+                <select
+                  value={assignedDoctorId}
+                  onChange={(e) => setAssignedDoctorId(e.target.value)}
+                  required
+                  disabled={loadingBeds}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-esic-primary"
+                >
+                  {doctors.length === 0 ? (
+                    <option value="">No active doctors found</option>
+                  ) : (
+                    doctors.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.identifier}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Assigned Nurse
+                </label>
+                <select
+                  value={assignedNurseId}
+                  onChange={(e) => setAssignedNurseId(e.target.value)}
+                  required
+                  disabled={loadingBeds}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-esic-primary"
+                >
+                  {nurses.length === 0 ? (
+                    <option value="">No active nurses found</option>
+                  ) : (
+                    nurses.map((n) => (
+                      <option key={n.id} value={n.id}>
+                        {n.identifier}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
@@ -392,7 +469,7 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                   disabled={submittingAllocation || !selectedBedId}
                   className="px-5 py-2 bg-esic-primary hover:bg-esic-primary-dark text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50"
                 >
-                  {submittingAllocation ? 'Allocating...' : 'Confirm General Bed Allocation'}
+                  {submittingAllocation ? 'Allocating...' : 'Confirm Bed Allocation'}
                 </button>
               </div>
             </form>

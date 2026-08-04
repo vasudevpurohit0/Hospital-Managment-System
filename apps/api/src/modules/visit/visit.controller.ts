@@ -18,4 +18,10 @@ export class VisitController {
   async findVisitsByEmployee(@Param('employeeId') employeeId: string) {
     return this.visitService.findVisitsByEmployee(employeeId);
   }
+
+  @Get(':id')
+  @RequirePermission('Visit', 'read')
+  async findOne(@Param('id') id: string) {
+    return this.visitService.findOne(id);
+  }
 }

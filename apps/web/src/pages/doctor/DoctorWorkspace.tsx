@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   createPrescription,
   signPrescription,
@@ -6,43 +6,38 @@ import {
   PrescriptionRecord,
 } from '../../api/prescription.api';
 import { evaluateBenefitRule } from '../../api/benefit.api';
-import { User, AlertTriangle, Stethoscope, Plus, Trash2, Lock, Save, FileText } from 'lucide-react';
+import { fetchVisitById, VisitDetail } from '../../api/patient-lookup.api';
+import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
+import { User, Stethoscope, Plus, Trash2, Lock, Save, FileText, Edit3, List } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 
 interface DoctorWorkspaceProps {
   authToken: string;
 }
 
-export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) => {
-  const [visitIdInput, setVisitIdInput] = useState('v-1001');
-  const [employmentType, setEmploymentType] = useState<'PERMANENT' | 'CONTRACTUAL'>('PERMANENT');
-  const [benefitOutcome, setBenefitOutcome] = useState<'FREE' | 'COVERED' | 'PAID'>('COVERED');
+interface RxItemState extends PrescriptionItemPayload {
+  mode: 'SELECT' | 'CUSTOM';
+}
 
-  const [symptoms, setSymptoms] = useState('Fever, dry cough, body pain for 3 days');
-  const [examinationNotes, setExaminationNotes] = useState('Temp: 101°F, BP: 120/80, Chest clear');
-  const [diagnosisText, setDiagnosisText] = useState('Acute Upper Respiratory Tract Infection');
-  const [followUpFlag, setFollowUpFlag] = useState(true);
+export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) => {
+  const [visitIdInput, setVisitIdInput] = useState('');
+  const [visit, setVisit] = useState<VisitDetail | null>(null);
+  const [visitLoading, setVisitLoading] = useState(false);
+  const [visitError, setVisitError] = useState<string | null>(null);
+  const [benefitOutcome, setBenefitOutcome] = useState<'FREE' | 'COVERED' | 'PAID' | null>(null);
+
+  const [symptoms, setSymptoms] = useState('');
+  const [examinationNotes, setExaminationNotes] = useState('');
+  const [diagnosisText, setDiagnosisText] = useState('');
+  const [followUpFlag, setFollowUpFlag] = useState(false);
   const [admissionRecommended, setAdmissionRecommended] = useState(false);
 
-  const [items, setItems] = useState<PrescriptionItemPayload[]>([
-    {
-      medicineName: 'Paracetamol 500mg',
-      dose: '1 Tablet',
-      frequency: '1-0-1 (Twice Daily)',
-      duration: '5 Days',
-    },
-    {
-      medicineName: 'Azithromycin 500mg',
-      dose: '1 Tablet',
-      frequency: '1-0-0 (Once Daily)',
-      duration: '3 Days',
-    },
+  const [availableMedicines, setAvailableMedicines] = useState<MedicineRecord[]>([]);
+  const [items, setItems] = useState<RxItemState[]>([
+    { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days', mode: 'SELECT' },
   ]);
 
-  const [labTests, setLabTests] = useState<string[]>([
-    'Complete Blood Count (CBC)',
-    'Serum Creatinine',
-  ]);
+  const [labTests, setLabTests] = useState<string[]>([]);
   const [newLabTest, setNewLabTest] = useState('');
 
   const [activePrescription, setActivePrescription] = useState<PrescriptionRecord | null>(null);
@@ -51,17 +46,53 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    evaluateBenefitRule(employmentType, undefined, authToken)
+    if (authToken) {
+      fetchMedicines(authToken)
+        .then((meds) => setAvailableMedicines(meds))
+        .catch((err) => console.error('Failed to load medicines catalog', err));
+    }
+  }, [authToken]);
+
+  const employmentTypeCode = visit?.employee.employmentType.code;
+
+  useEffect(() => {
+    if (!employmentTypeCode) {
+      setBenefitOutcome(null);
+      return;
+    }
+    evaluateBenefitRule(employmentTypeCode as 'PERMANENT' | 'CONTRACTUAL', undefined, authToken)
       .then((res) => setBenefitOutcome(res.outcome))
-      .catch(() => {
-        setBenefitOutcome(employmentType === 'CONTRACTUAL' ? 'PAID' : 'COVERED');
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : 'Failed to evaluate benefit rule');
       });
-  }, [employmentType, authToken]);
+  }, [employmentTypeCode, authToken]);
+
+  const handleLoadVisit = useCallback(
+    async (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      if (!visitIdInput.trim()) return;
+
+      setVisitLoading(true);
+      setVisitError(null);
+      setVisit(null);
+      setActivePrescription(null);
+
+      try {
+        const res = await fetchVisitById(visitIdInput.trim(), authToken);
+        setVisit(res);
+      } catch (err: unknown) {
+        setVisitError(err instanceof Error ? err.message : 'Failed to load visit');
+      } finally {
+        setVisitLoading(false);
+      }
+    },
+    [visitIdInput, authToken],
+  );
 
   const handleAddItem = () => {
     setItems([
       ...items,
-      { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
+      { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days', mode: 'SELECT' },
     ]);
   };
 
@@ -69,7 +100,18 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
     setItems(items.filter((_, i) => i !== index));
   };
 
-  const handleItemChange = (index: number, field: keyof PrescriptionItemPayload, value: string) => {
+  const toggleItemMode = (index: number) => {
+    const updated = [...items];
+    const newMode = updated[index].mode === 'SELECT' ? 'CUSTOM' : 'SELECT';
+    updated[index] = { ...updated[index], mode: newMode };
+    setItems(updated);
+  };
+
+  const handleItemChange = (
+    index: number,
+    field: keyof RxItemState,
+    value: string,
+  ) => {
     const updated = [...items];
     updated[index] = { ...updated[index], [field]: value };
     setItems(updated);
@@ -87,6 +129,31 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
 
   const handleSaveDraft = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!visit) {
+      setError('Load a Visit ID before saving a prescription draft.');
+      return;
+    }
+
+    if (!diagnosisText.trim()) {
+      setError('Primary Clinical Diagnosis is required before saving a prescription.');
+      return;
+    }
+
+    // Filter out incomplete items with empty medicine name
+    const validItems = items
+      .filter((i) => i.medicineName && i.medicineName.trim() !== '')
+      .map(({ medicineName, dose, frequency, duration }) => ({
+        medicineName: medicineName.trim(),
+        dose: dose.trim() || '1 Tablet',
+        frequency: frequency.trim() || '1-0-1',
+        duration: duration.trim() || '5 Days',
+      }));
+
+    if (validItems.length === 0) {
+      setError('Please select or type at least one prescribed medicine name.');
+      return;
+    }
+
     setError(null);
     setSuccessMessage(null);
     setSubmitting(true);
@@ -94,13 +161,13 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
     try {
       const res = await createPrescription(
         {
-          visitId: visitIdInput,
-          symptoms,
-          examinationNotes,
-          diagnosisText,
+          visitId: visit.id,
+          symptoms: symptoms.trim() || undefined,
+          examinationNotes: examinationNotes.trim() || undefined,
+          diagnosisText: diagnosisText.trim(),
           followUpFlag,
           admissionRecommended,
-          items,
+          items: validItems,
           labTests,
         },
         authToken,
@@ -109,7 +176,8 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       setActivePrescription(res.prescription);
       setSuccessMessage('Prescription draft saved in DRAFT state.');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save draft prescription');
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(Array.isArray(msg) ? msg.join(', ') : msg);
     } finally {
       setSubmitting(false);
     }
@@ -180,82 +248,72 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         {/* Left Panel: Patient Banner & Context (3 cols) */}
         <div className="lg:col-span-3 space-y-4">
           <div className="card p-4 space-y-4">
-            <div className="flex items-center gap-3 pb-3 border-b border-[var(--color-border)]">
-              <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center font-bold text-primary-600">
-                <User className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-bold text-sm text-[var(--color-text-primary)]">Rahul Kumar</h3>
-                <p className="text-xs text-[var(--color-text-secondary)]">M / 42 yrs • B+</p>
-                <p className="text-[10px] text-primary-600 font-mono font-semibold">
-                  UHID: ESIC-MH-001042
-                </p>
-              </div>
-            </div>
-
             <div className="space-y-2">
               <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
                 Visit Context ID
               </label>
-              <input
-                type="text"
-                value={visitIdInput}
-                onChange={(e) => setVisitIdInput(e.target.value)}
-                disabled={isSigned}
-                className="input text-xs font-mono py-1.5"
-              />
+              <form onSubmit={handleLoadVisit} className="flex gap-1.5">
+                <input
+                  type="text"
+                  value={visitIdInput}
+                  onChange={(e) => setVisitIdInput(e.target.value)}
+                  placeholder="Enter Visit ID..."
+                  disabled={isSigned}
+                  className="input text-xs font-mono py-1.5 flex-1"
+                />
+                <button
+                  type="submit"
+                  disabled={visitLoading || isSigned || !visitIdInput.trim()}
+                  className="btn btn-secondary btn-sm text-xs"
+                >
+                  {visitLoading ? '...' : 'Load'}
+                </button>
+              </form>
+              {visitError && <p className="text-xs text-danger-600">{visitError}</p>}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                ESIC Benefit Rule Engine
-              </label>
-              <select
-                value={employmentType}
-                onChange={(e) => setEmploymentType(e.target.value as 'PERMANENT' | 'CONTRACTUAL')}
-                disabled={isSigned}
-                className="input text-xs py-1.5 font-medium"
-              >
-                <option value="PERMANENT">PERMANENT (ESIC Covered)</option>
-                <option value="CONTRACTUAL">CONTRACTUAL (Self Paid)</option>
-              </select>
-              <div className="pt-1">
-                <Badge variant={benefitOutcome === 'PAID' ? 'warning' : 'success'}>
-                  {benefitOutcome === 'PAID' ? 'Self Paid' : 'ESIC 100% Covered'}
-                </Badge>
-              </div>
-            </div>
+            {visit ? (
+              <>
+                <div className="flex items-center gap-3 pb-3 border-b border-[var(--color-border)]">
+                  <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/40 flex items-center justify-center font-bold text-primary-600">
+                    <User className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-[var(--color-text-primary)]">
+                      {visit.employee.name}
+                    </h3>
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                      {visit.employee.department}
+                    </p>
+                    {visit.employee.hospitalUid && (
+                      <p className="text-[10px] text-primary-600 font-mono font-semibold">
+                        UHID: {visit.employee.hospitalUid.uidCode}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-            {/* Vitals Summary */}
-            <div className="pt-3 border-t border-[var(--color-border)] space-y-2">
-              <p className="text-xs font-bold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                Patient Vitals
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                    ESIC Benefit Rule Engine
+                  </p>
+                  <p className="text-xs font-medium">
+                    {visit.employee.employmentType.name} ({visit.employee.employmentType.code})
+                  </p>
+                  {benefitOutcome && (
+                    <div className="pt-1">
+                      <Badge variant={benefitOutcome === 'PAID' ? 'warning' : 'success'}>
+                        {benefitOutcome === 'PAID' ? 'Self Paid' : 'ESIC 100% Covered'}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-[var(--color-text-tertiary)] py-4 text-center">
+                Load a Visit ID to view patient details.
               </p>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-[var(--color-surface-secondary)] p-2 rounded-lg">
-                  <span className="text-[10px] text-[var(--color-text-tertiary)] block">BP</span>
-                  <span className="font-semibold">120/80 mmHg</span>
-                </div>
-                <div className="bg-[var(--color-surface-secondary)] p-2 rounded-lg">
-                  <span className="text-[10px] text-[var(--color-text-tertiary)] block">Temp</span>
-                  <span className="font-semibold text-danger-600">101 °F</span>
-                </div>
-                <div className="bg-[var(--color-surface-secondary)] p-2 rounded-lg">
-                  <span className="text-[10px] text-[var(--color-text-tertiary)] block">Pulse</span>
-                  <span className="font-semibold">88 bpm</span>
-                </div>
-                <div className="bg-[var(--color-surface-secondary)] p-2 rounded-lg">
-                  <span className="text-[10px] text-[var(--color-text-tertiary)] block">SpO2</span>
-                  <span className="font-semibold">98 %</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Allergies Warning */}
-            <div className="p-2.5 rounded-lg bg-danger-50 text-danger-600 border border-danger-100 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              <span>Allergy: Penicillin / Amoxicillin</span>
-            </div>
+            )}
           </div>
         </div>
 
@@ -360,20 +418,65 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
                   key={idx}
                   className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-2"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <input
-                      type="text"
-                      placeholder="Medicine name"
-                      value={item.medicineName}
-                      onChange={(e) => handleItemChange(idx, 'medicineName', e.target.value)}
-                      disabled={isSigned}
-                      className="input py-1 px-2 text-xs font-semibold"
-                    />
+                  <div className="flex items-center justify-between gap-1.5">
+                    {item.mode === 'SELECT' ? (
+                      <select
+                        value={item.medicineName}
+                        disabled={isSigned}
+                        onChange={(e) => {
+                          if (e.target.value === '__CUSTOM__') {
+                            handleItemChange(idx, 'mode', 'CUSTOM');
+                            handleItemChange(idx, 'medicineName', '');
+                          } else {
+                            handleItemChange(idx, 'medicineName', e.target.value);
+                          }
+                        }}
+                        className="input py-1 px-2 text-xs font-semibold flex-1 bg-[var(--color-surface)] truncate"
+                      >
+                        <option value="">-- Select Available Stock Medicine --</option>
+                        {availableMedicines.map((m) => {
+                          const label = `${m.genericName}${m.brandName ? ` (${m.brandName})` : ''} - ${m.strength}`;
+                          return (
+                            <option key={m.id} value={m.genericName}>
+                              💊 {label}
+                            </option>
+                          );
+                        })}
+                        <option value="__CUSTOM__">✍️ Custom Medicine (Not in Stock / Free Text)...</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Type custom medicine name as it is..."
+                        value={item.medicineName}
+                        onChange={(e) => handleItemChange(idx, 'medicineName', e.target.value)}
+                        disabled={isSigned}
+                        className="input py-1 px-2 text-xs font-semibold flex-1"
+                      />
+                    )}
+
+                    {!isSigned && (
+                      <button
+                        type="button"
+                        onClick={() => toggleItemMode(idx)}
+                        className="px-2 py-1 text-[10px] font-bold border border-[var(--color-border)] rounded bg-gray-50 hover:bg-gray-100 dark:bg-neutral-800 text-[var(--color-text-secondary)] flex items-center gap-1 shrink-0 transition-all"
+                        title={item.mode === 'SELECT' ? 'Switch to Custom Free Text' : 'Switch to Stock Dropdown'}
+                      >
+                        {item.mode === 'SELECT' ? (
+                          <Edit3 className="w-3 h-3 text-primary-500" />
+                        ) : (
+                          <List className="w-3 h-3 text-emerald-500" />
+                        )}
+                        <span>{item.mode === 'SELECT' ? 'Custom' : 'Stock'}</span>
+                      </button>
+                    )}
+
                     {!isSigned && items.length > 1 && (
                       <button
                         type="button"
                         onClick={() => handleRemoveItem(idx)}
-                        className="text-danger-500 hover:text-danger-600 p-1"
+                        className="text-danger-500 hover:text-danger-600 p-1 shrink-0"
+                        title="Remove item"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

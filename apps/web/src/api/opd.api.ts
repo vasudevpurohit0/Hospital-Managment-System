@@ -26,28 +26,29 @@ export interface OPDVisitRecord {
   };
 }
 
-export async function fetchDepartments(token: string): Promise<Department[]> {
-  const res = await fetch('/api/departments', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+import { apiFetch } from './client';
+
+export async function fetchDepartments(token?: string): Promise<Department[]> {
+  const res = await apiFetch('/api/departments', {}, token);
   if (!res.ok) {
-    throw new Error('Failed to fetch departments');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch departments');
   }
   return res.json();
 }
 
 export async function createOpdVisit(
   payload: { visitId: string; departmentId: string },
-  token: string,
+  token?: string,
 ): Promise<{ status: string; opdVisit: OPDVisitRecord; tokenNumber: string }> {
-  const res = await fetch('/api/opd-visits', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  const res = await apiFetch(
+    '/api/opd-visits',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    token,
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || 'Failed to create OPD visit');
@@ -57,38 +58,46 @@ export async function createOpdVisit(
 
 export async function fetchOpdQueue(
   departmentId: string,
-  token: string,
+  token?: string,
 ): Promise<OPDVisitRecord[]> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/opd-visits/queue?departmentId=${encodeURIComponent(departmentId)}`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
+    {},
+    token,
   );
   if (!res.ok) {
-    throw new Error('Failed to fetch OPD queue');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch OPD queue');
   }
   return res.json();
 }
 
-export async function callOpdToken(id: string, token: string): Promise<OPDVisitRecord> {
-  const res = await fetch(`/api/opd-visits/${id}/call`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export async function callOpdToken(id: string, token?: string): Promise<OPDVisitRecord> {
+  const res = await apiFetch(
+    `/api/opd-visits/${id}/call`,
+    {
+      method: 'POST',
+    },
+    token,
+  );
   if (!res.ok) {
-    throw new Error('Failed to call token');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to call token');
   }
   return res.json();
 }
 
-export async function closeOpdVisit(id: string, token: string): Promise<OPDVisitRecord> {
-  const res = await fetch(`/api/opd-visits/${id}/close`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-  });
+export async function closeOpdVisit(id: string, token?: string): Promise<OPDVisitRecord> {
+  const res = await apiFetch(
+    `/api/opd-visits/${id}/close`,
+    {
+      method: 'POST',
+    },
+    token,
+  );
   if (!res.ok) {
-    throw new Error('Failed to close OPD visit');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to close OPD visit');
   }
   return res.json();
 }

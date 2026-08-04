@@ -37,10 +37,13 @@ export interface DashboardMetrics {
   };
 }
 
-export async function fetchDashboardMetrics(token: string): Promise<DashboardMetrics> {
-  const res = await fetch('/api/dashboard/summary', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to fetch dashboard metrics');
+import { apiFetch } from './client';
+
+export async function fetchDashboardMetrics(token?: string): Promise<DashboardMetrics> {
+  const res = await apiFetch('/api/dashboard/summary', {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch dashboard metrics');
+  }
   return res.json();
 }
