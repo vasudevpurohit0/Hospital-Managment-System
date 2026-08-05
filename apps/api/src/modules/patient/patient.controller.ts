@@ -75,6 +75,12 @@ export class PatientController {
     return this.patientService.getPatientMedicalHistory(id);
   }
 
+  @Get(':id/master')
+  @RequirePermission('Employee', 'read')
+  async getPatientMasterRecord(@Param('id') id: string) {
+    return this.patientService.getPatientMasterRecord(id);
+  }
+
   @Put(':id')
   @RequirePermission('Employee', 'update')
   async updatePatientProfile(

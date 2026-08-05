@@ -9,6 +9,7 @@ import { DashboardPage } from '../../pages/DashboardPage';
 import { EnterpriseReceptionDesk } from '../../pages/reception/EnterpriseReceptionDesk';
 import { DoctorWorkspace } from '../../pages/doctor/DoctorWorkspace';
 import { PharmacyWorkspace } from '../../pages/pharmacy/PharmacyWorkspace';
+import { PatientRecordsPage } from '../../pages/PatientRecordsPage';
 
 /* ── Additional Departmental Screens (Preserved) ── */
 import { InventoryScreen } from '../../screens/inventory/InventoryScreen';
@@ -31,6 +32,7 @@ import { useAuth } from '../../hooks/useAuth';
 const PAGE_LABELS: Record<PageId, string> = {
   dashboard: 'Dashboard',
   'patient-search': 'Patient Search',
+  'patient-records': 'Patient Records',
   registration: 'Registration',
   'opd-queue': 'OPD Queue',
   consultations: 'Consultations',
@@ -50,6 +52,7 @@ const PAGE_LABELS: Record<PageId, string> = {
 const PAGE_GROUP: Record<PageId, string> = {
   dashboard: 'Overview',
   'patient-search': 'Clinical',
+  'patient-records': 'Clinical',
   registration: 'Clinical',
   'opd-queue': 'Clinical',
   consultations: 'Clinical',
@@ -135,6 +138,8 @@ export const AppShell: React.FC = () => {
         return <DashboardPage />;
       case 'patient-search':
         return <EnterpriseReceptionDesk authToken={authToken} initialWorkflow="universal-search" />;
+      case 'patient-records':
+        return <PatientRecordsPage />;
       case 'registration':
         return <EnterpriseReceptionDesk authToken={authToken} initialWorkflow="esic-beneficiary" />;
       case 'opd-queue':
@@ -243,6 +248,12 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
     label: 'Patient Search',
     group: 'Clinical',
     keywords: ['find', 'lookup', 'patient', 'search', 'uid'],
+  },
+  {
+    id: 'patient-records',
+    label: 'Patient Records',
+    group: 'Clinical',
+    keywords: ['master', 'records', 'profile', 'visits', 'admissions', 'history', 'bills'],
   },
   {
     id: 'registration',

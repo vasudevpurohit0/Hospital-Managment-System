@@ -31,6 +31,7 @@ import {
 export type PageId =
   | 'dashboard'
   | 'patient-search'
+  | 'patient-records'
   | 'registration'
   | 'opd-queue'
   | 'consultations'
@@ -71,6 +72,12 @@ const MENU_GROUPS: MenuGroup[] = [
         label: 'Patient Search',
         icon: Search,
         roles: ['Doctor', 'Reception', 'Pharmacist', 'Nurse', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'patient-records',
+        label: 'Patient Records',
+        icon: ClipboardList,
+        roles: ['Doctor', 'Reception', 'SuperAdmin', 'Administrator'],
       },
       {
         id: 'registration',

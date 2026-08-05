@@ -281,7 +281,7 @@ export class PatientService {
    * 5. Patient Search with Filters & Pagination
    */
   async searchPatients(queryDto: PatientSearchQueryDto) {
-    const { query, department, employmentType, registrationDate, page = 1, limit = 20 } = queryDto;
+    const { query, department, employmentType, status, registrationDate, page = 1, limit = 20 } = queryDto;
 
     const whereClause: any = {};
 
@@ -292,7 +292,6 @@ export class PatientService {
         { name: { contains: q, mode: 'insensitive' } },
         { contactPhone: { contains: q, mode: 'insensitive' } },
         { hospitalUid: { uidCode: { contains: q, mode: 'insensitive' } } },
-        { hospitalUid: { qrPayload: { contains: q, mode: 'insensitive' } } },
       ];
     }
 
@@ -313,6 +312,41 @@ export class PatientService {
       }
     }
 
+    // Filter by Current Status
+    if (status) {
+      const s = status.toLowerCase();
+      if (s === 'admitted') {
+        whereClause.visits = {
+          some: {
+            status: VisitStatus.OPEN,
+            type: VisitType.IPD,
+          },
+        };
+      } else if (s === 'waiting') {
+        whereClause.visits = {
+          some: {
+            status: VisitStatus.OPEN,
+            type: VisitType.OPD,
+            opdVisit: { calledAt: null },
+          },
+        };
+      } else if (s === 'opd') {
+        whereClause.visits = {
+          some: {
+            status: VisitStatus.OPEN,
+            type: VisitType.OPD,
+            opdVisit: { calledAt: { not: null } },
+          },
+        };
+      } else if (s === 'discharged') {
+        whereClause.visits = {
+          some: {
+            status: VisitStatus.CLOSED,
+          },
+        };
+      }
+    }
+
     const skip = (page - 1) * limit;
 
     const [total, employees] = await Promise.all([
@@ -327,8 +361,13 @@ export class PatientService {
           hospitalUid: true,
           visits: {
             orderBy: { createdAt: 'desc' },
-            take: 1,
-            include: { opdVisit: true, admissions: true },
+            include: {
+              opdVisit: { include: { department: true } },
+              admissions: {
+                orderBy: { requestedAt: 'desc' },
+                include: { ward: true, bed: true, assignedDoctor: { include: { employee: true } } },
+              },
+            },
           },
         },
         orderBy: { registrationDate: 'desc' },
@@ -337,7 +376,68 @@ export class PatientService {
       }),
     ]);
 
-    const items = employees.map((emp) => this.formatPatientProfileResponse(emp, emp.hospitalUid));
+    const items = employees.map((emp) => {
+      const profile = (emp.patientProfile || {}) as any;
+      const visits = emp.visits || [];
+      const lastVisit = visits[0] || null;
+      
+      // Determine Current Status, Doctor, Bed & Ward
+      let currentStatus = 'Discharged';
+      let assignedDoctor = '—';
+      let bedNumber = '—';
+      let ward = '—';
+
+      const activeAdmission = visits
+        .flatMap((v) => v.admissions || [])
+        .find((a) => a.status !== 'DISCHARGED');
+
+      const openOpdVisit = visits.find((v) => v.status === VisitStatus.OPEN && v.type === VisitType.OPD);
+
+      if (activeAdmission) {
+        currentStatus = 'Admitted';
+        ward = activeAdmission.ward?.name || 'General Ward';
+        bedNumber = activeAdmission.bed?.bedNumber || '—';
+        assignedDoctor = activeAdmission.assignedDoctor?.employee?.name || 'Attending Physician';
+      } else if (openOpdVisit) {
+        if (!openOpdVisit.opdVisit?.calledAt) {
+          currentStatus = 'Waiting';
+        } else {
+          currentStatus = 'OPD';
+        }
+      } else if (lastVisit && lastVisit.status === VisitStatus.OPEN) {
+        currentStatus = 'OPD';
+      }
+
+      // Calculate Age
+      let ageStr = '—';
+      if (profile.dob) {
+        const birthDate = new Date(profile.dob);
+        const today = new Date();
+        let ageVal = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+          ageVal--;
+        }
+        ageStr = `${ageVal} Yrs`;
+      }
+
+      return {
+        id: emp.id,
+        hospitalUid: emp.hospitalUid?.uidCode || '—',
+        name: emp.name,
+        employeeId: emp.employeeId,
+        age: ageStr,
+        gender: profile.gender || '—',
+        mobile: emp.contactPhone || '—',
+        department: emp.department || '—',
+        currentStatus,
+        assignedDoctor,
+        bedNumber,
+        ward,
+        registrationDate: emp.registrationDate || emp.createdAt,
+        lastVisit: lastVisit ? lastVisit.createdAt : null,
+      };
+    });
 
     return {
       items,
@@ -648,6 +748,274 @@ export class PatientService {
     });
 
     return this.getPatientByEmployeeId(employee.employeeId);
+  }
+
+  async getPatientMasterRecord(id: string) {
+    // 1. Fetch employee details with full relations
+    const employee = (await this.prisma.employee.findUnique({
+      where: { id },
+      include: {
+        post: true,
+        grade: true,
+        employmentType: true,
+        patientProfile: true,
+        hospitalUid: true,
+      },
+    })) as any;
+    if (!employee) {
+      throw new NotFoundException(`Patient not found`);
+    }
+
+    // 2. Fetch all visits
+    const visits = (await this.prisma.visit.findMany({
+      where: { employeeId: id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        opdVisit: {
+          include: { department: true },
+        },
+        diagnoses: true,
+        labOrders: true,
+        prescriptions: {
+          include: {
+            items: {
+              include: {
+                billingTransactions: true,
+              },
+            },
+          },
+        },
+      },
+    })) as any[];
+
+    // 3. Fetch admissions
+    const admissions = (await this.prisma.admission.findMany({
+      where: { visit: { employeeId: id } },
+      orderBy: { requestedAt: 'desc' },
+      include: {
+        ward: true,
+        room: true,
+        bed: true,
+        dischargeSummary: true,
+        assignedDoctor: { include: { employee: true } },
+      },
+    })) as any[];
+
+    // 4. Fetch all users to map doctor names
+    const users = await this.prisma.user.findMany({
+      include: { employee: true },
+    });
+    const userMap = new Map(users.map(u => [u.id, u.employee?.name || u.identifier.split('@')[0]]));
+
+    // 5. Build Personal Info
+    const profile = (employee.patientProfile || {}) as any;
+    const dob = profile.dob;
+    let age = null;
+    if (dob) {
+      const birthDate = new Date(dob);
+      const today = new Date();
+      age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+    }
+
+    const personalInfo = {
+      uhid: employee.hospitalUid?.uidCode || '—',
+      name: employee.name,
+      age: age !== null ? `${age} Yrs` : '—',
+      gender: profile.gender || '—',
+      dob: dob ? new Date(dob).toISOString().split('T')[0] : '—',
+      mobile: employee.contactPhone || '—',
+      address: profile.address || '—',
+      employmentType: employee.employmentType?.name || '—',
+      relation: 'Self',
+    };
+
+    // 6. Build Visit History (OPD Visits)
+    const visitHistory = visits
+      .filter((v: any) => v.type === 'OPD')
+      .map((v: any) => {
+        const dx = v.diagnoses[0];
+        const rx = v.prescriptions[0];
+        const doctorName = dx ? userMap.get(dx.doctorId) : (rx ? userMap.get(rx.doctorId) : 'Attending Doctor');
+        return {
+          id: v.id,
+          date: v.createdAt,
+          department: v.opdVisit?.department?.name || 'General Medicine',
+          doctor: doctorName || 'Attending Doctor',
+          diagnosis: dx?.diagnosisText || '—',
+          prescription: rx ? `${rx.items.length} Medicine(s)` : '—',
+        };
+      });
+
+    // 7. Build Admission History
+    const admissionHistory = admissions.map((a: any) => {
+      const duration = a.dischargedAt && a.allocatedAt
+        ? Math.ceil((new Date(a.dischargedAt).getTime() - new Date(a.allocatedAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+      const visitRecord = visits.find((v: any) => v.id === a.visitId);
+      const departmentName = visitRecord?.opdVisit?.department?.name || 'Inpatient Department (IPD)';
+
+      return {
+        id: a.id,
+        admissionDate: a.allocatedAt || a.requestedAt,
+        ward: a.ward?.name || 'General Ward',
+        room: a.room?.roomNumber || '—',
+        bed: a.bed?.bedNumber || '—',
+        department: departmentName,
+        treatingDoctor: a.assignedDoctor?.employee?.name || 'Attending Physician',
+        dischargeDate: a.dischargedAt || null,
+        lengthOfStay: duration !== null ? `${duration} Day(s)` : '—',
+        status: a.status,
+      };
+    });
+
+    // 8. Build Medicines
+    const medicinesList: any[] = [];
+    visits.forEach((v: any) => {
+      v.prescriptions.forEach((p: any) => {
+        p.items.forEach((item: any) => {
+          const dispensedQty = item.dispensedQuantity || 0;
+
+          medicinesList.push({
+            id: item.id,
+            name: item.medicineName || 'Medicine',
+            brandName: '—',
+            prescribedQty: item.dispensedQuantity || 0, // Fallback if no separate prescribed field is defined
+            dispensedQty,
+            status: item.dispenseStatus,
+          });
+        });
+      });
+    });
+
+    // 9. Build Billing Summary
+    let consultationCharges = visits.length * 150;
+    let pharmacyCharges = 0;
+    let labCharges = visits.reduce((acc, v) => acc + (v.labOrders?.length || 0) * 200, 0);
+
+    let totalAmount = consultationCharges + pharmacyCharges + labCharges;
+    let paidAmount = 0;
+    let pendingAmount = totalAmount;
+
+    visits.forEach((v: any) => {
+      v.prescriptions.forEach((p: any) => {
+        p.items.forEach((item: any) => {
+          item.billingTransactions.forEach((t: any) => {
+            const amt = Number(t.amount || 0);
+            pharmacyCharges += amt;
+            if (t.outcome === 'PAID' || t.outcome === 'FREE') {
+              paidAmount += amt;
+            } else {
+              pendingAmount += amt;
+            }
+          });
+        });
+      });
+    });
+
+    totalAmount = consultationCharges + pharmacyCharges + labCharges;
+    pendingAmount = totalAmount - paidAmount;
+
+    const billingSummary = {
+      consultation: consultationCharges,
+      pharmacy: pharmacyCharges,
+      lab: labCharges,
+      total: totalAmount,
+      paid: paidAmount,
+      pending: Math.max(0, pendingAmount),
+    };
+
+    // 10. Build Medical Timeline (chronological events)
+    const timelineEvents: any[] = [];
+    
+    timelineEvents.push({
+      title: 'Patient Registered',
+      description: 'Profile created in ESIC central directory',
+      date: employee.registrationDate || employee.createdAt,
+      type: 'registration',
+    });
+
+    visits.forEach((v: any) => {
+      timelineEvents.push({
+        title: `Visited OPD - ${v.opdVisit?.department?.name || 'General Medicine'}`,
+        description: `Issued Daily Token: ${v.opdVisit?.tokenNumber || '—'}`,
+        date: v.createdAt,
+        type: 'opd-visit',
+      });
+
+      v.diagnoses.forEach((d: any) => {
+        timelineEvents.push({
+          title: 'OPD Clinical Consultation',
+          description: `Diagnosed: ${d.diagnosisText}`,
+          date: d.createdAt,
+          type: 'consultation',
+        });
+      });
+
+      v.prescriptions.forEach((p: any) => {
+        timelineEvents.push({
+          title: 'Medicine Prescribed',
+          description: `Prescription signed by attending physician (${p.items.length} items)`,
+          date: p.signedAt || p.createdAt,
+          type: 'prescription',
+        });
+
+        const hasDispensed = p.items.some((item: any) => item.billingTransactions.length > 0);
+        if (hasDispensed) {
+          timelineEvents.push({
+            title: 'Medicines Issued',
+            description: 'Dispensed by central pharmacy counter',
+            date: p.signedAt || p.createdAt,
+            type: 'dispensation',
+          });
+        }
+      });
+    });
+
+    admissions.forEach((a: any) => {
+      timelineEvents.push({
+        title: 'Patient Admitted (IPD)',
+        description: `Allocated to Ward: ${a.ward?.name || 'General Ward'}, Bed: ${a.bed?.bedNumber || '—'}`,
+        date: a.allocatedAt || a.requestedAt,
+        type: 'admission',
+      });
+
+      if (a.dischargedAt) {
+        timelineEvents.push({
+          title: 'Patient Discharged',
+          description: `Discharge summary signed. Length of stay: ${a.dischargedAt && a.allocatedAt ? Math.ceil((new Date(a.dischargedAt).getTime() - new Date(a.allocatedAt).getTime()) / (1000 * 60 * 60 * 24)) : 0} days`,
+          date: a.dischargedAt,
+          type: 'discharge',
+        });
+      }
+    });
+
+    timelineEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const lastConsultationDate = visits.flatMap((v: any) => v.diagnoses).map((d: any) => d.createdAt).sort((a, b) => b.getTime() - a.getTime())[0] || null;
+    const currentAdmission = admissions.find((a: any) => a.status !== 'DISCHARGED') || null;
+
+    const stats = {
+      totalVisits: visits.length,
+      totalAdmissions: admissions.length,
+      currentAdmission: currentAdmission ? `${currentAdmission.ward?.name || 'IPD'} (Bed ${currentAdmission.bed?.bedNumber || '—'})` : 'None',
+      lastConsultation: lastConsultationDate,
+      pendingBills: Math.max(0, pendingAmount),
+    };
+
+    return {
+      personalInfo,
+      visitHistory,
+      admissionHistory,
+      medicines: medicinesList,
+      billingSummary,
+      timeline: timelineEvents,
+      stats,
+    };
   }
 
   /**

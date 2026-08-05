@@ -153,6 +153,7 @@ export async function searchPatients(
     query?: string;
     department?: string;
     employmentType?: string;
+    status?: string;
     page?: number;
     limit?: number;
   },
@@ -162,6 +163,7 @@ export async function searchPatients(
   if (params.query) searchParams.set('query', params.query);
   if (params.department) searchParams.set('department', params.department);
   if (params.employmentType) searchParams.set('employmentType', params.employmentType);
+  if (params.status) searchParams.set('status', params.status);
   if (params.page) searchParams.set('page', String(params.page));
   if (params.limit) searchParams.set('limit', String(params.limit));
 
@@ -170,6 +172,20 @@ export async function searchPatients(
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.message || 'Patient search failed');
+  }
+
+  return res.json();
+}
+
+export async function getPatientMasterRecord(
+  id: string,
+  token?: string,
+): Promise<any> {
+  const res = await apiFetch(`/api/patients/${encodeURIComponent(id)}/master`, {}, token);
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch patient master record');
   }
 
   return res.json();

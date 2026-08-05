@@ -761,17 +761,111 @@
 
 /* ─── Print Styles ─── */
 @media print {
-  .no-print {
+  /* Hide core layout elements */
+  aside,
+  header,
+  footer,
+  nav,
+  button,
+  .btn,
+  .no-print,
+  .alert,
+  .front-office-actions,
+  .dashboard-metrics,
+  .patient-preview-card,
+  .print\:hidden {
     display: none !important;
   }
 
-  body {
-    background: white;
-    color: black;
+  /* Reset main wrapper styles */
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  main {
+    margin: 0 !important;
+    margin-left: 0 !important;
+    padding: 0 !important;
+    padding-top: 0 !important;
   }
 
   .card {
-    border: 1px solid #ccc;
-    box-shadow: none;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  /* Printable Hospital Slip styling */
+  .registration-slip-print-only {
+    display: block !important;
+    margin: 0 auto;
+    padding: 24px;
+    width: 100%;
+    max-width: 480px;
+    border: 1px solid #000000 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    box-sizing: border-box;
+  }
+
+  .registration-slip-print-only h2 {
+    font-size: 18px !important;
+    font-weight: bold !important;
+    text-align: center !important;
+    margin: 0 0 4px 0 !important;
+  }
+
+  .registration-slip-print-only h3 {
+    font-size: 15px !important;
+    font-weight: bold !important;
+    text-align: center !important;
+    margin: 0 0 2px 0 !important;
+    letter-spacing: 0.5px !important;
+  }
+
+  .registration-slip-print-only .slip-subtitle {
+    font-size: 11px !important;
+    text-align: center !important;
+    margin: 0 0 12px 0 !important;
+  }
+
+  .registration-slip-print-only .slip-divider {
+    border-top: 1px dashed #000000 !important;
+    margin: 10px 0 !important;
+  }
+
+  .registration-slip-print-only .slip-details {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 13px !important;
+    margin: 12px 0 !important;
+  }
+
+  .registration-slip-print-only .slip-details td {
+    padding: 5px 0 !important;
+    vertical-align: top !important;
+  }
+
+  .registration-slip-print-only .slip-details td:first-child {
+    width: 150px !important;
+  }
+
+  .registration-slip-print-only .slip-footer {
+    text-align: center !important;
+    font-size: 11px !important;
+    margin-top: 20px !important;
+  }
+
+  .registration-slip-print-only .slip-footer p {
+    margin: 3px 0 !important;
   }
 }

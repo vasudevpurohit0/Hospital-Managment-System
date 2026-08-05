@@ -327,7 +327,55 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
-      {/* ── Top Operational Reception KPI Bar (real dashboard metrics) ── */}
+      {/* ─── PRINT-ONLY DEDICATED SLIP ─── */}
+      {activeWorkflow === 'success-slip' && registrationResult?.employee && (
+        <div className="hidden print:block registration-slip-print-only">
+          <h2>ESIC MODEL HOSPITAL</h2>
+          <p className="slip-subtitle">Ministry of Labour & Employment, Govt. of India</p>
+          <div className="slip-divider" />
+          <h3>PATIENT REGISTRATION SLIP</h3>
+          <div className="slip-divider" />
+          <table className="slip-details">
+            <tbody>
+              <tr>
+                <td><strong>Patient Name:</strong></td>
+                <td>{registrationResult.employee.name}</td>
+              </tr>
+              <tr>
+                <td><strong>Hospital UHID:</strong></td>
+                <td className="font-mono">{registrationResult.hospitalUid?.uidCode}</td>
+              </tr>
+              {issuedToken && (
+                <tr>
+                  <td><strong>Token Number:</strong></td>
+                  <td className="font-mono font-bold">{issuedToken}</td>
+                </tr>
+              )}
+              <tr>
+                <td><strong>Department:</strong></td>
+                <td>{registrationResult.employee.department}</td>
+              </tr>
+              <tr>
+                <td><strong>Employment Type:</strong></td>
+                <td>{registrationResult.employee.employmentType.name}</td>
+              </tr>
+              <tr>
+                <td><strong>Reg Date & Time:</strong></td>
+                <td>{new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="slip-divider" />
+          <div className="slip-footer">
+            <p>Please proceed to the department OPD waiting area.</p>
+            <p className="footer-small">Sourced from ESIC HMS Real-time Registry</p>
+          </div>
+        </div>
+      )}
+
+      {/* Screen layout container — hidden when printing */}
+      <div className="print:hidden space-y-6">
+        {/* ── Top Operational Reception KPI Bar (real dashboard metrics) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           {
@@ -1092,6 +1140,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
