@@ -242,7 +242,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="min-w-0">
               <h1 className="text-[12px] font-extrabold text-white truncate">MP Govt HMS</h1>
               <p className="text-[10px] text-amber-300 font-medium truncate">
-                SIGNAL Sign-ON
+                Sign-On
               </p>
             </div>
           </div>

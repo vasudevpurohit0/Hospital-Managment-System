@@ -79,7 +79,7 @@ export const LoginPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right 50% Header (White with Stethoscope HMS Logo & SIGNAL SSO) */}
+        {/* Right 50% Header (White with Stethoscope HMS Logo & Hospital Sign-On) */}
         <div className="w-1/2 bg-white text-slate-900 py-2 px-6 lg:px-10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-[#0B2545]/10 p-1 flex items-center justify-center">
@@ -91,7 +91,7 @@ export const LoginPage: React.FC = () => {
             </div>
             <div>
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#0B2545] block">
-                Hospital SIGNAL Sign-ON
+                Hospital Sign-On
               </span>
               <span className="text-[9px] text-slate-500 font-semibold block">
                 Integrated Hospital Management Platform
@@ -149,7 +149,7 @@ export const LoginPage: React.FC = () => {
                 />
                 <div className="text-left pr-1">
                   <p className="text-[10px] font-black text-amber-300 uppercase tracking-wider">MP HMS</p>
-                  <p className="text-[9px] font-semibold text-slate-200">SIGNAL Sign-ON</p>
+                  <p className="text-[9px] font-semibold text-slate-200">Sign-On</p>
                 </div>
               </div>
             </div>
@@ -160,7 +160,7 @@ export const LoginPage: React.FC = () => {
                 MP Government Hospital Management System
               </h1>
               <p className="text-sm font-semibold text-amber-300">
-                Official Digital Healthcare & Hospital SIGNAL Sign-ON Platform
+                Official Digital Healthcare & Hospital Sign-On Platform
               </p>
             </div>
 
@@ -186,7 +186,7 @@ export const LoginPage: React.FC = () => {
           {/* Left Panel Footer Tag */}
           <div className="relative z-10 pt-4 border-t border-white/10 w-full max-w-[540px] flex items-center justify-between text-[11px] text-blue-200/70 font-medium">
             <span>Government of Madhya Pradesh • Public Health Department</span>
-            <span>Hospital SIGNAL Sign-ON Gateway</span>
+            <span>Hospital Sign-On Gateway</span>
           </div>
         </div>
 
@@ -206,7 +206,7 @@ export const LoginPage: React.FC = () => {
                 />
                 <div>
                   <h2 className="text-2xl lg:text-3xl font-bold text-[#0B2545] font-serif tracking-tight">
-                    Hospital SIGNAL Sign-ON
+                    Hospital Sign-On
                   </h2>
                   <p className="text-xs text-slate-500 font-medium">Authorized Personnel Login</p>
                 </div>
@@ -335,7 +335,7 @@ export const LoginPage: React.FC = () => {
         <div className="w-full flex items-center justify-between text-[11px]">
           <div>
             <p className="font-semibold text-white">
-              © Government of Madhya Pradesh • Public Health &amp; Family Welfare Department • Hospital SIGNAL Sign-ON
+              © Government of Madhya Pradesh • Public Health &amp; Family Welfare Department • Hospital Sign-On
             </p>
           </div>
 
