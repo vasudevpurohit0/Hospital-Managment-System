@@ -831,6 +831,7 @@ export class PatientService {
       address: profile.address || '—',
       employmentType: employee.employmentType?.name || '—',
       relation: 'Self',
+      photoUrl: profile.photoUrl || null,
     };
 
     // 6. Build Visit History (OPD Visits)
@@ -1037,6 +1038,7 @@ export class PatientService {
       hospitalUid: hospitalUid?.uidCode || null,
       qrDataUrl: hospitalUid?.qrPayload || null,
       name: employee.name,
+      photoUrl: profile.photoUrl || null,
       department: employee.department,
       post: employee.post?.title || 'Officer',
       grade: employee.grade?.payLevel || 'Pay Level 4',

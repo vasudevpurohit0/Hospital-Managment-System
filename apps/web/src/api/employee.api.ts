@@ -13,6 +13,13 @@ export interface VerificationResponse {
   status: 'VERIFIED' | 'UNVERIFIED';
   verifiedData: VerifiedEmployeeData | null;
   message?: string;
+  existingPatient?: {
+    id: string;
+    employeeId: string;
+    name: string;
+    hospitalUid: string | null;
+    registeredAt: string;
+  } | null;
 }
 
 export interface RegistrationResponse {
@@ -27,6 +34,10 @@ export interface RegistrationResponse {
     employmentType: { code: string; name: string };
     contactPhone?: string;
     contactEmail?: string;
+    patientProfile?: { photoUrl?: string | null };
+  };
+  patientProfile?: {
+    photoUrl?: string | null;
   };
   hospitalUid?: {
     uidCode: string;

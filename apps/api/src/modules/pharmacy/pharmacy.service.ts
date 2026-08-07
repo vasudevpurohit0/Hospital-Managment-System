@@ -15,6 +15,7 @@ import {
   StockTransactionType,
   BenefitOutcome,
 } from '@prisma/client';
+import { ProcurementService } from '../procurement/procurement.service';
 
 @Injectable()
 export class PharmacyService {
@@ -23,6 +24,7 @@ export class PharmacyService {
   constructor(
     private prisma: PrismaService,
     private benefitRuleService: BenefitRuleService,
+    private procurementService: ProcurementService,
   ) {}
 
   /**
@@ -185,6 +187,9 @@ export class PharmacyService {
             performedBy: userId,
           },
         });
+
+        // Trigger automatic low stock check/requisition
+        await this.procurementService.checkAndTriggerLowStockRequisition(updatedBatch.id, tx, userId);
 
         const newDispensed = rxItem.dispensedQuantity + payloadItem.dispenseQuantity;
         await tx.prescriptionItem.update({

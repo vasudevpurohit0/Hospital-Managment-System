@@ -453,6 +453,7 @@ model MedicineBatch {
   currentStock      Int                @map("current_stock")
   minimumStockLevel Int                @default(50) @map("minimum_stock_level")
   reorderLevel      Int                @default(100) @map("reorder_level")
+  maximumStockLevel Int                @default(500) @map("maximum_stock_level")
   storageLocation   String?            @map("storage_location")
   stockStatus       StockStatus        @default(IN_STOCK) @map("stock_status")
   createdAt         DateTime           @default(now()) @map("created_at")
@@ -499,6 +500,7 @@ model PurchaseRequisition {
   raisedBy         String            @map("raised_by") @db.Uuid
   status           RequisitionStatus @default(PENDING)
   triggeredByAlert Boolean           @default(false) @map("triggered_by_alert")
+  triggerReason    String?           @map("trigger_reason")
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
   approvals        Approval[]
@@ -686,6 +688,7 @@ enum RequisitionStatus {
   PENDING
   APPROVED
   REJECTED
+  FULFILLED
 }
 
 enum ApprovalDecision {

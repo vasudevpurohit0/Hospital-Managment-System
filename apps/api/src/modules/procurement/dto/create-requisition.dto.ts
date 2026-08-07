@@ -28,4 +28,8 @@ export class CreateRequisitionDto {
   @IsBoolean()
   @IsOptional()
   triggeredByAlert?: boolean;
+
+  @IsString()
+  @IsOptional()
+  triggerReason?: string;
 }

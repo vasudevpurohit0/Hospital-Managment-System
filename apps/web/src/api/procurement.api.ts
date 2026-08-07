@@ -1,8 +1,9 @@
 export interface RequisitionRecord {
   id: string;
   raisedBy: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'FULFILLED';
   triggeredByAlert: boolean;
+  triggerReason?: string | null;
   createdAt: string;
   items: {
     id: string;
@@ -72,7 +73,11 @@ export async function createRequisition(
 
 export async function approveRequisition(
   id: string,
-  payload: { decision: 'APPROVED' | 'REJECTED'; notes?: string },
+  payload: {
+    decision: 'APPROVED' | 'REJECTED';
+    notes?: string;
+    items?: { itemId: string; quantity: number }[];
+  },
   token?: string,
 ): Promise<unknown> {
   const res = await apiFetch(

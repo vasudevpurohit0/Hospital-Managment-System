@@ -361,8 +361,19 @@ export const PatientRecordsPage: React.FC = () => {
               <>
                 {/* PATIENT BRIEF BANNER */}
                 <div className="flex gap-4 border-b border-[var(--color-border)] pb-4">
-                  <div className="w-12 h-12 rounded-full bg-primary-500 text-white flex items-center justify-center font-bold text-lg">
-                    {detailData.personalInfo.name.charAt(0)}
+                  <div className="w-[75px] h-[100px] border border-[var(--color-border)] rounded-lg overflow-hidden bg-white flex-shrink-0 flex items-center justify-center">
+                    {detailData.personalInfo.photoUrl ? (
+                      <img
+                        src={detailData.personalInfo.photoUrl}
+                        alt={detailData.personalInfo.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center p-2 text-[var(--color-text-tertiary)] flex flex-col items-center justify-center">
+                        <span className="text-[18px] mb-1">📷</span>
+                        <span className="text-[8px] font-bold tracking-wider leading-tight">NO PHOTO</span>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <h2 className="text-base font-bold text-[var(--color-text-primary)]">

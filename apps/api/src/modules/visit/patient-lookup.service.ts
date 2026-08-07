@@ -37,13 +37,18 @@ export class PatientLookupService {
   async lookupByUid(uidInput: string): Promise<PatientLookupResult> {
     const trimmed = uidInput.trim();
 
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+    const orConditions: any[] = [
+      { hospitalUid: { uidCode: { equals: trimmed, mode: 'insensitive' } } },
+      { employeeId: { equals: trimmed, mode: 'insensitive' } },
+    ];
+    if (isUuid) {
+      orConditions.push({ id: trimmed });
+    }
+
     let employee = await this.prisma.employee.findFirst({
       where: {
-        OR: [
-          { hospitalUid: { uidCode: { equals: trimmed, mode: 'insensitive' } } },
-          { employeeId: { equals: trimmed, mode: 'insensitive' } },
-          { id: trimmed },
-        ],
+        OR: orConditions,
       },
       include: {
         hospitalUid: true,

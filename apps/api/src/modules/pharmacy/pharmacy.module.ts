@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
-import { PharmacyService } from './pharmacy.service';
 import { PharmacyController } from './pharmacy.controller';
+import { PharmacyService } from './pharmacy.service';
 import { BenefitModule } from '../benefit/benefit.module';
+import { ProcurementModule } from '../procurement/procurement.module';
 
 @Module({
-  imports: [BenefitModule],
+  imports: [BenefitModule, ProcurementModule],
   controllers: [PharmacyController],
   providers: [PharmacyService],
   exports: [PharmacyService],

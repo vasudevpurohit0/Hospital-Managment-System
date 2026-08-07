@@ -45,6 +45,10 @@ export class CreateBatchDto {
   @IsOptional()
   reorderLevel?: number;
 
+  @IsNumber()
+  @IsOptional()
+  maximumStockLevel?: number;
+
   @IsString()
   @IsOptional()
   storageLocation?: string;

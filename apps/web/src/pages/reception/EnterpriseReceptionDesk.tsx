@@ -107,6 +107,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [registrationResult, setRegistrationResult] = useState<RegistrationResponse | null>(null);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [issuedToken, setIssuedToken] = useState<string | null>(null);
+  const [existingPatient, setExistingPatient] = useState<any | null>(null);
 
   /* Form Fields */
   const [careType, setCareType] = useState<'OPD' | 'IPD'>('OPD');
@@ -120,6 +121,15 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [allergies, setAllergies] = useState('');
   const [chronicDiseases, setChronicDiseases] = useState('');
   const [notes, setNotes] = useState('');
+
+  const resetVerificationState = () => {
+    setVerifiedData(null);
+    setExistingPatient(null);
+    setRegistrationResult(null);
+    setIssuedToken(null);
+    setPhotoUrl('');
+    setRegistrationError(null);
+  };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -140,11 +150,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     if (!employeeIdInput.trim()) return;
 
     setVerifying(true);
-    setRegistrationError(null);
-    setVerifiedData(null);
-    setRegistrationResult(null);
-    setIssuedToken(null);
-    setPhotoUrl('');
+    resetVerificationState();
 
     try {
       const res = await verifyEmployeeId(employeeIdInput.trim(), authToken);
@@ -152,6 +158,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
         setVerifiedData(res.verifiedData);
         setContactPhone(res.verifiedData.contactPhone || '');
         setContactEmail(res.verifiedData.contactEmail || '');
+        setExistingPatient(res.existingPatient || null);
       } else {
         setRegistrationError(res.message || 'Employee ID not found in Labour Dept database.');
       }
@@ -170,30 +177,13 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     setRegistrationError(null);
 
     try {
-      const res = await registerPatient(
-        {
-          employeeId: employeeIdInput.trim(),
-          dob: dob || undefined,
-          gender: gender || undefined,
-          address: address || undefined,
-          allergies: allergies || undefined,
-          chronicDiseases: chronicDiseases || undefined,
-          bloodGroup: bloodGroup || undefined,
-          contactPhone: contactPhone || undefined,
-          contactEmail: contactEmail || undefined,
-          photoUrl: photoUrl || undefined,
-          notes: notes || undefined,
-        },
-        authToken,
-      );
-      setRegistrationResult(res);
-
-      const empId = res.employee?.id || res.patient?.id;
-      if (empId) {
+      if (existingPatient) {
+        // Patient already exists, just create a new Visit & Queue entry!
         const visitRes = await createVisit(
-          { employeeId: empId, type: careType },
+          { employeeId: existingPatient.id, type: careType },
           authToken,
         );
+
         if (visitRes.status === 'CREATED' && visitRes.visit) {
           if (careType === 'OPD' && selectedDeptId) {
             const opdRes = await createOpdVisit(
@@ -205,9 +195,72 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             setIssuedToken('IPD-ADMISSION-REQUESTED');
           }
         }
-      }
 
-      setActiveWorkflow('success-slip');
+        // Set mock registrationResult for success slip rendering
+        const mockResult: any = {
+          status: 'REGISTERED',
+          employee: {
+            id: existingPatient.id,
+            employeeId: existingPatient.employeeId,
+            name: existingPatient.name,
+            department: verifiedData?.department || '',
+            post: { title: verifiedData?.postTitle || 'Officer' },
+            grade: { payLevel: verifiedData?.gradePayLevel || 'Pay Level 4' },
+            employmentType: {
+              code: verifiedData?.employmentTypeCode || 'PERMANENT',
+              name: verifiedData?.employmentTypeCode === 'CONTRACTUAL' ? 'Contractual Employee' : 'Permanent Employee',
+            },
+          },
+          hospitalUid: {
+            uidCode: existingPatient.hospitalUid,
+          },
+          patientProfile: {
+            photoUrl: null,
+          },
+        };
+        setRegistrationResult(mockResult);
+        setActiveWorkflow('success-slip');
+      } else {
+        // Normal first-time registration flow...
+        const res = await registerPatient(
+          {
+            employeeId: employeeIdInput.trim(),
+            dob: dob || undefined,
+            gender: gender || undefined,
+            address: address || undefined,
+            allergies: allergies || undefined,
+            chronicDiseases: chronicDiseases || undefined,
+            bloodGroup: bloodGroup || undefined,
+            contactPhone: contactPhone || undefined,
+            contactEmail: contactEmail || undefined,
+            photoUrl: photoUrl || undefined,
+            notes: notes || undefined,
+          },
+          authToken,
+        );
+        setRegistrationResult(res);
+
+        const empId = res.employee?.id || res.patient?.id;
+        if (empId) {
+          const visitRes = await createVisit(
+            { employeeId: empId, type: careType },
+            authToken,
+          );
+          if (visitRes.status === 'CREATED' && visitRes.visit) {
+            if (careType === 'OPD' && selectedDeptId) {
+              const opdRes = await createOpdVisit(
+                { visitId: visitRes.visit.id, departmentId: selectedDeptId },
+                authToken,
+              );
+              setIssuedToken(opdRes.tokenNumber);
+            } else if (careType === 'IPD') {
+              setIssuedToken('IPD-ADMISSION-REQUESTED');
+            }
+          }
+        }
+
+        setActiveWorkflow('success-slip');
+      }
     } catch (err: unknown) {
       setRegistrationError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -330,10 +383,24 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
       {/* ─── PRINT-ONLY DEDICATED SLIP ─── */}
       {activeWorkflow === 'success-slip' && registrationResult?.employee && (
         <div className="hidden print:block registration-slip-print-only">
-          <h2>ESIC MODEL HOSPITAL</h2>
-          <p className="slip-subtitle">Ministry of Labour & Employment, Govt. of India</p>
-          <div className="slip-divider" />
-          <h3>PATIENT REGISTRATION SLIP</h3>
+          <div className="slip-header-container">
+            <div className="slip-header-text">
+              <h2>ESIC MODEL HOSPITAL</h2>
+              <p className="slip-subtitle">Ministry of Labour & Employment, Govt. of India</p>
+              <h3>PATIENT REGISTRATION SLIP</h3>
+            </div>
+            <div className="slip-photo-box">
+              {registrationResult.patientProfile?.photoUrl || registrationResult.employee.patientProfile?.photoUrl || photoUrl ? (
+                <img
+                  src={registrationResult.patientProfile?.photoUrl || registrationResult.employee.patientProfile?.photoUrl || photoUrl}
+                  alt="Patient"
+                  className="slip-photo"
+                />
+              ) : (
+                <div className="slip-photo-placeholder">Photo Not Available</div>
+              )}
+            </div>
+          </div>
           <div className="slip-divider" />
           <table className="slip-details">
             <tbody>
@@ -576,6 +643,20 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                     </div>
                   </div>
 
+                  {/* Warning alert if patient is already registered */}
+                  {existingPatient && (
+                    <div className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/50 text-amber-900 text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span>⚠️</span>
+                        <span>Patient Already Registered</span>
+                      </div>
+                      <p className="text-gray-600">
+                        Patient is already registered in ESIC HMS with UHID: <strong className="font-mono text-[13px] text-amber-950">{existingPatient.hospitalUid}</strong>.
+                        Creating a new OPD/IPD visit instead of a duplicate registration record.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Patient Profile Form Controls */}
                   <div className="card p-4 bg-gray-50/60 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 space-y-4">
                     <div className="flex items-center justify-between border-b border-gray-200 pb-2">
@@ -629,193 +710,223 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                           </div>
                         </button>
                       </div>
+                    </div>
+
                     {/* Patient Identification Photo Upload Section */}
-                    <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2.5 shadow-sm">
-                      <label className="text-xs font-bold text-[var(--color-text-primary)] flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 text-primary-700 dark:text-primary-400 font-semibold">
-                          <span>📷</span> Patient Identification Photo
-                        </span>
-                        <span className="text-[11px] font-normal text-gray-500">
-                          Supports PNG, JPG, WEBP (Max 5MB)
-                        </span>
-                      </label>
+                    {!existingPatient && (
+                      <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 space-y-2.5 shadow-sm">
+                        <label className="text-xs font-bold text-[var(--color-text-primary)] flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 text-primary-700 dark:text-primary-400 font-semibold">
+                            <span>📷</span> Patient Identification Photo
+                          </span>
+                          <span className="text-[11px] font-normal text-gray-500">
+                            Supports PNG, JPG, WEBP (Max 5MB)
+                          </span>
+                        </label>
 
-                      <div className="flex items-center gap-4">
-                        {photoUrl ? (
-                          <div className="relative group">
-                            <img
-                              src={photoUrl}
-                              alt="Patient Photo Preview"
-                              className="w-16 h-16 rounded-xl object-cover border-2 border-primary-500 shadow-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setPhotoUrl('')}
-                              className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600 transition-colors"
-                              title="Remove Photo"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        <div className="flex items-center gap-4">
+                          {photoUrl ? (
+                            <div className="relative group">
+                              <img
+                                src={photoUrl}
+                                alt="Patient Photo Preview"
+                                className="w-16 h-16 rounded-xl object-cover border-2 border-primary-500 shadow-sm"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setPhotoUrl('')}
+                                className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow hover:bg-red-600 transition-colors"
+                                title="Remove Photo"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center text-gray-400">
+                              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                               </svg>
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="w-16 h-16 rounded-xl bg-gray-100 dark:bg-gray-700 border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center text-gray-400">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            <span className="text-[9px] mt-0.5 font-medium">No Photo</span>
-                          </div>
-                        )}
+                              <span className="text-[9px] mt-0.5 font-medium">No Photo</span>
+                            </div>
+                          )}
 
-                        <div className="space-y-1 flex-1">
-                          <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100 cursor-pointer inline-flex items-center gap-1.5 transition-colors">
-                            <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
-                            <span>{photoUrl ? 'Change Patient Photo' : 'Upload / Capture Photo'}</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handlePhotoUpload}
-                              className="hidden"
-                            />
-                          </label>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                            The photo will be saved with the patient record and printed on the official registration slip.
-                          </p>
+                          <div className="space-y-1 flex-1">
+                            <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100 cursor-pointer inline-flex items-center gap-1.5 transition-colors">
+                              <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                              </svg>
+                              <span>{photoUrl ? 'Change Patient Photo' : 'Upload / Capture Photo'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handlePhotoUpload}
+                                className="hidden"
+                              />
+                            </label>
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                              The photo will be saved with the patient record and printed on the official registration slip.
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Initial OPD Department *
-                        </label>
-                        <select
-                          value={selectedDeptId}
-                          onChange={(e) => setSelectedDeptId(e.target.value)}
-                          className="input text-xs font-semibold py-2 w-full"
-                          required
-                        >
-                          {departments.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.name} ({d.code})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                    {existingPatient ? (
+                      careType === 'OPD' && (
+                        <div className="grid grid-cols-1 gap-3 text-xs">
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Initial OPD Department *
+                            </label>
+                            <select
+                              value={selectedDeptId}
+                              onChange={(e) => setSelectedDeptId(e.target.value)}
+                              className="input text-xs font-semibold py-2 w-full"
+                              required
+                            >
+                              {departments.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name} ({d.code})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Initial OPD Department *
+                            </label>
+                            <select
+                              value={selectedDeptId}
+                              onChange={(e) => setSelectedDeptId(e.target.value)}
+                              className="input text-xs font-semibold py-2 w-full"
+                              required
+                            >
+                              {departments.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name} ({d.code})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
 
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Date of Birth
-                        </label>
-                        <input
-                          type="date"
-                          value={dob}
-                          onChange={(e) => setDob(e.target.value)}
-                          className="input text-xs py-2 w-full"
-                        />
-                      </div>
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Date of Birth
+                            </label>
+                            <input
+                              type="date"
+                              value={dob}
+                              onChange={(e) => setDob(e.target.value)}
+                              className="input text-xs py-2 w-full"
+                            />
+                          </div>
 
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Gender
-                        </label>
-                        <select
-                          value={gender}
-                          onChange={(e) => setGender(e.target.value)}
-                          className="input text-xs py-2 w-full"
-                        >
-                          <option value="">Select Gender</option>
-                          <option value="MALE">Male</option>
-                          <option value="FEMALE">Female</option>
-                          <option value="OTHER">Other</option>
-                        </select>
-                      </div>
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Gender
+                            </label>
+                            <select
+                              value={gender}
+                              onChange={(e) => setGender(e.target.value)}
+                              className="input text-xs py-2 w-full"
+                            >
+                              <option value="">Select Gender</option>
+                              <option value="MALE">Male</option>
+                              <option value="FEMALE">Female</option>
+                              <option value="OTHER">Other</option>
+                            </select>
+                          </div>
 
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Blood Group
-                        </label>
-                        <select
-                          value={bloodGroup}
-                          onChange={(e) => setBloodGroup(e.target.value)}
-                          className="input text-xs py-2 w-full"
-                        >
-                          <option value="">Select Blood Group</option>
-                          <option value="A+">A+</option>
-                          <option value="A-">A-</option>
-                          <option value="B+">B+</option>
-                          <option value="B-">B-</option>
-                          <option value="O+">O+</option>
-                          <option value="O-">O-</option>
-                          <option value="AB+">AB+</option>
-                          <option value="AB-">AB-</option>
-                        </select>
-                      </div>
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Blood Group
+                            </label>
+                            <select
+                              value={bloodGroup}
+                              onChange={(e) => setBloodGroup(e.target.value)}
+                              className="input text-xs py-2 w-full"
+                            >
+                              <option value="">Select Blood Group</option>
+                              <option value="A+">A+</option>
+                              <option value="A-">A-</option>
+                              <option value="B+">B+</option>
+                              <option value="B-">B-</option>
+                              <option value="O+">O+</option>
+                              <option value="O-">O-</option>
+                              <option value="AB+">AB+</option>
+                              <option value="AB-">AB-</option>
+                            </select>
+                          </div>
 
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Contact Phone Number
-                        </label>
-                        <input
-                          type="text"
-                          value={contactPhone}
-                          onChange={(e) => setContactPhone(e.target.value)}
-                          placeholder="+91 9876543210"
-                          className="input text-xs py-2 w-full"
-                        />
-                      </div>
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Contact Phone Number
+                            </label>
+                            <input
+                              type="text"
+                              value={contactPhone}
+                              onChange={(e) => setContactPhone(e.target.value)}
+                              placeholder="+91 9876543210"
+                              className="input text-xs py-2 w-full"
+                            />
+                          </div>
 
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Email Address
-                        </label>
-                        <input
-                          type="email"
-                          value={contactEmail}
-                          onChange={(e) => setContactEmail(e.target.value)}
-                          placeholder="patient@example.com"
-                          className="input text-xs py-2 w-full"
-                        />
-                      </div>
-                    </div>
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Email Address
+                            </label>
+                            <input
+                              type="email"
+                              value={contactEmail}
+                              onChange={(e) => setContactEmail(e.target.value)}
+                              placeholder="patient@example.com"
+                              className="input text-xs py-2 w-full"
+                            />
+                          </div>
+                        </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Residential Address
-                        </label>
-                        <input
-                          type="text"
-                          value={address}
-                          onChange={(e) => setAddress(e.target.value)}
-                          placeholder="Street Address, City, State, PIN"
-                          className="input text-xs py-2 w-full"
-                        />
-                      </div>
-                      <div>
-                        <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                          Known Allergies / Medical Notes
-                        </label>
-                        <input
-                          type="text"
-                          value={allergies}
-                          onChange={(e) => setAllergies(e.target.value)}
-                          placeholder="e.g. Penicillin allergy, Diabetic"
-                          className="input text-xs py-2 w-full"
-                        />
-                      </div>
-                    </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Residential Address
+                            </label>
+                            <input
+                              type="text"
+                              value={address}
+                              onChange={(e) => setAddress(e.target.value)}
+                              placeholder="Street Address, City, State, PIN"
+                              className="input text-xs py-2 w-full"
+                            />
+                          </div>
+                          <div>
+                            <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                              Known Allergies / Medical Notes
+                            </label>
+                            <input
+                              type="text"
+                              value={allergies}
+                              onChange={(e) => setAllergies(e.target.value)}
+                              placeholder="e.g. Penicillin allergy, Diabetic"
+                              className="input text-xs py-2 w-full"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div className="pt-2 flex justify-end gap-3">
                     <button
                       type="button"
-                      onClick={() => setVerifiedData(null)}
+                      onClick={resetVerificationState}
                       className="btn btn-secondary btn-md"
                     >
                       Cancel
@@ -831,10 +942,16 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                     >
                       <Sparkles className="w-5 h-5" />
                       {registering
-                        ? 'Registering Patient...'
-                        : careType === 'IPD'
-                          ? 'Submit Form & Request IPD Bed Allocation'
-                          : 'Submit Form & Issue Hospital UID + OPD Token'}
+                        ? existingPatient
+                          ? 'Processing Visit...'
+                          : 'Registering Patient...'
+                        : existingPatient
+                          ? careType === 'IPD'
+                            ? 'Create IPD Admission Request'
+                            : 'Create OPD Visit & Issue Token'
+                          : careType === 'IPD'
+                            ? 'Submit Form & Request IPD Bed Allocation'
+                            : 'Submit Form & Issue Hospital UID + OPD Token'}
                     </button>
                   </div>
                 </form>
@@ -993,20 +1110,31 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               </div>
 
               <div className="p-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-4">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <div>
+                <div className="slip-header-container border-b pb-3">
+                  <div className="slip-header-text">
                     <h3 className="font-bold text-sm text-[var(--color-text-primary)]">
                       ESIC MODEL HOSPITAL — REGISTRATION SLIP
                     </h3>
                     <p className="text-[11px] text-[var(--color-text-secondary)]">
                       Ministry of Labour & Employment, Govt. of India
                     </p>
+                    {issuedToken && (
+                      <Badge variant="info" className="font-mono text-xs mt-1.5">
+                        {issuedToken}
+                      </Badge>
+                    )}
                   </div>
-                  {issuedToken && (
-                    <Badge variant="info" className="font-mono text-xs">
-                      {issuedToken}
-                    </Badge>
-                  )}
+                  <div className="slip-photo-box text-xs">
+                    {registrationResult.patientProfile?.photoUrl || registrationResult.employee.patientProfile?.photoUrl || photoUrl ? (
+                      <img
+                        src={registrationResult.patientProfile?.photoUrl || registrationResult.employee.patientProfile?.photoUrl || photoUrl}
+                        alt="Patient"
+                        className="slip-photo"
+                      />
+                    ) : (
+                      <div className="slip-photo-placeholder">Photo Not Available</div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
@@ -1038,9 +1166,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   onClick={() => {
-                    setVerifiedData(null);
-                    setRegistrationResult(null);
-                    setIssuedToken(null);
+                    resetVerificationState();
                     setEmployeeIdInput('');
                     setActiveWorkflow('esic-beneficiary');
                   }}

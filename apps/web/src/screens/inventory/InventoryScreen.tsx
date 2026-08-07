@@ -130,8 +130,26 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
 
   const categories = Array.from(new Set(medicines.map((m) => m.category)));
 
-  const renderStockBadge = (status: string) => {
-    switch (status) {
+  const renderStockBadge = (batch: any) => {
+    const isBelowMin = batch.currentStock < (batch.minimumStockLevel ?? 50);
+
+    if (isBelowMin) {
+      if (batch.hasActiveRequisition) {
+        return (
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+            🟢 Requisition Generated
+          </span>
+        );
+      } else {
+        return (
+          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300 font-orange-badge">
+            🟠 Low Stock
+          </span>
+        );
+      }
+    }
+
+    switch (batch.stockStatus) {
       case 'IN_STOCK':
         return (
           <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
@@ -165,7 +183,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
       default:
         return (
           <span className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">
-            {status}
+            {batch.stockStatus}
           </span>
         );
     }
@@ -363,7 +381,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
                             <td className="py-2.5 text-gray-500">
                               {batch.storageLocation || 'Main Store'}
                             </td>
-                            <td className="py-2.5">{renderStockBadge(batch.stockStatus)}</td>
+                            <td className="py-2.5">{renderStockBadge(batch)}</td>
                           </tr>
                         ))}
                       </tbody>

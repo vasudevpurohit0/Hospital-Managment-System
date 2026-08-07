@@ -366,18 +366,38 @@ export class AdmissionService implements OnModuleInit {
         throw new NotFoundException(`Bed with ID ${dto.bedId} not found`);
       }
 
-      if (bed.status !== BedStatus.AVAILABLE || bed.currentAdmissionId !== null) {
+      if (bed.currentAdmissionId !== null && bed.currentAdmissionId !== id) {
+        throw new ConflictException(
+          `Bed ${bed.bedNumber} is already occupied by another patient`,
+        );
+      }
+
+      if (bed.status !== BedStatus.AVAILABLE && bed.currentAdmissionId !== id) {
         throw new ConflictException(
           `Bed ${bed.bedNumber} is already occupied or under maintenance`,
         );
       }
 
+      // 1a. Release any previous bed assigned to this admission to prevent unique constraint failure
+      await tx.bed.updateMany({
+        where: {
+          currentAdmissionId: id,
+          id: { not: dto.bedId },
+        },
+        data: {
+          status: BedStatus.AVAILABLE,
+          currentAdmissionId: null,
+        },
+      });
+
       // 2. Perform optimistic update on Bed to block concurrent duplicate requests
       const updateCount = await tx.bed.updateMany({
         where: {
           id: dto.bedId,
-          currentAdmissionId: null,
-          status: BedStatus.AVAILABLE,
+          OR: [
+            { currentAdmissionId: null },
+            { currentAdmissionId: id },
+          ],
         },
         data: {
           status: BedStatus.OCCUPIED,
@@ -418,9 +438,6 @@ export class AdmissionService implements OnModuleInit {
     });
   }
 
-  /**
-   * Log daily observations/treatment notes (Nurse/Ward Staff)
-   */
   async addNote(id: string, dto: CreateNoteDto, userId: string) {
     await this.findOne(id);
 

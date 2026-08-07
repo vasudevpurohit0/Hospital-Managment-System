@@ -54,6 +54,8 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [transferBatchId, setTransferBatchId] = useState('00000000-0000-0000-0000-000000000712');
   const [transferQty, setTransferQty] = useState('50');
 
+  const [editedQuantities, setEditedQuantities] = useState<Record<string, number>>({});
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -98,7 +100,23 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
 
   const handleApproveRequisition = async (id: string, decision: 'APPROVED' | 'REJECTED') => {
     try {
-      await approveRequisition(id, { decision, notes: 'Approved by Store Manager' }, activeToken);
+      const req = requisitions.find((r) => r.id === id);
+      const itemsToUpdate = (req?.items || [])
+        .filter((i) => editedQuantities[i.id] !== undefined)
+        .map((i) => ({
+          itemId: i.id,
+          quantity: editedQuantities[i.id],
+        }));
+
+      await approveRequisition(
+        id,
+        {
+          decision,
+          notes: 'Approved by Store Manager',
+          items: itemsToUpdate.length > 0 ? itemsToUpdate : undefined,
+        },
+        activeToken,
+      );
       loadData();
     } catch (err: unknown) {
       alert((err as Error).message || 'Error approving requisition');
@@ -300,18 +318,40 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
                   <tr key={req.id} className="hover:bg-gray-50/50">
                     <td className="p-3 font-mono font-bold text-gray-800">{req.id}</td>
                     <td className="p-3">
-                      {(req.items || []).map((i) => (
-                        <div key={i.id || i.medicineId}>
-                          <strong>{i.medicine?.genericName || i.medicineId}</strong>: {i.quantity}{' '}
-                          units
-                        </div>
-                      ))}
+                      {(req.items || []).map((i) => {
+                        const currentVal = editedQuantities[i.id] !== undefined ? editedQuantities[i.id] : i.quantity;
+                        return (
+                          <div key={i.id || i.medicineId} className="flex items-center gap-2 my-1">
+                            <strong>{i.medicine?.genericName || i.medicineId}</strong>:
+                            {req.status === 'PENDING' ? (
+                              <input
+                                type="number"
+                                className="w-16 px-1.5 py-0.5 border border-gray-300 rounded font-bold text-gray-800 bg-white"
+                                value={currentVal}
+                                min="1"
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10) || 1;
+                                  setEditedQuantities(prev => ({ ...prev, [i.id]: val }));
+                                }}
+                              />
+                            ) : (
+                              <span>{i.quantity}</span>
+                            )}
+                            <span className="text-gray-400">units</span>
+                          </div>
+                        );
+                      })}
                     </td>
                     <td className="p-3">
                       {req.triggeredByAlert ? (
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-semibold">
-                          ⚠️ Low-Stock Alert
-                        </span>
+                        <div className="flex flex-col items-start">
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-semibold text-[10px]">
+                            ⚠️ Low-Stock Alert
+                          </span>
+                          {req.triggerReason && (
+                            <span className="text-[10px] text-gray-400 mt-0.5 italic">{req.triggerReason}</span>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-gray-500">Manual Request</span>
                       )}
@@ -330,6 +370,11 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
                       {req.status === 'PENDING' && (
                         <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded">
                           ⏳ Pending Approval
+                        </span>
+                      )}
+                      {req.status === 'FULFILLED' && (
+                        <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded">
+                          ✓ Fulfilled
                         </span>
                       )}
                     </td>

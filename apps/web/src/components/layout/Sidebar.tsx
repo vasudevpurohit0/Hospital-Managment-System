@@ -62,7 +62,7 @@ interface MenuGroup {
 const MENU_GROUPS: MenuGroup[] = [
   {
     title: 'Overview',
-    items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['*'] }],
+    items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Reception', 'Doctor', 'AdmissionDesk', 'Nurse', 'Pharmacist', 'StoreManager', 'ProcurementOfficer', 'DataEntryOperator', 'Administrator', 'SuperAdmin'] }],
   },
   {
     title: 'Clinical',
@@ -89,7 +89,7 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'opd-queue',
         label: 'OPD Queue',
         icon: ClipboardList,
-        roles: ['Doctor', 'Reception', 'Nurse', 'SuperAdmin', 'Administrator'],
+        roles: ['Doctor', 'Reception', 'Nurse', 'SuperAdmin', 'Administrator', 'QueueManager'],
       },
       {
         id: 'consultations',

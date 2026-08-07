@@ -2,19 +2,23 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateMedicineDto } from './dto/create-medicine.dto';
 import { CreateBatchDto } from './dto/create-batch.dto';
-import { StockStatus, PharmacyLocation } from '@prisma/client';
+import { StockStatus, PharmacyLocation, RequisitionStatus, POStatus } from '@prisma/client';
+import { ProcurementService } from '../procurement/procurement.service';
 
 @Injectable()
 export class InventoryService {
   private readonly logger = new Logger(InventoryService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private procurementService: ProcurementService,
+  ) {}
 
   /**
    * Fetch all medicines with active stock batches from PostgreSQL DB
    */
   async findAllMedicines() {
-    return this.prisma.medicine.findMany({
+    const medicines = await this.prisma.medicine.findMany({
       include: {
         batches: {
           include: { supplier: true },
@@ -23,6 +27,52 @@ export class InventoryService {
       },
       orderBy: { genericName: 'asc' },
     });
+
+    const activeRequisitions = await this.prisma.purchaseRequisition.findMany({
+      where: {
+        OR: [
+          { status: RequisitionStatus.PENDING },
+          {
+            status: RequisitionStatus.APPROVED,
+            OR: [
+              {
+                purchaseOrders: {
+                  none: {},
+                },
+              },
+              {
+                purchaseOrders: {
+                  some: {
+                    status: {
+                      in: [POStatus.ISSUED, POStatus.DISPATCHED],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      include: {
+        items: true,
+      },
+    });
+
+    const activeMedIds = new Set<string>();
+    for (const req of activeRequisitions) {
+      for (const item of req.items) {
+        activeMedIds.add(item.medicineId);
+      }
+    }
+
+    return medicines.map((med) => ({
+      ...med,
+      hasActiveRequisition: activeMedIds.has(med.id),
+      batches: med.batches.map((batch) => ({
+        ...batch,
+        hasActiveRequisition: activeMedIds.has(med.id),
+      })),
+    }));
   }
 
   /**
@@ -62,6 +112,7 @@ export class InventoryService {
         currentStock: dto.currentStock,
         minimumStockLevel: dto.minimumStockLevel ?? 50,
         reorderLevel: dto.reorderLevel ?? 100,
+        maximumStockLevel: dto.maximumStockLevel ?? 500,
         storageLocation: dto.storageLocation || null,
         stockStatus:
           dto.currentStock <= (dto.minimumStockLevel ?? 50)
@@ -80,6 +131,9 @@ export class InventoryService {
         quantity: dto.currentStock,
       },
     });
+
+    // Trigger low stock check
+    await this.procurementService.checkAndTriggerLowStockRequisition(batch.id, this.prisma);
 
     return batch;
   }
@@ -165,6 +219,9 @@ export class InventoryService {
           performedBy: userId,
         },
       });
+
+      // Trigger low stock check since stock becomes 0
+      await this.procurementService.checkAndTriggerLowStockRequisition(batchId, tx, userId);
 
       return updatedBatch;
     });

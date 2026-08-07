@@ -74,7 +74,9 @@ export const AppShell: React.FC = () => {
   const authToken = token || '';
   const userRole = user?.role || '';
 
-  const [activePage, setActivePage] = useState<PageId>('dashboard');
+  const [activePage, setActivePage] = useState<PageId>(() => {
+    return user?.role === 'QueueManager' ? 'opd-queue' : 'dashboard';
+  });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -88,6 +90,13 @@ export const AppShell: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Redirect QueueManager back to opd-queue if they are on another page
+  useEffect(() => {
+    if (userRole === 'QueueManager' && activePage !== 'opd-queue') {
+      setActivePage('opd-queue');
+    }
+  }, [userRole, activePage]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -336,6 +345,8 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
 ];
 
 const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, onNavigate }) => {
+  const { user } = useAuth();
+  const userRole = user?.role || '';
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -344,16 +355,23 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
     inputRef.current?.focus();
   }, []);
 
+  const allowedPages = useMemo(() => {
+    if (userRole === 'QueueManager') {
+      return SEARCHABLE_PAGES.filter((page) => page.id === 'opd-queue');
+    }
+    return SEARCHABLE_PAGES;
+  }, [userRole]);
+
   const results = useMemo(() => {
-    if (!query.trim()) return SEARCHABLE_PAGES.slice(0, 8);
+    if (!query.trim()) return allowedPages.slice(0, 8);
     const q = query.toLowerCase();
-    return SEARCHABLE_PAGES.filter(
+    return allowedPages.filter(
       (page) =>
         page.label.toLowerCase().includes(q) ||
         page.group.toLowerCase().includes(q) ||
         page.keywords.some((kw) => kw.includes(q)),
     );
-  }, [query]);
+  }, [query, allowedPages]);
 
   useEffect(() => {
     setSelectedIndex(0);

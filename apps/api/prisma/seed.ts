@@ -14,6 +14,7 @@ export const SYSTEM_ROLES = [
   'DataEntryOperator',
   'Administrator',
   'SuperAdmin',
+  'QueueManager',
 ] as const;
 
 export type SystemRoleName = (typeof SYSTEM_ROLES)[number];
@@ -161,6 +162,11 @@ export async function main() {
 
     // --- SuperAdmin (Wildcard / all permissions) ---
     { roleName: 'SuperAdmin', resource: '*', action: '*' },
+
+    // --- QueueManager (OPD Queue operations) ---
+    { roleName: 'QueueManager', resource: 'Employee', action: 'read' },
+    { roleName: 'QueueManager', resource: 'Visit', action: 'read' },
+    { roleName: 'QueueManager', resource: 'OPDVisit', action: 'read' },
   ];
 
   for (const perm of permissionsData) {
@@ -728,6 +734,24 @@ export async function main() {
   });
 
   console.log(`  ✓ Seeded DataEntryOperator user: dataentry@esic.gov.in (${dataEntryUser.id})`);
+
+  const queueManagerPasswordHash = await bcrypt.hash('QueueManagerPass123!', 10);
+  const queueManagerUser = await prisma.user.upsert({
+    where: { identifier: 'queuemanager@esic.gov.in' },
+    update: {
+      passwordHash: queueManagerPasswordHash,
+      roleId: roleMap['QueueManager'],
+      active: true,
+    },
+    create: {
+      identifier: 'queuemanager@esic.gov.in',
+      passwordHash: queueManagerPasswordHash,
+      roleId: roleMap['QueueManager'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded QueueManager user: queuemanager@esic.gov.in (${queueManagerUser.id})`);
 
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   const genMedDept = await prisma.department.findUnique({ where: { code: 'GENMED' } });
