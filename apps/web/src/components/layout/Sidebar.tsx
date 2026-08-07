@@ -227,22 +227,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* ── Brand Header ── */}
       <div
         className={`flex items-center h-[var(--topnav-height)] flex-shrink-0 border-b border-white/[0.06] ${
-          collapsed ? 'justify-center px-2' : 'px-5'
+          collapsed ? 'justify-center px-2' : 'px-4'
         }`}
       >
         {collapsed ? (
-          <div className="w-9 h-9 rounded-lg bg-primary-500/20 flex items-center justify-center">
-            <Building2 className="w-5 h-5 text-primary-300" />
+          <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center border border-white/20 shadow-xs">
+            <img src="/hms_stethoscope_logo.svg" alt="HMS Logo" className="w-full h-full object-contain" />
           </div>
         ) : (
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-primary-500/20 flex items-center justify-center flex-shrink-0">
-              <Building2 className="w-5 h-5 text-primary-300" />
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center flex-shrink-0 border border-white/20 shadow-xs">
+              <img src="/hms_stethoscope_logo.svg" alt="HMS Logo" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-[13px] font-bold text-white truncate">ESIC HMS</h1>
-              <p className="text-[10px] text-[var(--sidebar-text)] opacity-50 truncate">
-                Hospital Management
+              <h1 className="text-[12px] font-extrabold text-white truncate">MP Govt HMS</h1>
+              <p className="text-[10px] text-amber-300 font-medium truncate">
+                SIGNAL Sign-ON
               </p>
             </div>
           </div>

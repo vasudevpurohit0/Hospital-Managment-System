@@ -55,37 +55,53 @@ export const LoginPage: React.FC = () => {
 
       {/* ── Compact Government Header ── */}
       <header className="flex-shrink-0 z-20 flex w-full border-b border-slate-200">
-        {/* Left 50% Header (Navy Blue with Clean ESIC Badge) */}
-        <div className="w-1/2 bg-[#0B2545] text-white py-2 px-8 lg:px-12 flex items-center justify-start gap-3.5 border-r border-[#081B34]">
-          <div className="bg-white p-1 rounded-md shadow-2xs flex items-center justify-center">
+        {/* Left 50% Header (Navy Blue with Clean MP Govt Badge & India Emblem) */}
+        <div className="w-1/2 bg-[#0B2545] text-white py-2 px-6 lg:px-10 flex items-center justify-start gap-3 border-r border-[#081B34]">
+          <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-lg border border-white/15">
             <img
-              src="/esic_logo.png"
-              alt="ESIC Official Logo"
-              className="h-8 w-auto object-contain"
+              src="/mp_govt_logo.svg"
+              alt="MP Government Official Logo"
+              className="h-9 w-auto object-contain drop-shadow"
+            />
+            <img
+              src="/Emblem_of_India.svg"
+              alt="Emblem of India"
+              className="h-8 w-auto object-contain filter invert opacity-90"
             />
           </div>
-          <div className="border-l border-white/20 pl-3.5 text-left">
+          <div className="border-l border-white/20 pl-3 text-left">
             <p className="text-[9px] font-semibold text-amber-300 uppercase tracking-wider">
-              Ministry of Labour & Employment • Government of India
+              Government of Madhya Pradesh • Public Health & Family Welfare
             </p>
             <p className="text-[11px] font-bold text-white tracking-tight font-serif">
-              Employees&apos; State Insurance Corporation
+              मध्य प्रदेश शासन • MP Government Health Portal
             </p>
           </div>
         </div>
 
-        {/* Right 50% Header (White) */}
-        <div className="w-1/2 bg-white text-slate-900 py-2 px-8 lg:px-12 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Building2 className="w-3.5 h-3.5 text-[#0B2545]" />
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#0B2545]">
-              Hospital Single Sign-On
-            </span>
+        {/* Right 50% Header (White with Stethoscope HMS Logo & SIGNAL SSO) */}
+        <div className="w-1/2 bg-white text-slate-900 py-2 px-6 lg:px-10 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#0B2545]/10 p-1 flex items-center justify-center">
+              <img
+                src="/hms_stethoscope_logo.svg"
+                alt="Hospital Management System Stethoscope Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div>
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-[#0B2545] block">
+                Hospital SIGNAL Sign-ON
+              </span>
+              <span className="text-[9px] text-slate-500 font-semibold block">
+                Integrated Hospital Management Platform
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-[#0B2545]/5 border border-[#0B2545]/15 rounded px-2.5 py-0.5">
+          <div className="flex items-center gap-1.5 bg-[#0B2545]/5 border border-[#0B2545]/15 rounded px-2.5 py-1">
             <ShieldCheck className="w-3.5 h-3.5 text-[#B45309]" />
-            <span className="text-[10px] font-bold text-[#0B2545]">NIC Gateway Compliant</span>
+            <span className="text-[10px] font-bold text-[#0B2545]">NIC & MP Health Compliant</span>
           </div>
         </div>
       </header>
@@ -96,55 +112,69 @@ export const LoginPage: React.FC = () => {
            LEFT PANEL: Exactly 50% Width — Deep Navy Blue (#0B2545)
            ════════════════════════════════════════════════════════ */}
         <div className="lg:w-1/2 bg-[#0B2545] text-white p-8 lg:p-14 flex flex-col justify-between items-center relative border-r border-[#081B34] overflow-y-auto">
-          {/* Ashoka Emblem Background Watermark (White Opacity ~ 4%) */}
+          {/* MP Govt Seal & Ashoka Emblem Watermark */}
           <div
-            className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.04] bg-no-repeat bg-center filter invert"
+            className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.05] bg-no-repeat bg-center filter invert"
             style={{
-              backgroundImage: `url('/Emblem_of_India.svg')`,
-              backgroundSize: '360px',
+              backgroundImage: `url('/mp_govt_logo.svg')`,
+              backgroundSize: '420px',
             }}
           />
 
           {/* Vertically Centered Left Content */}
-          <div className="relative z-10 my-auto pt-6 space-y-8 w-full max-w-[540px]">
-            {/* Ashoka Emblem & ESIC Official Logo Pill */}
-            <div className="flex items-center gap-5 border-b border-white/10 pb-6">
-              <img
-                src="/Emblem_of_India.svg"
-                alt="Emblem of India"
-                className="h-16 w-auto object-contain filter invert"
-              />
-              <div className="h-12 w-[1px] bg-white/20" />
-              <div className="bg-white p-2 rounded-xl shadow-md flex items-center justify-center">
+          <div className="relative z-10 my-auto pt-4 space-y-7 w-full max-w-[540px]">
+            {/* MP Government Official Logo & Stethoscope HMS Badge Pill */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-6">
+              <div className="flex items-center gap-3.5">
+                <div className="bg-white p-2 rounded-2xl stroke-white shadow-lg flex items-center justify-center border border-amber-400/40">
+                  <img
+                    src="/mp_govt_logo.svg"
+                    alt="MP Government Official Seal"
+                    className="h-16 w-auto object-contain"
+                  />
+                </div>
+                <div className="h-12 w-[1px] bg-white/20" />
                 <img
-                  src="/esic_logo.png"
-                  alt="ESIC Official Logo"
+                  src="/Emblem_of_India.svg"
+                  alt="Emblem of India"
+                  className="h-14 w-auto object-contain filter invert opacity-95"
+                />
+              </div>
+
+              <div className="bg-gradient-to-br stroke-white from-white/15 to-white/5 border border-white/20 p-2.5 rounded-2xl shadow-md flex items-center gap-2.5 backdrop-blur-md">
+                <img
+                  src="/hms_stethoscope_logo.svg"
+                  alt="HMS Stethoscope Logo"
                   className="h-12 w-auto object-contain"
                 />
+                <div className="text-left pr-1">
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-wider">MP HMS</p>
+                  <p className="text-[9px] font-semibold text-slate-200">SIGNAL Sign-ON</p>
+                </div>
               </div>
             </div>
 
             {/* Hero Heading */}
-            <div className="space-y-2.5 text-left">
+            <div className="space-y-2 text-left">
               <h1 className="text-3xl lg:text-4xl font-extrabold text-white font-serif leading-tight">
-                Enterprise Hospital Management System
+                MP Government Hospital Management System
               </h1>
               <p className="text-sm font-semibold text-amber-300">
-                Official Digital Healthcare Platform for ESIC Hospitals
+                Official Digital Healthcare & Hospital SIGNAL Sign-ON Platform
               </p>
             </div>
 
             {/* Four Equal-Sized Statistics Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 pt-2 w-full">
               {[
-                { label: 'Established 1952', value: '1952' },
-                { label: 'ESIC Hospitals', value: '150+' },
-                { label: 'Dispensaries', value: '1,600+' },
-                { label: 'Beneficiaries', value: '3.4+ Cr' },
+                { label: 'District Hospitals', value: '450+' },
+                { label: 'PHCs & CHCs', value: '2,100+' },
+                { label: 'Beneficiaries', value: '7.5+ Cr' },
+                { label: 'Daily OPD Visits', value: '1.5+ L' },
               ].map((stat, i) => (
                 <div
                   key={i}
-                  className="h-[90px] p-3.5 rounded-xl bg-white/10 border border-white/15 backdrop-blur-sm flex flex-col justify-center text-center space-y-1"
+                  className="h-[90px] p-3 rounded-xl bg-white/10 border border-white/15 backdrop-blur-sm flex flex-col justify-center text-center space-y-1"
                 >
                   <p className="text-xl font-extrabold text-white font-serif">{stat.value}</p>
                   <p className="text-[11px] font-medium text-amber-200">{stat.label}</p>
@@ -155,8 +185,8 @@ export const LoginPage: React.FC = () => {
 
           {/* Left Panel Footer Tag */}
           <div className="relative z-10 pt-4 border-t border-white/10 w-full max-w-[540px] flex items-center justify-between text-[11px] text-blue-200/70 font-medium">
-            <span>Government of India • Ministry of Labour & Employment</span>
-            <span>Established 1952</span>
+            <span>Government of Madhya Pradesh • Public Health Department</span>
+            <span>Hospital SIGNAL Sign-ON Gateway</span>
           </div>
         </div>
 
@@ -167,11 +197,20 @@ export const LoginPage: React.FC = () => {
           {/* Vertically & Horizontally Centered Form Container (Width: ~480-500px) */}
           <div className="my-auto py-4 w-full max-w-[480px] space-y-7">
             {/* Form Title & Subtitle */}
-            <div className="space-y-1.5 text-left border-b border-slate-100 pb-4">
-              <h2 className="text-2xl lg:text-3xl font-bold text-[#0B2545] font-serif tracking-tight">
-                Hospital Single Sign-On
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">Authorized Personnel Login</p>
+            <div className="space-y-2 text-left border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <img
+                  src="/hms_stethoscope_logo.svg"
+                  alt="Stethoscope HMS Logo"
+                  className="h-10 w-auto object-contain"
+                />
+                <div>
+                  <h2 className="text-2xl lg:text-3xl font-bold text-[#0B2545] font-serif tracking-tight">
+                    Hospital SIGNAL Sign-ON
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium">Authorized Personnel Login</p>
+                </div>
+              </div>
             </div>
 
             {/* Error Alert */}
@@ -296,7 +335,7 @@ export const LoginPage: React.FC = () => {
         <div className="w-full flex items-center justify-between text-[11px]">
           <div>
             <p className="font-semibold text-white">
-              © Employees&apos; State Insurance Corporation • Government of India
+              © Government of Madhya Pradesh • Public Health &amp; Family Welfare Department • Hospital SIGNAL Sign-ON
             </p>
           </div>
 

@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="hmsShieldBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="50%" stop-color="#0B2545"/>
+      <stop offset="100%" stop-color="#1E3A8A"/>
+    </linearGradient>
+
+    <linearGradient id="hmsCyanGlow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06B6D4"/>
+      <stop offset="50%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#FF9933"/>
+    </linearGradient>
+
+    <linearGradient id="hmsRedCross" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#B91C1C"/>
+    </linearGradient>
+
+    <linearGradient id="stethChrome" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="50%" stop-color="#94A3B8"/>
+      <stop offset="100%" stop-color="#475569"/>
+    </linearGradient>
+
+    <linearGradient id="stethTube" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#0369A1"/>
+    </linearGradient>
+
+    <filter id="hmsGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="hmsShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#hmsShadow)">
+    <!-- Outer Crest Shield Badge -->
+    <path d="M 200,30 C 290,30 350,60 350,150 C 350,260 270,330 200,365 C 130,330 50,260 50,150 C 50,60 110,30 200,30 Z" 
+          fill="url(#hmsShieldBg)" stroke="url(#hmsCyanGlow)" stroke-width="6"/>
+
+    <!-- Inner Shield Accent Border -->
+    <path d="M 200,45 C 275,45 330,70 330,150 C 330,245 258,310 200,342 C 142,310 70,245 70,150 C 70,70 125,45 200,45 Z" 
+          fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="8,6" opacity="0.4"/>
+
+    <!-- Central Glowing Medical Cross -->
+    <g transform="translate(200, 160)" filter="url(#hmsGlow)">
+      <!-- Vertical bar -->
+      <rect x="-22" y="-65" width="44" height="130" rx="10" fill="url(#hmsRedCross)" stroke="#FFFFFF" stroke-width="2"/>
+      <!-- Horizontal bar -->
+      <rect x="-65" y="-22" width="130" height="44" rx="10" fill="url(#hmsRedCross)" stroke="#FFFFFF" stroke-width="2"/>
+    </g>
+
+    <!-- Stethoscope Loop Overlay -->
+    <g transform="translate(200, 170)">
+      <!-- Earpieces at Top Left & Right -->
+      <path d="M -50,-115 L -45,-95 M 50,-115 L 45,-95" stroke="url(#stethChrome)" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="-50" cy="-115" r="7" fill="#0B2545" stroke="#FFFFFF" stroke-width="2"/>
+      <circle cx="50" cy="-115" r="7" fill="#0B2545" stroke="#FFFFFF" stroke-width="2"/>
+
+      <!-- Chrome Binaural Tubes (U-shape Top) -->
+      <path d="M -45,-95 C -45,-60 -25,-45 0,-45 C 25,-45 45,-60 45,-95" fill="none" stroke="url(#stethChrome)" stroke-width="7" stroke-linecap="round"/>
+
+      <!-- Flexible Blue Stethoscope Main Tubing wrapping around shield -->
+      <path d="M 0,-45 C 0,-15 -80,10 -80,75 C -80,135 -10,140 0,140 C 10,140 80,135 80,75 C 80,10 0,-15 0,-45 Z" 
+            fill="none" stroke="url(#stethTube)" stroke-width="13" stroke-linecap="round"/>
+
+      <!-- Inner Tubing Highlight -->
+      <path d="M 0,-45 C 0,-15 -80,10 -80,75 C -80,135 -10,140 0,140 C 10,140 80,135 80,75 C 80,10 0,-15 0,-45 Z" 
+            fill="none" stroke="#67E8F9" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+
+      <!-- Chestpiece / Diaphragm at Bottom Center -->
+      <g transform="translate(0, 138)" filter="url(#hmsGlow)">
+        <!-- Chrome Rim -->
+        <circle cx="0" cy="0" r="32" fill="url(#stethChrome)" stroke="#FFFFFF" stroke-width="3"/>
+        <!-- Inner Diaphragm -->
+        <circle cx="0" cy="0" r="22" fill="#0B2545" stroke="#38BDF8" stroke-width="2.5"/>
+        <!-- Center Stethoscope Emblem Dot -->
+        <circle cx="0" cy="0" r="8" fill="#FF9933"/>
+
+        <!-- Pulse Wave ECG Line inside Chestpiece -->
+        <path d="M -18,0 L -8,0 L -4,-10 L 0,12 L 4,-14 L 8,6 L 12,0 L 18,0" fill="none" stroke="#22D3EE" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+    </g>
+
+    <!-- Top Crown Banner: HOSPITAL MANAGEMENT SYSTEM -->
+    <g transform="translate(200, 312)">
+      <rect x="-115" y="-14" width="230" height="28" rx="14" fill="#0F172A" stroke="url(#hmsCyanGlow)" stroke-width="2"/>
+      <text x="0" y="4" font-family="'Inter', sans-serif" font-weight="900" font-size="11" fill="#FFFFFF" text-anchor="middle" letter-spacing="1.5">
+        HOSPITAL MANAGEMENT SYSTEM
+      </text>
+    </g>
+  </g>
+</svg>
