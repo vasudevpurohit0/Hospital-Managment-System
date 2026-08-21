@@ -10,6 +10,7 @@ import { EnterpriseReceptionDesk } from '../../pages/reception/EnterpriseRecepti
 import { DoctorWorkspace } from '../../pages/doctor/DoctorWorkspace';
 import { PharmacyWorkspace } from '../../pages/pharmacy/PharmacyWorkspace';
 import { PatientRecordsPage } from '../../pages/PatientRecordsPage';
+import { DoctorSchedulePage } from '../../pages/DoctorSchedulePage';
 
 /* ── Additional Departmental Screens (Preserved) ── */
 import { InventoryScreen } from '../../screens/inventory/InventoryScreen';
@@ -36,6 +37,7 @@ const PAGE_LABELS: Record<PageId, string> = {
   registration: 'Registration',
   'opd-queue': 'OPD Queue',
   consultations: 'Consultations',
+  'doctor-schedule': 'Doctor Schedule',
   'ipd-admissions': 'IPD / Admissions',
   'ward-console': 'Ward Console',
   pharmacy: 'Dispensing',
@@ -56,6 +58,7 @@ const PAGE_GROUP: Record<PageId, string> = {
   registration: 'Clinical',
   'opd-queue': 'Clinical',
   consultations: 'Clinical',
+  'doctor-schedule': 'Clinical',
   'ipd-admissions': 'Clinical',
   'ward-console': 'Clinical',
   pharmacy: 'Pharmacy & Inventory',
@@ -155,6 +158,8 @@ export const AppShell: React.FC = () => {
         return <OpdQueueScreen authToken={authToken} />;
       case 'consultations':
         return <DoctorWorkspace authToken={authToken} />;
+      case 'doctor-schedule':
+        return <DoctorSchedulePage />;
       case 'ipd-admissions':
         return <AdmissionDeskScreen authToken={authToken} />;
       case 'ward-console':

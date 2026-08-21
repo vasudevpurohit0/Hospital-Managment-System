@@ -963,3 +963,34 @@
   text-align: center;
 }
 
+/* Consultation & Pass Print Containers */
+@media print {
+  .consultation-print-only {
+    display: block !important;
+    margin: 0 auto !important;
+    padding: 24px !important;
+    width: 100% !important;
+    max-width: 210mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    box-sizing: border-box !important;
+  }
+
+  .patient-pass-print-only {
+    display: block !important;
+    margin: 20px auto !important;
+    padding: 16px !important;
+    width: 100mm !important;
+    max-width: 100% !important;
+    border: 2px solid #0B3D6E !important;
+    border-radius: 8px !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    box-sizing: border-box !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+

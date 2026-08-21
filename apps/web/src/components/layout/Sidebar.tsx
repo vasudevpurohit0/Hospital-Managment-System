@@ -35,6 +35,7 @@ export type PageId =
   | 'registration'
   | 'opd-queue'
   | 'consultations'
+  | 'doctor-schedule'
   | 'ipd-admissions'
   | 'ward-console'
   | 'pharmacy'
@@ -96,6 +97,12 @@ const MENU_GROUPS: MenuGroup[] = [
         label: 'Consultations',
         icon: Stethoscope,
         roles: ['Doctor', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'doctor-schedule',
+        label: 'Doctor Schedule',
+        icon: Stethoscope,
+        roles: ['Reception', 'Doctor', 'Nurse', 'SuperAdmin', 'Administrator'],
       },
       {
         id: 'ipd-admissions',

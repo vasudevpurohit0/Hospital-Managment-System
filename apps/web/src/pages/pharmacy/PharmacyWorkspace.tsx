@@ -19,10 +19,16 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
   const [batchOptions, setBatchOptions] = useState<Record<string, MedicineBatchOption[]>>({});
   const [selectedBatches, setSelectedBatches] = useState<Record<string, string>>({});
   const [dispenseQtyMap, setDispenseQtyMap] = useState<Record<string, number>>({});
+  const [timingMap, setTimingMap] = useState<Record<string, string>>({});
 
   const [dispensing, setDispensing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [lastDispensedRx, setLastDispensedRx] = useState<{
+    rx: PharmacyQueueRecord;
+    timings: Record<string, string>;
+    issueDate: string;
+  } | null>(null);
 
   const selectedRxRef = useRef<PharmacyQueueRecord | null>(null);
   useEffect(() => {
@@ -40,6 +46,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
 
         const initialBatches: Record<string, string> = {};
         const initialQty: Record<string, number> = {};
+        const initialTiming: Record<string, string> = {};
 
         rx.items.forEach((item) => {
           const itemBatches = batches[item.id] || [];
@@ -47,10 +54,12 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
             initialBatches[item.id] = itemBatches[0].id;
           }
           initialQty[item.id] = 1;
+          initialTiming[item.id] = 'Morning & Night'; // Default timing
         });
 
         setSelectedBatches(initialBatches);
         setDispenseQtyMap(initialQty);
+        setTimingMap(initialTiming);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to load FEFO batch options');
       }
@@ -101,6 +110,11 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
       setSuccessMessage(
         `Dispensed ${result.dispensedItemsCount} items. Bill status: ${result.transactionOutcome}`,
       );
+      setLastDispensedRx({
+        rx: selectedRx,
+        timings: timingMap,
+        issueDate: new Date().toLocaleDateString('en-IN'),
+      });
       loadQueue();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Dispensing failed');
@@ -111,28 +125,92 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-secondary-500/10 flex items-center justify-center text-secondary-600">
-            <Pill className="w-5 h-5" />
+      {/* ─── PRINT-ONLY MEDICINE LABEL ─── */}
+      {lastDispensedRx && (
+        <div className="hidden print:block p-8 font-sans bg-white text-black max-w-2xl mx-auto">
+          <div className="text-center mb-6 border-b-2 border-black pb-4">
+            <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">ESIC MODEL HOSPITAL</h1>
+            <h2 className="text-lg font-semibold uppercase mb-1">Pharmacy Dispensing Label</h2>
+            <p className="text-sm">Ministry of Labour &amp; Employment, Govt. of India</p>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
-              Pharmacy FEFO Dispensing Console
-            </h2>
-            <p className="text-xs text-[var(--color-text-secondary)]">
-              Automated First-Expiry-First-Out batch selection workspace
-            </p>
+          
+          <div className="flex justify-between mb-6 text-sm font-semibold">
+            <div>
+              <p>Patient Name: {lastDispensedRx.rx.visit?.employee?.name || 'Unknown'}</p>
+              <p>Rx ID: {lastDispensedRx.rx.id.slice(-6).toUpperCase()}</p>
+            </div>
+            <div className="text-right">
+              <p>Issue Date: {lastDispensedRx.issueDate}</p>
+              <p>Dispensed By: Pharmacy Desk</p>
+            </div>
+          </div>
+
+          <table className="w-full text-sm border-collapse mb-8">
+            <thead>
+              <tr className="border-b border-black">
+                <th className="text-left py-2">Medicine Details</th>
+                <th className="text-right py-2">Instructions / When to take</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lastDispensedRx.rx.items.map((item) => (
+                <tr key={item.id} className="border-b border-gray-300">
+                  <td className="py-3">
+                    <p className="font-bold">{item.medicineName}</p>
+                    <p className="text-xs text-gray-600">Dose: {item.dose} | Freq: {item.frequency} | Dur: {item.duration}</p>
+                  </td>
+                  <td className="py-3 text-right font-semibold text-base">
+                    {lastDispensedRx.timings[item.id] || 'As directed by doctor'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          
+          <div className="text-center text-xs mt-8 pt-4 border-t border-black">
+            <p>Keep medicines out of reach of children. Store in a cool, dry place.</p>
+            <p>Valid for intended patient only.</p>
           </div>
         </div>
+      )}
 
-        <button onClick={loadQueue} className="btn btn-secondary btn-sm gap-2">
-          <Clock className="w-3.5 h-3.5" /> Refresh Queue
-        </button>
-      </div>
+      {/* ─── SCREEN LAYOUT ─── */}
+      <div className="print:hidden space-y-6">
+        <div className="card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-secondary-500/10 flex items-center justify-center text-secondary-600">
+              <Pill className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
+                Pharmacy FEFO Dispensing Console
+              </h2>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                Automated First-Expiry-First-Out batch selection workspace
+              </p>
+            </div>
+          </div>
 
-      {error && <div className="alert alert-danger">{error}</div>}
-      {successMessage && <div className="alert alert-success">{successMessage}</div>}
+          <button onClick={loadQueue} className="btn btn-secondary btn-sm gap-2">
+            <Clock className="w-3.5 h-3.5" /> Refresh Queue
+          </button>
+        </div>
+
+        {error && <div className="alert alert-danger">{error}</div>}
+        
+        {successMessage && (
+          <div className="alert alert-success flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <span>{successMessage}</span>
+            {lastDispensedRx && (
+              <button
+                onClick={() => setTimeout(() => window.print(), 100)}
+                className="btn btn-primary btn-sm gap-1.5 shrink-0 bg-secondary-600 hover:bg-secondary-700"
+              >
+                <Pill className="w-4 h-4" /> Print Medicine Label
+              </button>
+            )}
+          </div>
+        )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Queue List (4 cols) */}
@@ -240,11 +318,11 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                         <Badge variant="neutral">{item.dispenseStatus}</Badge>
                       </div>
 
-                      {/* FEFO Batch Dropdown */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      {/* Dispense Controls */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                         <div>
                           <label className="text-[11px] font-semibold text-[var(--color-text-secondary)] block mb-1">
-                            FEFO Batch Selection (Auto-ranked by nearest expiry)
+                            FEFO Batch Selection (Auto-ranked)
                           </label>
                           <select
                             value={selectedBatchId}
@@ -283,6 +361,27 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                             className="input text-xs py-1.5"
                           />
                         </div>
+
+                        <div>
+                          <label className="text-[11px] font-semibold text-[var(--color-text-secondary)] block mb-1">
+                            When to take (Print Label)
+                          </label>
+                          <select
+                            value={timingMap[item.id] || 'Morning & Night'}
+                            onChange={(e) =>
+                              setTimingMap({ ...timingMap, [item.id]: e.target.value })
+                            }
+                            className="input text-xs py-1.5"
+                          >
+                            <option value="Morning">Morning</option>
+                            <option value="Night">Night</option>
+                            <option value="Morning & Night">Morning & Night</option>
+                            <option value="Morning, Afternoon & Night">Morning, Afternoon & Night</option>
+                            <option value="As directed by doctor">As directed by doctor</option>
+                            <option value="After Meals">After Meals</option>
+                            <option value="Before Meals">Before Meals</option>
+                          </select>
+                        </div>
                       </div>
                     </div>
                   );
@@ -307,6 +406,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

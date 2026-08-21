@@ -5,14 +5,48 @@ import { PatientLookupResponse } from '../api/patient-lookup.api';
 interface PatientMasterProps {
   patientData: PatientLookupResponse;
   onClose?: () => void;
+  /** 'ALL' | 'OPD' | 'IPD' — filter the visit history by type */
+  filterVisitType?: 'ALL' | 'OPD' | 'IPD';
+  /** ISO date string — only show visits on or after this date */
+  filterAfter?: string;
+  /** ISO date string — only show visits on or before this date */
+  filterBefore?: string;
 }
 
-export const PatientWorkspace: React.FC<PatientMasterProps> = ({ patientData }) => {
+export const PatientWorkspace: React.FC<PatientMasterProps> = ({
+  patientData,
+  filterVisitType = 'ALL',
+  filterAfter,
+  filterBefore,
+}) => {
   const [activeTab, setActiveTab] = React.useState<'overview' | 'timeline' | 'prescriptions'>(
     'overview',
   );
 
   const { employee, historySummary, openPrescriptions, openVisit } = patientData;
+
+  /* ── Apply visit filters ── */
+  const filteredHistory = historySummary.filter((visit) => {
+    // Type filter
+    if (filterVisitType !== 'ALL' && visit.type !== filterVisitType) return false;
+    // Date range filter
+    const visitDate = new Date(visit.date);
+    if (filterAfter) {
+      const after = new Date(filterAfter);
+      if (!isNaN(visitDate.getTime()) && !isNaN(after.getTime())) {
+        if (visitDate < after) return false;
+      }
+    }
+    if (filterBefore) {
+      const cutoff = new Date(filterBefore);
+      if (!isNaN(visitDate.getTime()) && !isNaN(cutoff.getTime())) {
+        if (visitDate > cutoff) return false;
+      }
+    }
+    return true;
+  });
+
+  const activeFilterCount = (filterVisitType !== 'ALL' ? 1 : 0) + (filterAfter || filterBefore ? 1 : 0);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -110,16 +144,25 @@ export const PatientWorkspace: React.FC<PatientMasterProps> = ({ patientData }) 
 
       {activeTab === 'timeline' && (
         <div className="card p-6 space-y-6">
-          <h3 className="font-bold text-base text-[var(--color-text-primary)] border-b pb-2">
-            Visit History
-          </h3>
-          {historySummary.length === 0 ? (
+          <div className="flex items-center justify-between border-b pb-2">
+            <h3 className="font-bold text-base text-[var(--color-text-primary)]">
+              Visit History
+            </h3>
+            {activeFilterCount > 0 && (
+              <span className="text-[11px] font-mono text-info-700 bg-info-50 border border-info-200 px-2 py-0.5 rounded">
+                Filtered: {filteredHistory.length} / {historySummary.length} visits
+              </span>
+            )}
+          </div>
+          {filteredHistory.length === 0 ? (
             <p className="text-sm text-[var(--color-text-tertiary)]">
-              No prior visits on record for this patient.
+              {historySummary.length === 0
+                ? 'No prior visits on record for this patient.'
+                : 'No visits match the current filters.'}
             </p>
           ) : (
             <div className="relative pl-6 space-y-6 border-l-2 border-primary-200">
-              {historySummary.map((visit) => (
+              {filteredHistory.map((visit) => (
                 <div key={visit.visitId} className="relative">
                   <div className="absolute -left-[31px] top-0.5 w-4 h-4 rounded-full bg-primary-500 border-2 border-white" />
                   <span className="text-xs font-mono text-[var(--color-text-tertiary)]">
