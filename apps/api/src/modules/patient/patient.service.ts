@@ -283,7 +283,9 @@ export class PatientService {
   async searchPatients(queryDto: PatientSearchQueryDto) {
     const { query, department, employmentType, status, registrationDate, page = 1, limit = 20 } = queryDto;
 
-    const whereClause: any = {};
+    const whereClause: any = {
+      hospitalUid: { isNot: null }
+    };
 
     if (query && query.trim()) {
       const q = query.trim();

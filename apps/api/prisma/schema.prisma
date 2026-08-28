@@ -31,6 +31,7 @@ model User {
   storeTransfers       StoreTransfer[]
   employee             Employee?                 @relation(fields: [employeeId], references: [id])
   role                 Role                      @relation(fields: [roleId], references: [id])
+  doctorProfile        DoctorProfile?
 
   @@map("users")
 }
@@ -617,6 +618,29 @@ model BillingTransaction {
   prescriptionItem   PrescriptionItem @relation(fields: [prescriptionItemId], references: [id], onDelete: Cascade)
 
   @@map("billing_transactions")
+}
+
+model BrandingConfig {
+  id           String   @id @default("singleton")
+  hospitalName String   @map("hospital_name")
+  tagline      String
+  primaryColor String   @map("primary_color")
+  logoUrl      String   @map("logo_url")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("branding_configs")
+}
+
+model DoctorProfile {
+  id         String  @id @default(uuid()) @db.Uuid
+  userId     String  @unique @map("user_id") @db.Uuid
+  specialty  String
+  experience String
+  timing     String
+  available  Boolean @default(true)
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_profiles")
 }
 
 enum EmploymentTypeCode {

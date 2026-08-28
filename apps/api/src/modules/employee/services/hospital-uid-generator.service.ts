@@ -12,17 +12,33 @@ export class HospitalUidGeneratorService {
   async generateUid(): Promise<string> {
     const year = new Date().getFullYear();
 
-    // Query total count of HospitalUIDs issued in the current year
     const prefix = `ESIC-${year}-`;
-    const count = await this.prisma.hospitalUID.count({
+    
+    // Get the latest issued UID for this year
+    const latestUid = await this.prisma.hospitalUID.findFirst({
       where: {
         uidCode: {
           startsWith: prefix,
         },
       },
+      orderBy: {
+        uidCode: 'desc',
+      },
     });
 
-    const sequence = (count + 1).toString().padStart(6, '0');
+    let nextSeq = 1;
+    if (latestUid) {
+      // Extract the sequence part and increment
+      const parts = latestUid.uidCode.split('-');
+      if (parts.length === 3) {
+        const lastSeq = parseInt(parts[2], 10);
+        if (!isNaN(lastSeq)) {
+          nextSeq = lastSeq + 1;
+        }
+      }
+    }
+
+    const sequence = nextSeq.toString().padStart(6, '0');
     return `${prefix}${sequence}`;
   }
 }

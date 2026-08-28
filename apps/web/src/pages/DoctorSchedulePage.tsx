@@ -1,41 +1,88 @@
-import React, { useState, useMemo } from 'react';
-import { Clock, Calendar, Stethoscope } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Clock, Calendar, Stethoscope, Loader2, Plus } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
-
-const DOCTOR_SCHEDULE = [
-  { id: 1, name: 'Dr. Ramesh Sharma', specialty: 'General Physician', experience: '15 Years', timing: '09:00 AM - 01:00 PM' },
-  { id: 2, name: 'Dr. Ankit Verma', specialty: 'General Physician', experience: '10 Years', timing: '02:00 PM - 06:00 PM' },
-  { id: 3, name: 'Dr. Anita Desai', specialty: 'Cardiologist', experience: '12 Years', timing: '10:00 AM - 02:00 PM' },
-  { id: 4, name: 'Dr. Sanjay Mehra', specialty: 'Cardiologist', experience: '18 Years', timing: '03:00 PM - 07:00 PM' },
-  { id: 5, name: 'Dr. Vikram Singh', specialty: 'Orthopedics', experience: '8 Years', timing: '09:00 AM - 01:00 PM, 04:00 PM - 07:00 PM' },
-  { id: 6, name: 'Dr. Sunita Rao', specialty: 'Pediatrician', experience: '20 Years', timing: '08:00 AM - 12:00 PM' },
-  { id: 7, name: 'Dr. Manish Gupta', specialty: 'Neurologist', experience: '10 Years', timing: '02:00 PM - 06:00 PM' },
-  { id: 8, name: 'Dr. Priya Patel', specialty: 'Dermatologist', experience: '5 Years', timing: '11:00 AM - 03:00 PM' },
-];
+import { fetchDoctors, createDoctor, DoctorProfile } from '../api/doctor.api';
 
 export const DoctorSchedulePage: React.FC = () => {
   const [filterSpecialty, setFilterSpecialty] = useState<string>('All');
+  const [doctors, setDoctors] = useState<DoctorProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const specialties = useMemo(() => {
-    const specs = Array.from(new Set(DOCTOR_SCHEDULE.map(d => d.specialty)));
-    specs.sort();
-    return ['All', ...specs];
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [newDoc, setNewDoc] = useState({ name: '', email: '', specialty: '', experience: '', timing: '' });
+
+  const loadDoctors = () => {
+    setIsLoading(true);
+    fetchDoctors()
+      .then((data) => {
+        setDoctors(data);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || 'Error loading doctors');
+        setIsLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    loadDoctors();
   }, []);
 
+  const handleAddDoctor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddError(null);
+    setIsAdding(true);
+    try {
+      await createDoctor(newDoc);
+      setShowAddModal(false);
+      setNewDoc({ name: '', email: '', specialty: '', experience: '', timing: '' });
+      loadDoctors();
+    } catch (err: any) {
+      setAddError(err.message || 'Failed to add doctor');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const specialties = useMemo(() => {
+    const specs = Array.from(new Set(doctors.map((d: DoctorProfile) => d.specialty)));
+    specs.sort();
+    return ['All', ...specs];
+  }, [doctors]);
+
   const groupedDoctors = useMemo(() => {
-    const filtered = DOCTOR_SCHEDULE.filter(
-      doc => filterSpecialty === 'All' || doc.specialty === filterSpecialty
+    const filtered = doctors.filter(
+      (doc: DoctorProfile) => filterSpecialty === 'All' || doc.specialty === filterSpecialty
     );
 
-    const groups: Record<string, typeof DOCTOR_SCHEDULE> = {};
-    filtered.forEach(doc => {
+    const groups: Record<string, DoctorProfile[]> = {};
+    filtered.forEach((doc: DoctorProfile) => {
       if (!groups[doc.specialty]) {
         groups[doc.specialty] = [];
       }
       groups[doc.specialty].push(doc);
     });
     return groups;
-  }, [filterSpecialty]);
+  }, [doctors, filterSpecialty]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="card p-6 border-red-500 text-red-500">
+        Failed to load doctor schedule: {error}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-12 max-w-5xl">
@@ -59,15 +106,21 @@ export const DoctorSchedulePage: React.FC = () => {
             onChange={(e) => setFilterSpecialty(e.target.value)}
             className="input text-sm py-2"
           >
-            {specialties.map(spec => (
+            {specialties.map((spec) => (
               <option key={spec} value={spec}>{spec}</option>
             ))}
           </select>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn btn-primary btn-sm whitespace-nowrap gap-2"
+          >
+            <Plus className="w-4 h-4" /> Add Doctor
+          </button>
         </div>
       </div>
 
       <div className="space-y-8">
-        {Object.entries(groupedDoctors).map(([specialty, doctors]) => (
+        {Object.entries(groupedDoctors).map(([specialty, docs]) => (
           <div key={specialty} className="space-y-4">
             <div className="flex items-center gap-2 border-b-2 border-primary-100 dark:border-primary-900 pb-2">
               <Stethoscope className="w-5 h-5 text-primary-500" />
@@ -77,7 +130,7 @@ export const DoctorSchedulePage: React.FC = () => {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {doctors.map(doc => (
+              {docs.map((doc: DoctorProfile) => (
                 <div
                   key={doc.id}
                   className="card p-4 hover:shadow-md transition-shadow border-l-4 border-primary-500 flex flex-col justify-between h-full"
@@ -110,6 +163,43 @@ export const DoctorSchedulePage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="card w-full max-w-md p-6 animate-scale-in">
+            <h2 className="text-lg font-bold mb-4">Add New Doctor</h2>
+            <form onSubmit={handleAddDoctor} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1">Name</label>
+                <input required type="text" className="input w-full" value={newDoc.name} onChange={e => setNewDoc({...newDoc, name: e.target.value})} placeholder="Dr. John Doe" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Email</label>
+                <input required type="email" className="input w-full" value={newDoc.email} onChange={e => setNewDoc({...newDoc, email: e.target.value})} placeholder="john.doe@esic.gov.in" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Specialty</label>
+                <input required type="text" className="input w-full" value={newDoc.specialty} onChange={e => setNewDoc({...newDoc, specialty: e.target.value})} placeholder="Cardiologist" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Experience</label>
+                <input required type="text" className="input w-full" value={newDoc.experience} onChange={e => setNewDoc({...newDoc, experience: e.target.value})} placeholder="10 Years" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Timing</label>
+                <input required type="text" className="input w-full" value={newDoc.timing} onChange={e => setNewDoc({...newDoc, timing: e.target.value})} placeholder="10:00 AM - 02:00 PM" />
+              </div>
+
+              {addError && <div className="text-sm text-red-500 font-semibold">{addError}</div>}
+              
+              <div className="flex justify-end gap-3 pt-4 border-t border-[var(--color-border)] mt-4">
+                <button type="button" onClick={() => setShowAddModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="submit" disabled={isAdding} className="btn btn-primary">{isAdding ? 'Adding...' : 'Add Doctor'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

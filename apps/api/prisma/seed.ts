@@ -754,98 +754,67 @@ export async function main() {
   console.log(`  ✓ Seeded QueueManager user: queuemanager@esic.gov.in (${queueManagerUser.id})`);
 
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
-  const genMedDept = await prisma.department.findUnique({ where: { code: 'GENMED' } });
-  if (genMedDept) {
-    const samplePatients = [
-      {
-        id: '00000000-0000-0000-0000-000000000501',
-        empId: 'EMP-1001',
-        name: 'Suresh Patel',
-        visitId: '00000000-0000-0000-0000-000000000601',
-        opdId: '00000000-0000-0000-0000-000000000701',
-        token: 'GENMED-001',
-        calledAt: new Date(Date.now() - 300000),
+  // 6. Seed Doctor Profiles (Replacing Fake Patients)
+  const doctorsData = [
+    { name: 'Dr. Ramesh Sharma', specialty: 'General Physician', experience: '15 Years', timing: '09:00 AM - 01:00 PM', email: 'r.sharma@esic.gov.in' },
+    { name: 'Dr. Ankit Verma', specialty: 'General Physician', experience: '10 Years', timing: '02:00 PM - 06:00 PM', email: 'a.verma@esic.gov.in' },
+    { name: 'Dr. Anita Desai', specialty: 'Cardiologist', experience: '12 Years', timing: '10:00 AM - 02:00 PM', email: 'a.desai@esic.gov.in' },
+    { name: 'Dr. Sanjay Mehra', specialty: 'Cardiologist', experience: '18 Years', timing: '03:00 PM - 07:00 PM', email: 's.mehra@esic.gov.in' },
+    { name: 'Dr. Vikram Singh', specialty: 'Orthopedics', experience: '8 Years', timing: '09:00 AM - 01:00 PM, 04:00 PM - 07:00 PM', email: 'v.singh@esic.gov.in' },
+    { name: 'Dr. Sunita Rao', specialty: 'Pediatrician', experience: '20 Years', timing: '08:00 AM - 12:00 PM', email: 's.rao@esic.gov.in' },
+    { name: 'Dr. Manish Gupta', specialty: 'Neurologist', experience: '10 Years', timing: '02:00 PM - 06:00 PM', email: 'm.gupta@esic.gov.in' },
+    { name: 'Dr. Priya Patel', specialty: 'Dermatologist', experience: '5 Years', timing: '11:00 AM - 03:00 PM', email: 'p.patel@esic.gov.in' },
+  ];
+
+  for (const doc of doctorsData) {
+    const user = await prisma.user.upsert({
+      where: { identifier: doc.email },
+      update: {
+        passwordHash: doctorPasswordHash,
+        roleId: roleMap['Doctor'],
+        active: true,
       },
-      {
-        id: '00000000-0000-0000-0000-000000000502',
-        empId: 'EMP-1002',
-        name: 'Priya Devi',
-        visitId: '00000000-0000-0000-0000-000000000602',
-        opdId: '00000000-0000-0000-0000-000000000702',
-        token: 'GENMED-002',
-        calledAt: null,
+      create: {
+        identifier: doc.email,
+        passwordHash: doctorPasswordHash,
+        roleId: roleMap['Doctor'],
+        active: true,
       },
-      {
-        id: '00000000-0000-0000-0000-000000000503',
-        empId: 'EMP-1003',
-        name: 'Rahul Kumar',
-        visitId: '00000000-0000-0000-0000-000000000603',
-        opdId: '00000000-0000-0000-0000-000000000703',
-        token: 'GENMED-003',
-        calledAt: null,
+    });
+
+    const empId = `DOC-${doc.email.split('@')[0]}`;
+    const employee = await prisma.employee.upsert({
+      where: { employeeId: empId },
+      update: {},
+      create: {
+        employeeId: empId,
+        name: doc.name,
+        department: doc.specialty,
+        postId: seniorOfficerPost.id,
+        gradeId: grade10.id,
+        employmentTypeId: permanentType.id,
       },
-    ];
+    });
 
-    for (const p of samplePatients) {
-      const emp = await prisma.employee.upsert({
-        where: { employeeId: p.empId },
-        update: {},
-        create: {
-          id: p.id,
-          employeeId: p.empId,
-          name: p.name,
-          department: 'General Dept',
-          postId: clerkPost.id,
-          gradeId: grade4.id,
-          employmentTypeId: permanentType.id,
-        },
-      });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { employeeId: employee.id },
+    });
 
-      await prisma.patientProfile.upsert({
-        where: { employeeId: emp.id },
-        update: {},
-        create: {
-          employeeId: emp.id,
-          eligibilityCategory: 'C',
-        },
-      });
-
-      const uidCode = `ESIC-2026-${p.empId.replace(/[^0-9]/g, '').padStart(6, '0')}`;
-      await prisma.hospitalUID.upsert({
-        where: { employeeId: emp.id },
-        update: {},
-        create: {
-          employeeId: emp.id,
-          uidCode,
-          qrPayload: uidCode,
-        },
-      });
-
-      const visit = await prisma.visit.upsert({
-        where: { id: p.visitId },
-        update: {},
-        create: {
-          id: p.visitId,
-          employeeId: emp.id,
-          type: 'OPD',
-          status: 'OPEN',
-        },
-      });
-
-      await prisma.oPDVisit.upsert({
-        where: { id: p.opdId },
-        update: {},
-        create: {
-          id: p.opdId,
-          visitId: visit.id,
-          departmentId: genMedDept.id,
-          tokenNumber: p.token,
-          calledAt: p.calledAt,
-        },
-      });
-    }
-    console.log(`  ✓ Seeded sample Patients, Hospital UIDs & OPD Visits for General Medicine`);
+    await prisma.doctorProfile.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        specialty: doc.specialty,
+        experience: doc.experience,
+        timing: doc.timing,
+        available: true,
+      },
+    });
   }
+
+  console.log(`  ✓ Seeded 8 Doctor Profiles for Schedule`);
 
   // 12. Seed Medicine Master & Stock Batches
   const pcmMed = await prisma.medicine.upsert({

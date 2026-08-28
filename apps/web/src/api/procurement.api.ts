@@ -182,3 +182,21 @@ export async function createStoreTransfer(
   }
   return res.json();
 }
+
+export interface SupplierRecord {
+  id: string;
+  name: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
+export async function fetchSuppliers(token?: string): Promise<SupplierRecord[]> {
+  const res = await apiFetch('/api/procurement/suppliers', {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch suppliers');
+  }
+  return res.json();
+}

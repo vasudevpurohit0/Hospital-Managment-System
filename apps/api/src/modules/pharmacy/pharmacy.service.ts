@@ -44,6 +44,7 @@ export class PharmacyService {
                 patientProfile: true,
               },
             },
+            diagnoses: true,
           },
         },
         items: true,

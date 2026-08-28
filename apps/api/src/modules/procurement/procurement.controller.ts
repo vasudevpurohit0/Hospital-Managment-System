@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import { ProcurementService } from './procurement.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
@@ -16,7 +16,8 @@ export class ProcurementController {
   @Post('requisitions')
   @RequirePermission('PurchaseRequisition', 'create')
   async createRequisition(@Body() dto: CreateRequisitionDto, @Req() req: any) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     return this.procurementService.createRequisition(dto, userId);
   }
 
@@ -33,14 +34,16 @@ export class ProcurementController {
     @Body() dto: ApproveRequisitionDto,
     @Req() req: any,
   ) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     return this.procurementService.approveRequisition(id, dto, userId);
   }
 
   @Post('purchase-orders')
   @RequirePermission('PurchaseOrder', 'create')
   async createPurchaseOrder(@Body() dto: CreatePODto, @Req() req: any) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     return this.procurementService.createPurchaseOrder(dto, userId);
   }
 
@@ -53,14 +56,22 @@ export class ProcurementController {
   @Post('goods-receipt-notes')
   @RequirePermission('MedicineBatch', 'create')
   async createGRN(@Body() dto: CreateGRNDto, @Req() req: any) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     return this.procurementService.createGRN(dto, userId);
+  }
+
+  @Get('suppliers')
+  @RequirePermission('PurchaseRequisition', 'read')
+  async findAllSuppliers() {
+    return this.procurementService.findAllSuppliers();
   }
 
   @Post('transfers')
   @RequirePermission('MedicineBatch', 'update')
   async createStoreTransfer(@Body() dto: CreateTransferDto, @Req() req: any) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     return this.procurementService.createStoreTransfer(dto, userId);
   }
 }

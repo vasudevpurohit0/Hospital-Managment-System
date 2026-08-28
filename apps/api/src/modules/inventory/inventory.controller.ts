@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { ExpiryScannerService } from './services/expiry-scanner.service';
 import { CreateMedicineDto } from './dto/create-medicine.dto';
@@ -67,7 +67,8 @@ export class InventoryController {
   @Post('batches/:id/dispose')
   @RequirePermission('MedicineBatch', 'update')
   async disposeBatch(@Param('id') id: string, @Body() dto: DisposeBatchDto, @Req() req: any) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     return this.inventoryService.disposeBatch(id, dto, userId);
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { PharmacyService } from './pharmacy.service';
 import { DispenseMedicineDto } from './dto/dispense-medicine.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -24,7 +24,8 @@ export class PharmacyController {
   @Post('dispense')
   @RequirePermission('StockTransaction', 'dispense')
   async dispense(@Body() dto: DispenseMedicineDto, @Req() req: any) {
-    const userId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) throw new UnauthorizedException('User context missing');
     const userRole = req.user?.roleName || req.user?.role || 'Pharmacist';
     return this.pharmacyService.dispense(dto, userId, userRole);
   }

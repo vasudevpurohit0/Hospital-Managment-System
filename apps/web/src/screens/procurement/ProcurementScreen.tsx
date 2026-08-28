@@ -9,6 +9,8 @@ import {
   createStoreTransfer,
   RequisitionRecord,
   PurchaseOrderRecord,
+  fetchSuppliers,
+  SupplierRecord,
 } from '../../api/procurement.api';
 import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
 
@@ -22,6 +24,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [requisitions, setRequisitions] = useState<RequisitionRecord[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRecord[]>([]);
   const [medicines, setMedicines] = useState<MedicineRecord[]>([]);
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'REQUISITIONS' | 'POS' | 'GRN' | 'TRANSFER'>(
@@ -39,19 +42,19 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
   const [reqQuantity, setReqQuantity] = useState('500');
 
   const [poReqId, setPoReqId] = useState('');
-  const [poSupplierId, setPoSupplierId] = useState('00000000-0000-0000-0000-000000000801');
+  const [poSupplierId, setPoSupplierId] = useState('');
   const [poUnitPrice, setPoUnitPrice] = useState('8.50');
 
   const [grnPOId, setGrnPOId] = useState('');
-  const [grnBatchNum, setGrnBatchNum] = useState('GRN-BATCH-2026-X1');
-  const [grnManufacturer, setGrnManufacturer] = useState('Cipla India');
+  const [grnBatchNum, setGrnBatchNum] = useState('');
+  const [grnManufacturer, setGrnManufacturer] = useState('');
   const [grnQty, setGrnQty] = useState('500');
-  const [grnMfgDate, setGrnMfgDate] = useState('2026-01-01');
-  const [grnExpDate, setGrnExpDate] = useState('2028-06-30');
+  const [grnMfgDate, setGrnMfgDate] = useState(new Date().toISOString().split('T')[0]);
+  const [grnExpDate, setGrnExpDate] = useState(new Date(new Date().setFullYear(new Date().getFullYear() + 2)).toISOString().split('T')[0]);
   const [grnPurchasePrice, setGrnPurchasePrice] = useState('8.50');
   const [grnIssuePrice, setGrnIssuePrice] = useState('15.00');
 
-  const [transferBatchId, setTransferBatchId] = useState('00000000-0000-0000-0000-000000000712');
+  const [transferBatchId, setTransferBatchId] = useState('');
   const [transferQty, setTransferQty] = useState('50');
 
   const [editedQuantities, setEditedQuantities] = useState<Record<string, number>>({});
@@ -60,23 +63,28 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
     setLoading(true);
     setError(null);
     try {
-      const [reqs, pos, meds] = await Promise.all([
+      const [reqs, pos, meds, supps] = await Promise.all([
         fetchRequisitions(activeToken),
         fetchPurchaseOrders(activeToken),
         fetchMedicines(activeToken),
+        fetchSuppliers(activeToken),
       ]);
       setRequisitions(reqs);
       setPurchaseOrders(pos);
       setMedicines(meds);
+      setSuppliers(supps);
       if (meds.length > 0 && !reqMedicineId) {
         setReqMedicineId(meds[0].id);
+      }
+      if (supps.length > 0 && !poSupplierId) {
+        setPoSupplierId(supps[0].id);
       }
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to load procurement data');
     } finally {
       setLoading(false);
     }
-  }, [activeToken, reqMedicineId]);
+  }, [activeToken, reqMedicineId, poSupplierId]);
 
   useEffect(() => {
     loadData();
@@ -625,14 +633,18 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
                 </span>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">Supplier ID *</label>
-                <input
-                  type="text"
+                <label className="block text-xs font-bold text-gray-500 mb-1">Supplier *</label>
+                <select
                   required
                   value={poSupplierId}
                   onChange={(e) => setPoSupplierId(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm"
-                />
+                >
+                  <option value="">-- Choose Supplier --</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.contactPerson})</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">
@@ -683,15 +695,19 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
             <form onSubmit={handleCreateGRN} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">
-                  Purchase Order ID *
+                  Purchase Order *
                 </label>
-                <input
-                  type="text"
+                <select
                   required
                   value={grnPOId}
                   onChange={(e) => setGrnPOId(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm font-mono"
-                />
+                >
+                  <option value="">-- Choose PO --</option>
+                  {purchaseOrders.filter(p => p.status === 'ISSUED' || p.status === 'DISPATCHED').map(p => (
+                    <option key={p.id} value={p.id}>PO #{p.id.substring(0, 8)}...</option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

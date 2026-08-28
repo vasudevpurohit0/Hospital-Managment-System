@@ -35,6 +35,8 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const [dischargingAdmission, setDischargingAdmission] = useState<AdmissionRecord | null>(null);
   const [summaryText, setSummaryText] = useState('');
   const [submittingDischarge, setSubmittingDischarge] = useState(false);
+  const [recentlyDischarged, setRecentlyDischarged] = useState<AdmissionRecord | null>(null);
+  const [printSummary, setPrintSummary] = useState('');
 
   // Ward creation modal state
   const [showAddWardModal, setShowAddWardModal] = useState(false);
@@ -153,6 +155,11 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
         { summaryText: summaryText.trim() },
         authToken,
       );
+      
+      // Save for printing
+      setRecentlyDischarged(dischargingAdmission);
+      setPrintSummary(summaryText.trim());
+
       setSummaryText('');
       setDischargingAdmission(null);
       await loadData();
@@ -186,7 +193,8 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const occupiedBedsCount = totalBeds - availableBedsCount;
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <>
+    <div className="max-w-6xl mx-auto p-6 space-y-6 print:hidden">
       {/* Console Header */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 pb-4 border-b border-gray-200">
         <div>
@@ -754,5 +762,82 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
         </div>
       )}
     </div>
+      {recentlyDischarged && (
+        <div className="fixed inset-0 bg-gray-900/60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm print:static print:bg-transparent print:p-0">
+          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full border border-gray-100 overflow-hidden flex flex-col max-h-[90vh] print:shadow-none print:border-none print:max-w-full print:max-h-full">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50 print:hidden">
+              <h2 className="font-bold text-lg text-gray-800">Discharge Card Generated</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTimeout(() => window.print(), 100)}
+                  className="px-4 py-2 bg-esic-secondary hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold shadow-sm transition-all"
+                >
+                  🖨️ Print Card
+                </button>
+                <button
+                  onClick={() => setRecentlyDischarged(null)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-100 text-gray-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="p-8 overflow-y-auto print:p-0 print:overflow-visible text-black bg-white">
+              <div className="text-center mb-6 border-b-2 border-black pb-4">
+                <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">ESIC MODEL HOSPITAL</h1>
+                <h2 className="text-lg font-semibold uppercase mb-1">Inpatient Discharge Card</h2>
+                <p className="text-sm">Ministry of Labour &amp; Employment, Govt. of India</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
+                <div>
+                  <p className="mb-1"><span className="font-bold">Patient Name:</span> {recentlyDischarged.visit.employee.name}</p>
+                  <p className="mb-1"><span className="font-bold">Employee ID:</span> {recentlyDischarged.visit.employee.employeeId}</p>
+                  <p className="mb-1"><span className="font-bold">Department:</span> {recentlyDischarged.visit.employee.department}</p>
+                  <p className="mb-1"><span className="font-bold">Category:</span> {recentlyDischarged.eligibleCategory}</p>
+                </div>
+                <div className="text-right">
+                  <p className="mb-1"><span className="font-bold">Admission Date:</span> {recentlyDischarged.allocatedAt ? new Date(recentlyDischarged.allocatedAt).toLocaleDateString() : 'N/A'}</p>
+                  <p className="mb-1"><span className="font-bold">Discharge Date:</span> {new Date().toLocaleDateString()}</p>
+                  <p className="mb-1"><span className="font-bold">Ward/Bed:</span> Bed {recentlyDischarged.bed?.bedNumber || 'Unassigned'}</p>
+                  <p className="mb-1"><span className="font-bold">Attending Doctor:</span> {recentlyDischarged.assignedDoctor?.identifier || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="mb-8 p-4 bg-gray-50 border border-gray-200 rounded-lg print:bg-white print:border-black print:rounded-none">
+                <h3 className="font-bold text-base border-b border-gray-300 pb-2 mb-3 uppercase tracking-wide">Discharge Summary</h3>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed text-gray-800 print:text-black">{printSummary}</p>
+              </div>
+
+              {recentlyDischarged.notes && recentlyDischarged.notes.length > 0 && (
+                <div className="mb-8">
+                  <h3 className="font-bold text-base border-b border-gray-300 pb-2 mb-3 uppercase tracking-wide">Clinical Observation Notes (During IPD)</h3>
+                  <div className="space-y-4">
+                    {recentlyDischarged.notes.map((note) => (
+                      <div key={note.id} className="text-sm border-l-2 border-gray-300 pl-3 py-1 print:border-black">
+                        <span className="text-xs text-gray-500 font-semibold print:text-black">{new Date(note.createdAt).toLocaleString()} (By {note.author.identifier}):</span>
+                        <p className="mt-1 text-gray-800 print:text-black">{note.note}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-16 flex justify-between text-sm font-bold pt-4">
+                <div className="text-center">
+                  <p>_______________________</p>
+                  <p className="mt-2">Patient / Relative Signature</p>
+                </div>
+                <div className="text-center">
+                  <p>_______________________</p>
+                  <p className="mt-2">Doctor / Medical Officer Signature</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

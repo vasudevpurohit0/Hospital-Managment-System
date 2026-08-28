@@ -163,6 +163,13 @@ export class ProcurementService implements OnModuleInit {
     });
   }
 
+  // 4.5. Find All Suppliers
+  async findAllSuppliers() {
+    return this.prisma.supplier.findMany({
+      orderBy: { name: 'asc' },
+    });
+  }
+
   // 5. Find All Purchase Orders
   async findAllPurchaseOrders() {
     return this.prisma.purchaseOrder.findMany({

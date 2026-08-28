@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Get, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Put, Get, Body, Param, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { PrescriptionService } from './prescription.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -12,7 +12,8 @@ export class PrescriptionController {
   @Post()
   @RequirePermission('Prescription', 'create')
   async createPrescription(@Body() dto: CreatePrescriptionDto, @Req() req: any) {
-    const doctorId = req.user?.id || req.user?.sub || '35b02c7d-cb73-405f-a239-e987c468d093';
+    const doctorId = req.user?.id || req.user?.sub;
+    if (!doctorId) throw new UnauthorizedException('User context missing');
     return this.prescriptionService.createPrescription(dto, doctorId);
   }
 

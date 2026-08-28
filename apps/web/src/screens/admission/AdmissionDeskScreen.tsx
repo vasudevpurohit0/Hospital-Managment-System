@@ -102,7 +102,7 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
           bedNumber: newBedNumber,
         },
         authToken,
-      );
+      ) as BedRecord;
       setAvailableBeds((prev) => [createdBed, ...prev]);
       setSelectedBedId(createdBed.id);
       setShowAddWardForm(false);

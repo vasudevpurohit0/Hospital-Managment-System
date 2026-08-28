@@ -9,7 +9,6 @@ import {
   Loader2,
   AlertCircle,
   KeyRound,
-  Building2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 

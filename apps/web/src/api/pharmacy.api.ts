@@ -18,6 +18,14 @@ export interface PharmacyQueueRecord {
         gender?: string;
       } | null;
     };
+    diagnoses?: Array<{
+      id: string;
+      symptoms?: string;
+      examinationNotes?: string;
+      diagnosisText?: string;
+      followUpFlag: boolean;
+      admissionRecommended: boolean;
+    }>;
   };
   items: Array<{
     id: string;
