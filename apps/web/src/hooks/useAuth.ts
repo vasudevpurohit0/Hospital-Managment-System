@@ -71,6 +71,9 @@ const ROLE_DISPLAY_NAMES: Record<string, string> = {
   Reception: 'Reception',
   AdmissionDesk: 'Admission Desk',
   DataEntryOperator: 'Data Entry Operator',
+  QueueManager: 'Queue Manager',
+  LabTechnician: 'Lab Technician',
+  Pathologist: 'Pathologist',
 };
 
 function buildUserFromRole(roleName: string, identifier: string): AuthUser {

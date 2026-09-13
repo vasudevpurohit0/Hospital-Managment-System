@@ -13,6 +13,8 @@ import { AllocateBedDto } from './dto/allocate-bed.dto';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { DischargeDto } from './dto/discharge.dto';
 import { AdmissionStatus, BedStatus } from '@prisma/client';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
+import { IpdFinanceService } from './ipd-finance.service';
 
 @Injectable()
 export class AdmissionService implements OnModuleInit {
@@ -21,6 +23,8 @@ export class AdmissionService implements OnModuleInit {
   constructor(
     private prisma: PrismaService,
     private eligibilityService: FacilityEligibilityService,
+    private sequences: DocumentSequenceService,
+    private ipdFinance: IpdFinanceService,
   ) {}
 
   async onModuleInit() {
@@ -40,6 +44,7 @@ export class AdmissionService implements OnModuleInit {
           await this.prisma.admission.create({
             data: {
               visitId: visit.id,
+              admissionNumber: await this.sequences.next('IPD_NUMBER'),
               status: AdmissionStatus.REQUESTED,
               eligibleCategory: 'C',
             },
@@ -432,6 +437,13 @@ export class AdmissionService implements OnModuleInit {
           assignedNurse: true,
         },
       });
+
+      // 4. Bill the first bed-day now, in this same transaction. The nightly
+      // job only bills days a patient is still UNDER_TREATMENT at midnight, so
+      // without this a same-day admit-and-discharge produced no bed-day charge
+      // and an empty Patient Ledger. The charge is idempotent per (admission,
+      // day), so it never collides with the nightly run that also covers today.
+      await this.ipdFinance.postBedDayForAdmission(id, new Date(), tx);
 
       this.logger.log(`🏥 Allocated Bed ${bed.bedNumber} to Admission ${id}`);
       return updated;

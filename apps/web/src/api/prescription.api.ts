@@ -13,7 +13,8 @@ export interface CreatePrescriptionPayload {
   followUpFlag?: boolean;
   admissionRecommended?: boolean;
   items: PrescriptionItemPayload[];
-  labTests?: string[];
+  /** Real Lab Test Master ids (Feature 6) — never free text. Omit entirely when empty; the backend rejects any unrecognised field, `labTests` included. */
+  labTestIds?: string[];
 }
 
 export interface PrescriptionRecord {

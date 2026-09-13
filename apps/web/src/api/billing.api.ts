@@ -4,6 +4,7 @@ export interface BillingTransactionRecord {
   outcome: 'FREE' | 'COVERED' | 'PAID';
   amount?: number | null;
   receiptReference?: string | null;
+  receiptId?: string | null;
   createdAt: string;
   prescriptionItem?: {
     medicineName: string;
@@ -25,6 +26,8 @@ export interface BillingTransactionRecord {
 
 export interface ReceiptRecord {
   receiptReference: string;
+  /** Real Receipt row id — present only once this charge has actually been receipted. */
+  receiptId: string | null;
   transactionId: string;
   issueDate: string;
   patientName: string;

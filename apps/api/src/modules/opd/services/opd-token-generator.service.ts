@@ -1,29 +1,32 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  DocumentSequenceService,
+  PrismaClientLike,
+} from '../../../common/sequence/document-sequence.service';
 
+/**
+ * Issues the daily OPD queue token for a department (e.g. CARDIO-001).
+ *
+ * Previously this held an in-memory Map of counters, which reset to zero on
+ * every process restart and could not be shared between instances — two
+ * patients could be handed the same token. Counting now happens in the
+ * database via DocumentSequenceService.
+ */
 @Injectable()
 export class OpdTokenGeneratorService {
   private readonly logger = new Logger(OpdTokenGeneratorService.name);
 
-  // In-memory atomic counters for fallback/dev execution
-  // Key format: token:{deptCode}:{YYYY-MM-DD}
-  private readonly counters = new Map<string, number>();
+  constructor(private readonly sequences: DocumentSequenceService) {}
 
   /**
-   * Atomically increments the daily counter for a department and formats
-   * a collision-free 3-digit queue token (e.g. CARDIO-001, CARDIO-002).
+   * Reserves the next collision-free token for a department.
+   *
+   * Pass the caller's transaction so the token is released rather than burned
+   * if visit creation subsequently fails.
    */
-  async generateDailyToken(deptCode: string): Promise<string> {
-    const today = new Date().toISOString().split('T')[0];
-    const key = `token:${deptCode.toUpperCase()}:${today}`;
-
-    // Synchronous atomic increment on the map instance
-    const current = (this.counters.get(key) || 0) + 1;
-    this.counters.set(key, current);
-
-    const tokenSeq = current.toString().padStart(3, '0');
-    const tokenNumber = `${deptCode.toUpperCase()}-${tokenSeq}`;
-
-    this.logger.log(`⚡ Issued Atomic Daily Token ${tokenNumber} (Key: ${key})`);
+  async generateDailyToken(deptCode: string, tx?: PrismaClientLike): Promise<string> {
+    const tokenNumber = await this.sequences.nextQueueToken(deptCode, tx);
+    this.logger.log(`Issued daily queue token ${tokenNumber}`);
     return tokenNumber;
   }
 }

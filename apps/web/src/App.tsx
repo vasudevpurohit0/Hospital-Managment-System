@@ -1,4 +1,5 @@
 import React from 'react';
+import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
 import { AppShell } from './components/layout/AppShell';
@@ -29,9 +30,11 @@ const AppContent: React.FC = () => {
 
 export function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

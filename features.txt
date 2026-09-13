@@ -1,0 +1,668 @@
+FEATURE 1 — THERAPY & SERVICE MASTER
+We need a dedicated administrative section for Therapies / Procedures / Billable Services.
+The uploaded pricing/rate reference material must be reviewed before designing the master.
+Use the uploaded pricing material as the initial reference for therapy/service names and rates.
+Do not blindly invent pricing.
+If the source provides an OPD/IPD/package rate, preserve that distinction.
+The reference material includes Ayurvedic therapy/intervention rates and package treatments, and also specifies benchmark treatment-cost information including pre/post-procedure cost. Review the source carefully before defining seed data.
+Designing a proper:
+Therapy & Service Master
+Possible fields:
+Service/Therapy ID
+Service Name
+Category
+Description
+OPD Rate
+IPD Rate
+Package Rate
+Unit
+Duration
+Pre-procedure charge
+Post-procedure charge
+Active/Inactive
+Effective From
+Effective Until
+Created By
+Updated By
+Created At
+Updated At
+But first check the existing database to determine whether equivalent entities already exist.
+
+FEATURE 2 — ADMIN-CONTROLLED PRICING
+Pricing must be fully dynamic.
+Authorized Administrator/SuperAdmin users should be able to manage prices without developer intervention.
+This should eventually cover:
+OPD consultation
+IPD bed
+IPD room
+Laboratory tests
+Therapies
+Procedures
+Diagnostic services
+Nursing/service charges where applicable
+Packages
+Pharmacy charges where applicable
+Future billable services
+Create a centralized Service & Pricing Master if the existing architecture does not already provide one.
+Critical pricing rule
+If Admin changes a price:
+NEW transactions use the new price.
+OLD transactions NEVER change.
+Example:
+Therapy A
+20 Aug → ₹500
+29 Aug → Admin changes to ₹700
+
+Old bill → ₹500
+New bill → ₹700
+Therefore design:
+Current price
+Effective date
+Price history
+Changed by
+Audit trail
+Do not simply overwrite the existing price.
+
+FEATURE 3 — COMPLETE PATIENT FINANCIAL LEDGER
+This is one of the most important requirements.
+Every billable activity performed for a patient must automatically be recorded in the central billing system.
+The system should connect:
+Patient
+ ↓
+UHID
+ ↓
+OPD / IPD Visit
+ ↓
+Hospital Service
+ ↓
+Billing Transaction
+ ↓
+Payment / Outstanding
+ ↓
+Patient Financial History
+Billable activities may include:
+OPD consultation
+IPD bed/room
+Laboratory
+Therapy
+Procedures
+Pharmacy/paid medicines
+Other configured hospital services
+The existing requirements already establish a single digital thread connecting registration, visits, prescriptions, dispensing, inventory and billing. Preserve and extend that architecture.
+
+FEATURE 4 — PATIENT-WISE BILLING
+Every patient should have a complete financial history.
+Example:
+Patient: Piyush Sharma
+UHID: ESIC-2026-000001
+
+Financial Summary
+
+Total Charges
+Discount
+Paid
+Outstanding
+
+Transaction History
+
+Date
+Service
+Department
+Quantity
+Rate
+Amount
+Reference
+
+OPD Consultation
+Laboratory
+Therapy
+Pharmacy
+IPD Bed
+Procedures
+Every billing transaction must retain:
+Patient
+UHID
+Employee ID
+OPD Visit or IPD Admission
+Service
+Department
+Quantity
+Rate at time of transaction
+Discount
+Final amount
+Payment status
+Created by
+Date/time
+
+FEATURE 5 — COMPLETE PATIENT RECORD
+Patient Records must become a true longitudinal record.
+One patient profile should connect:
+Clinical
+Registration
+OPD visits
+IPD admissions
+Doctor consultations
+Diagnoses
+Prescriptions
+Laboratory reports
+Therapies
+Procedures
+Discharge summaries
+Financial
+Bills
+Service charges
+Payments
+Outstanding balance
+Receipts
+Adjustments/refunds if supported
+Do not create separate disconnected patient records for each department.
+The existing requirement explicitly states that UID lookup should expose prior visits, prescriptions, admissions, reports and medical history.
+
+FEATURE 6 — COMPLETE LABORATORY MODULE
+Design a full Laboratory Management / LIS module integrated into the HMS.
+Before implementation, inspect whether any Lab models or screens already exist.
+Required workflow:
+Doctor
+ ↓
+Lab Order
+ ↓
+Billing
+ ↓
+Sample Collection
+ ↓
+Sample Processing
+ ↓
+Result Entry
+ ↓
+Verification
+ ↓
+Final Report
+ ↓
+Patient Record
+ ↓
+Doctor
+Laboratory tests should be linked to the patient's:
+UHID
+Employee ID
+OPD Visit OR IPD Admission
+Ordering Doctor
+
+Lab Test Master
+Admin/Lab Admin should manage:
+Test
+Category
+Sample Type
+Container
+Parameters
+Units
+Reference Range
+Male Range
+Female Range
+Child Range where appropriate
+Method
+Price
+Turnaround Time
+Active status
+Do not invent medical reference ranges casually.
+Use medically appropriate seeded demo values only where required for development, and clearly separate demo/reference data from production-approved configuration.
+
+LAB ORDER
+Doctor can order one or multiple investigations.
+Lab order should include:
+Lab Order ID
+Patient
+UHID
+OPD/IPD reference
+Ordering Doctor
+Department
+Tests
+Priority
+Ordered timestamp
+Status
+
+SAMPLE COLLECTION
+Lab staff should receive a pending sample queue.
+Actions:
+Collect sample
+Generate sample ID
+Barcode
+Collection timestamp
+Collector
+Statuses:
+ORDERED
+↓
+SAMPLE COLLECTED
+↓
+PROCESSING
+↓
+RESULT ENTERED
+↓
+VERIFIED
+↓
+REPORT GENERATED
+
+RESULT ENTRY
+Support multi-parameter tests.
+Examples:
+CBC:
+Haemoglobin
+WBC
+RBC
+Platelets
+etc.
+LFT:
+Bilirubin
+SGOT
+SGPT
+ALP
+etc.
+KFT/RFT:
+Urea
+Creatinine
+etc.
+Results should support:
+Normal
+High
+Low
+Critical
+
+LAB VERIFICATION
+Technician result entry must not automatically become the final report.
+Use:
+Technician
+ ↓
+Result Entry
+ ↓
+Pathologist/Lab Verifier
+ ↓
+Approve
+ ↓
+Final Report
+Keep an audit trail.
+
+LAB REPORT
+Create a professional printable A4 report.
+Use the uploaded laboratory report screenshots/documents as a visual and structural reference.
+Do not copy patient information from the reference material.
+The final report should include:
+ESIC branding
+Hospital information
+Patient details
+UHID
+Lab ID
+OPD/IPD reference
+Referring doctor
+Sample date
+Report date
+Investigation results
+Units
+Reference ranges
+Abnormal flags
+Remarks
+Verification information
+Report ID/barcode
+Print/download functionality
+
+FEATURE 7 — THERAPY BILLING
+Therapies must be linked directly to:
+Patient
+ ↓
+OPD/IPD
+ ↓
+Therapy
+ ↓
+Current Effective Price
+ ↓
+Billing Transaction
+For IPD, therapy charges should become part of the patient's running admission charges and final discharge billing.
+For OPD, therapy charges should be attached to the relevant OPD visit.
+
+FEATURE 8 — IPD FINANCIAL TRACKING
+Every IPD patient's charge should accumulate during admission.
+Track, where applicable:
+Bed
+Room
+Therapy
+Laboratory
+Procedures
+Medicines
+Nursing/services
+Other configured charges
+At discharge:
+Admission
+ ↓
+All Charges
+ ↓
+Final Bill
+ ↓
+Discharge Summary
+ ↓
+Financial Statement
+Do not lose charges when the admission is closed.
+
+FEATURE 9 — PATIENT LOCATION
+Add official hospital location tracking for admitted patients.
+Track:
+Building
+Floor
+Ward
+Room
+Bed
+Example:
+Main Hospital
+→ 2nd Floor
+→ General Medicine
+→ Room 204
+→ Bed 12
+When transferred:
+Bed 12
+↓
+Bed 18
+Update current location while preserving location history.
+Track:
+Previous location
+New location
+Date/time
+User
+Reason
+This is hospital location tracking, not merely phone GPS.
+
+FEATURE 10 — DIRECT CAMERA PATIENT PHOTO
+Registration should support direct camera capture.
+Workflow:
+Capture Photo
+↓
+Camera Preview
+↓
+Capture
+↓
+Retake / Confirm
+↓
+Save to Patient Profile
+Existing upload functionality must continue to work.
+Do not create duplicate photographs for every visit unless the existing architecture requires it.
+
+FEATURE 11 — ADVANCED PATIENT SEARCH
+Patient Search must support:
+Name
+UHID
+Employee ID
+Mobile
+OPD number
+IPD number
+Visit ID
+Lab ID
+Token number
+Patient ID
+A search such as:
+Piyush
+should return matching patients.
+The same patient must be discoverable through multiple identifiers.
+Do not create a duplicate patient record when searched through another identifier.
+
+FEATURE 12 — COMPLETE ANALYTICS
+Create a comprehensive Admin analytics system.
+Hospital Operations
+Total patients
+OPD visits
+IPD admissions
+Discharges
+Bed occupancy
+Queue activity
+Laboratory activity
+Pharmacy activity
+Therapy activity
+Financial
+Total charges
+Paid
+Outstanding
+OPD revenue
+IPD revenue
+Laboratory
+Therapy
+Pharmacy
+Procedures
+Department-wise revenue
+Inventory
+Low stock
+Out of stock
+Expiring medicines
+Procurement
+Consumption
+The existing requirements already specify admin visibility into OPD load, bed occupancy, medicine stock/expiry and procurement pipeline.
+
+FEATURE 13 — DOWNLOADABLE REPORTS
+Admin should be able to generate:
+Excel
+For analysis.
+CSV
+For data processing.
+PDF
+For official reports/printing.
+Reports should have:
+ESIC branding
+Hospital name
+Report title
+Date range
+Generated by
+Filters
+Data
+Totals
+Page numbers where appropriate
+Required reports:
+Patient Register
+Patient Visit Report
+OPD Report
+IPD Report
+Laboratory Report
+Therapy Report
+Pharmacy Report
+Billing Report
+Outstanding Report
+Department Revenue
+Daily Hospital Summary
+Patient Financial Statement
+Procurement Report
+Inventory Report
+
+FEATURE 14 — PATIENT FINANCIAL STATEMENT
+Create a professional downloadable patient statement.
+Example:
+ESIC HOSPITAL
+
+PATIENT FINANCIAL STATEMENT
+
+Patient Name
+UHID
+Employee ID
+Period
+
+--------------------------------
+
+Date
+Service
+Department
+Quantity
+Rate
+Amount
+
+--------------------------------
+
+OPD
+IPD
+Laboratory
+Therapy
+Pharmacy
+Procedures
+
+--------------------------------
+
+Gross Amount
+Discount
+Paid
+Outstanding
+Allow:
+Print
+Download PDF
+Export Excel
+
+FEATURE 15 — RECEIPT / DOCUMENT DESIGN
+Before designing receipts or financial documents:
+Inspect the existing pricing folder and all relevant receipt/pricing documents in the repository.
+Also inspect the uploaded reference pricing material.
+Do not invent a completely unrelated receipt design.
+Use the source material to understand:
+Service naming
+Rate presentation
+OPD/IPD distinction
+Package structure
+Charge presentation
+Receipt/document hierarchy
+Then design a professional ESIC-style receipt consistent with the existing HMS branding.
+The reference pricing document should be treated as source material for rates and terminology where applicable, not as permission to invent unsupported charges.
+
+FEATURE 16 — PRICE HISTORY & AUDIT
+Every pricing modification must record:
+Service
+Old Price
+New Price
+Effective Date
+Changed By
+Changed At
+Reason
+Use the existing immutable AuditLog infrastructure.
+The existing system requirements explicitly require audit logging for critical actions and configuration changes.
+
+FEATURE 17 — COMPLETE BILLING TRACEABILITY
+Every billing item must be traceable back to its source.
+Example:
+₹500 Therapy Charge
+        ↓
+Therapy ID
+        ↓
+Patient UHID
+        ↓
+OPD Visit ID
+        ↓
+Doctor
+        ↓
+Date/Time
+For laboratory:
+₹150 CBC
+        ↓
+Lab Order
+        ↓
+Patient UHID
+        ↓
+OPD Visit
+        ↓
+Doctor
+For IPD:
+Bed Charge
+        ↓
+Admission ID
+        ↓
+Patient UHID
+        ↓
+Ward/Bed
+No orphan billing records.
+
+FEATURE 18 — RBAC
+Do not expose all these features to every role.
+Review existing RBAC and propose exact permissions for:
+Super Admin
+Full system control.
+Administrator
+Hospital configuration, pricing, reports and analytics according to existing permissions.
+Doctor
+Clinical information, consultations, prescriptions, lab orders, therapy orders where applicable.
+Receptionist
+Patient registration, patient lookup, OPD visits, queue-related workflow allowed by current design.
+Laboratory Staff
+Lab orders, sample collection, result entry according to role.
+Pathologist / Lab Verifier
+Result verification.
+Pharmacist
+Prescription dispensing and pharmacy operations.
+Store Manager
+Inventory and stock management.
+Procurement Officer
+Purchase requisitions, approval workflow and procurement.
+Admission Desk
+IPD admission and bed allocation.
+Nurse
+Ward/care workflow.
+Queue Manager
+Only OPD queue functionality as already defined.
+Do not accidentally grant administrative pricing or financial permissions to operational roles.
+
+FEATURE 19 — ESIC-SPECIFIC BUSINESS RULES
+Preserve existing ESIC identity architecture:
+Employee
+↓
+Permanent Hospital UID
+↓
+Patient Profile
+↓
+Visits
+↓
+Medical + Financial History
+The existing specification explicitly requires one permanent Hospital UID per employee and prevention of a second UID.
+Also preserve:
+Labour Department verification
+Permanent vs Contractual employment
+Facility eligibility
+Benefit rules
+OPD/IPD distinction
+FEFO pharmacy workflow
+Procurement workflow
+Audit logging
+
+FEATURE 20 — NO DUPLICATE PATIENTS
+Maintain the previously implemented rule:
+One Employee → One Patient → One Permanent UHID
+Returning patients create:
+New Visit / Token
+not:
+New Patient / UHID
+Also check whether the new search, laboratory, billing and IPD modules could accidentally create duplicate patient records.
+
+FEATURE 21 — DATA CONSISTENCY
+All modules must use the same permanent patient identity.
+Do not create:
+Lab Patient
+Billing Patient
+Therapy Patient
+IPD Patient
+Pharmacy Patient
+Instead:
+ONE PATIENT
+   |
+   +-- OPD
+   +-- IPD
+   +-- Lab
+   +-- Therapy
+   +-- Pharmacy
+   +-- Billing
+   +-- Discharge
+   +-- Medical History
+
+FEATURE 22 — ANALYTICS MUST USE REAL DATA
+Do not create fake dashboard numbers simply to make the dashboard look complete.
+Analytics must derive from actual database records.
+If demo data is required, create properly seeded demo records.
+
+FEATURE 23 — REFERENCE MATERIAL REVIEW
+Before finalizing the plan:
+Review the repository's pricing folder thoroughly.
+Review the uploaded pricing/rate reference material.
+Review the existing receipt/billing designs.
+Review the existing hospital workflow documentation.
+Compare all of them.
+For every conflict, explicitly report:
+Existing System
+Reference Document
+Recommended Implementation
+Reason
+Do not silently choose one.
+

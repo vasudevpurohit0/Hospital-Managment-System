@@ -249,6 +249,83 @@ export async function addAdmissionNote(
   return res.json();
 }
 
+export interface AdmissionFinancialSummary {
+  admissionId: string;
+  uhid: string | null;
+  employeeId: string;
+  status: string;
+  admittedAt: string | null;
+  dischargedAt: string | null;
+  summary: {
+    totalAmount: string;
+    paidAmount: string;
+    outstandingAmount: string;
+  };
+  lineItems: {
+    date: string;
+    description: string;
+    category: string;
+    quantity: string;
+    rate: string;
+    netAmount: string;
+    status: string;
+  }[];
+}
+
+export interface LocationHistoryEntry {
+  id: string;
+  movedAt: string;
+  reason: string;
+  fromWard: { name: string } | null;
+  fromRoom: { roomNumber: string } | null;
+  fromBed: { bedNumber: string } | null;
+  toWard: { name: string } | null;
+  toRoom: { roomNumber: string } | null;
+  toBed: { bedNumber: string } | null;
+  movedBy: { identifier: string };
+}
+
+/** Feature 8 — the real "Admission → All Charges → Final Bill" totals for one admission. */
+export async function fetchAdmissionFinancialSummary(
+  id: string,
+  token?: string,
+): Promise<AdmissionFinancialSummary> {
+  const res = await apiFetch(`/api/admissions/${id}/financial-summary`, {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch admission financial summary');
+  }
+  return res.json();
+}
+
+/** Feature 9 — the patient's real ward/room/bed movement trail. */
+export async function fetchLocationHistory(id: string, token?: string): Promise<LocationHistoryEntry[]> {
+  const res = await apiFetch(`/api/admissions/${id}/location-history`, {}, token);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch location history');
+  }
+  return res.json();
+}
+
+/** Feature 9 — moves the admission to a different bed, recording the reason. */
+export async function transferBed(
+  id: string,
+  body: { toBedId: string; reason: string },
+  token?: string,
+): Promise<AdmissionRecord> {
+  const res = await apiFetch(
+    `/api/admissions/${id}/transfer`,
+    { method: 'POST', body: JSON.stringify(body) },
+    token,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to transfer patient');
+  }
+  return res.json();
+}
+
 export async function dischargePatient(
   id: string,
   body: { summaryText: string },

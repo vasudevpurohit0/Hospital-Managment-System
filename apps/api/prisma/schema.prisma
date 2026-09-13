@@ -24,6 +24,21 @@ model User {
   auditLogs            AuditLog[]
   dischargeSummaries   DischargeSummary[]
   facilityRulesCreated FacilityEligibilityRule[]
+  opdVisitsAsDoctor    OPDVisit[]                @relation("OPDVisitDoctor")
+  servicesCreated      Service[]                 @relation("ServiceCreatedBy")
+  servicesUpdated      Service[]                 @relation("ServiceUpdatedBy")
+  servicePricesCreated ServicePrice[]            @relation("ServicePriceCreatedBy")
+  chargesCreated       ChargeItem[]              @relation("ChargeCreatedBy")
+  chargesCancelled     ChargeItem[]              @relation("ChargeCancelledBy")
+  receiptsCollected    Receipt[]
+  labOrdersAsDoctor    LabOrder[]                @relation("LabOrderDoctor")
+  labSamplesCollected  LabSample[]
+  labResultsEntered    LabResult[]
+  labReportsVerified   LabReport[]
+  therapyCoursesCreated  TherapyCourse[]
+  therapySessionsPerformed TherapySession[] @relation("TherapySessionPerformedBy")
+  therapySessionsCreated   TherapySession[] @relation("TherapySessionCreatedBy")
+  patientLocationMoves   PatientLocationHistory[]
   verifiedGRNs         GoodsReceiptNote[]
   issuedPOs            PurchaseOrder[]
   raisedRequisitions   PurchaseRequisition[]
@@ -117,6 +132,7 @@ model Employee {
   employeeId       String          @unique @map("employee_id")
   name             String
   department       String
+  consultationRoom String?         @map("consultation_room")
   postId           String          @map("post_id") @db.Uuid
   gradeId          String          @map("grade_id") @db.Uuid
   employmentTypeId String          @map("employment_type_id") @db.Uuid
@@ -130,6 +146,7 @@ model Employee {
   post             Post            @relation(fields: [postId], references: [id])
   hospitalUid      HospitalUID?
   patientProfile   PatientProfile?
+  receipts         Receipt[]
   user             User?
   visits           Visit[]
 
@@ -186,10 +203,14 @@ model Visit {
   createdAt     DateTime       @default(now()) @map("created_at")
   closedAt      DateTime?      @map("closed_at")
   admissions    Admission[]
+  chargeItems   ChargeItem[]
   diagnoses     Diagnosis[]
   labOrders     LabOrder[]
   opdVisit      OPDVisit?
   prescriptions Prescription[]
+  receipts      Receipt[]
+  therapyCourses  TherapyCourse[]
+  therapySessions TherapySession[]
   employee      Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, status])
@@ -208,16 +229,24 @@ model Department {
 
 model OPDVisit {
   id           String     @id @default(uuid()) @db.Uuid
+  /// Permanent OPD number (OPD/2026/000123), distinct from the daily queue
+  /// token (CARDIO-001, which resets every day) — Feature 11 searches by
+  /// both as separate identifiers. Nullable for the same reason labNumber is:
+  /// existing rows predate this field.
+  opdNumber    String?    @unique @map("opd_number")
   visitId      String     @unique @map("visit_id") @db.Uuid
   departmentId String     @map("department_id") @db.Uuid
   tokenNumber  String     @map("token_number")
+  doctorId     String?    @map("doctor_id") @db.Uuid
   calledAt     DateTime?  @map("called_at")
   closedAt     DateTime?  @map("closed_at")
   createdAt    DateTime   @default(now()) @map("created_at")
   department   Department @relation(fields: [departmentId], references: [id])
+  doctor       User?      @relation("OPDVisitDoctor", fields: [doctorId], references: [id])
   visit        Visit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
 
   @@index([departmentId, createdAt])
+  @@index([doctorId])
   @@map("opd_visits")
 }
 
@@ -261,26 +290,288 @@ model PrescriptionItem {
   benefitOutcome      BenefitOutcome         @default(COVERED) @map("benefit_outcome")
   dispenseStatus      PrescriptionItemStatus @default(PENDING) @map("dispense_status")
   billingTransactions BillingTransaction[]
+  chargeItems         ChargeItem[]
   prescription        Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   stockTransactions   StockTransaction[]
 
   @@map("prescription_items")
 }
 
+/// A doctor's order for one or more investigations, per Feature 6: "Doctor can
+/// order one or multiple investigations" under one Lab Order ID.
+///
+/// `testName` is kept as a nullable legacy field rather than dropped: the two
+/// pre-existing rows were free text with no matching catalogue test (one,
+/// "PetCt", matches nothing seeded), and forcing a lossy match would invent
+/// data. New orders leave it null and use `items` instead — the same
+/// non-destructive pattern as `employees.consultation_room` in P0.
 model LabOrder {
-  id        String   @id @default(uuid()) @db.Uuid
-  visitId   String   @map("visit_id") @db.Uuid
-  testName  String   @map("test_name")
-  orderedBy String   @map("ordered_by") @db.Uuid
-  status    String   @default("ORDERED")
-  createdAt DateTime @default(now()) @map("created_at")
-  visit     Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  id             String         @id @default(uuid()) @db.Uuid
+  /// Human-readable order number, e.g. LAB/2026/00087. Also identifies the
+  /// one report this order produces — reports are not separately numbered.
+  labNumber      String?        @unique @map("lab_number")
+  visitId        String         @map("visit_id") @db.Uuid
+  /// Set when this is an IPD order, so its charges count toward the
+  /// admission's running total.
+  admissionId    String?        @map("admission_id") @db.Uuid
+  testName       String?        @map("test_name")
+  orderedBy      String         @map("ordered_by") @db.Uuid
+  priority       LabOrderPriority @default(ROUTINE)
+  clinicalNotes  String?        @map("clinical_notes")
+  status         LabOrderStatus @default(ORDERED)
+  createdAt      DateTime       @default(now()) @map("created_at")
 
+  visit    Visit           @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  admission Admission?     @relation(fields: [admissionId], references: [id])
+  orderingDoctor User      @relation("LabOrderDoctor", fields: [orderedBy], references: [id])
+  items    LabOrderItem[]
+  sample   LabSample?
+  report   LabReport?
+
+  @@index([visitId])
+  @@index([status])
   @@map("lab_orders")
+}
+
+/// One test within an order. Each item is priced and charged individually
+/// (Feature 17: "₹150 CBC → Lab Order → Patient UHID → OPD Visit → Doctor"),
+/// even though several items on one order can share one sample and one
+/// receipt.
+model LabOrderItem {
+  id        String           @id @default(uuid()) @db.Uuid
+  labOrderId String          @map("lab_order_id") @db.Uuid
+  labTestId String           @map("lab_test_id") @db.Uuid
+  status    LabOrderItemStatus @default(ORDERED)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  labOrder LabOrder    @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  labTest  LabTest     @relation(fields: [labTestId], references: [id])
+  results  LabResult[]
+  chargeItems ChargeItem[]
+
+  @@index([labOrderId])
+  @@map("lab_order_items")
+}
+
+/// One specimen collection event per order. Simplification: real workflows
+/// often draw one sample (e.g. one blood draw) that serves several items on
+/// the same order, so this is modelled per-order rather than per-item — the
+/// per-item detail Feature 17 needs for billing lives on LabOrderItem instead.
+model LabSample {
+  id             String    @id @default(uuid()) @db.Uuid
+  labOrderId     String    @unique @map("lab_order_id") @db.Uuid
+  /// Barcoded specimen identifier, e.g. S26-0000731.
+  sampleCode     String    @unique @map("sample_code")
+  specimenType   String    @map("specimen_type")
+  collectedById  String    @map("collected_by_id") @db.Uuid
+  collectedAt    DateTime  @default(now()) @map("collected_at")
+  receivedAt     DateTime? @map("received_at")
+  rejectedAt     DateTime? @map("rejected_at")
+  rejectedReason String?   @map("rejected_reason")
+
+  labOrder    LabOrder @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  collectedBy User     @relation(fields: [collectedById], references: [id])
+
+  @@map("lab_samples")
+}
+
+/// The clinical definition of a test — specimen, parameters, method,
+/// turnaround. Deliberately carries no price: `serviceId` points at the
+/// Service/ServicePrice pair that prices it (see plan §07/C3 — pricing lives
+/// once, in the catalogue, not duplicated onto the test master).
+model LabTest {
+  id              String              @id @default(uuid()) @db.Uuid
+  serviceId       String              @unique @map("service_id") @db.Uuid
+  code            String              @unique
+  name            String
+  discipline      LabDiscipline
+  specimenType    String              @map("specimen_type")
+  containerType   String?             @map("container_type")
+  methodDefault   String?             @map("method_default")
+  turnaroundHours Int                 @default(24) @map("turnaround_hours")
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  service    Service            @relation(fields: [serviceId], references: [id])
+  parameters LabTestParameter[]
+  orderItems LabOrderItem[]
+
+  @@index([discipline, active])
+  @@map("lab_tests")
+}
+
+/// One reportable value within a test. A CBC has many (Haemoglobin, WBC, …);
+/// a single-analyte test like S. Uric Acid has exactly one, named after the
+/// test itself.
+model LabTestParameter {
+  id             String              @id @default(uuid()) @db.Uuid
+  labTestId      String              @map("lab_test_id") @db.Uuid
+  name           String
+  /// Sub-heading printed above a group of parameters on the report, e.g.
+  /// "RBC INDICES", "CHEMICAL EXAMINATION" — taken from the reference reports.
+  groupLabel     String?             @map("group_label")
+  unit           String?
+  resultType     LabResultType       @default(NUMERIC) @map("result_type")
+  /// Valid choices when resultType is SELECT, e.g. ["Absent","Present","Trace"].
+  selectOptions  String[]            @map("select_options")
+  method         String?
+  isCalculated   Boolean             @default(false) @map("is_calculated")
+  /// Human-readable derivation for a calculated parameter (VLDL, TC/HDL ratio,
+  /// Urea/Creatinine ratio) — computed by LabService, not evaluated from this
+  /// string, so this documents the rule rather than executing it.
+  formula        String?
+  /// The prose block printed under a panel in the reference reports.
+  interpretation String?
+  sortOrder      Int                 @default(0) @map("sort_order")
+
+  labTest LabTest             @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  ranges  LabReferenceRange[]
+  results LabResult[]
+
+  @@index([labTestId, sortOrder])
+  @@map("lab_test_parameters")
+}
+
+/// Replaces separate male/female/child columns (plan §07/C4): a reference
+/// range is always a display string (the reports show "Absent", "1-2",
+/// "3.0-5.0" — rarely a clean number), with optional numeric bounds that
+/// drive automatic H/L/critical flagging only when they can.
+model LabReferenceRange {
+  id            String   @id @default(uuid()) @db.Uuid
+  parameterId   String   @map("parameter_id") @db.Uuid
+  displayText   String   @map("display_text")
+  numericLow    Decimal? @map("numeric_low") @db.Decimal(12, 4)
+  numericHigh   Decimal? @map("numeric_high") @db.Decimal(12, 4)
+  sex           LabRangeSex @default(ANY)
+  ageMinYears   Int?     @map("age_min_years")
+  ageMaxYears   Int?     @map("age_max_years")
+
+  parameter LabTestParameter @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+
+  @@index([parameterId])
+  @@map("lab_reference_ranges")
+}
+
+model LabResult {
+  id             String       @id @default(uuid()) @db.Uuid
+  labOrderItemId String       @map("lab_order_item_id") @db.Uuid
+  parameterId    String       @map("parameter_id") @db.Uuid
+  value          String
+  flag           LabResultFlag @default(NORMAL)
+  enteredById    String       @map("entered_by_id") @db.Uuid
+  enteredAt      DateTime     @default(now()) @map("entered_at")
+
+  labOrderItem LabOrderItem     @relation(fields: [labOrderItemId], references: [id], onDelete: Cascade)
+  parameter    LabTestParameter @relation(fields: [parameterId], references: [id])
+  enteredBy    User             @relation(fields: [enteredById], references: [id])
+
+  @@unique([labOrderItemId, parameterId])
+  @@map("lab_results")
+}
+
+/// One report per order (Feature 6's ORDERED→…→REPORTED flow ends in exactly
+/// one document). Printed with LabOrder.labNumber — a report is not
+/// separately numbered.
+model LabReport {
+  id                  String    @id @default(uuid()) @db.Uuid
+  labOrderId          String    @unique @map("lab_order_id") @db.Uuid
+  /// Technician result entry is never the final report (Feature 6): a report
+  /// exists only once a Pathologist verifies, and verifiedById/verifiedAt are
+  /// mandatory, not merely set when convenient.
+  verifiedById        String    @map("verified_by_id") @db.Uuid
+  verifiedAt          DateTime  @default(now()) @map("verified_at")
+  pathologistRemarks  String?   @map("pathologist_remarks")
+  releasedAt          DateTime  @default(now()) @map("released_at")
+
+  labOrder LabOrder @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  verifiedBy User    @relation(fields: [verifiedById], references: [id])
+
+  @@map("lab_reports")
+}
+
+/// A course-priced package of therapy sessions (Ksharasoothra, a week of
+/// indoor yoga — the ₹10,000-for-the-full-course rows from CGHS Annexure
+/// A-2/Y-2). Bills exactly once, on opening: `chargeItemId` points at that
+/// charge, which is a direct service charge (serviceId alone, no per-session
+/// clinical link) — the same shape as an OPD consultation, not a new origin
+/// kind. Individual sessions within the course exist for scheduling and
+/// clinical tracking only; marking one performed never bills again, which is
+/// what stops a 7-session course from billing ₹70,000.
+model TherapyCourse {
+  id              String              @id @default(uuid()) @db.Uuid
+  visitId         String              @map("visit_id") @db.Uuid
+  admissionId     String?             @map("admission_id") @db.Uuid
+  serviceId       String              @map("service_id") @db.Uuid
+  /// The one charge this course generated. Nullable only for the instant
+  /// between course creation and that charge being posted in the same
+  /// transaction — never left null afterward.
+  chargeItemId    String?             @unique @map("charge_item_id") @db.Uuid
+  plannedSessions Int                 @map("planned_sessions")
+  status          TherapyCourseStatus @default(IN_PROGRESS)
+  /// Which of the three valid entry points opened this course — derived
+  /// server-side from the visit/admission shape at creation time, never
+  /// taken on trust from the caller (DIRECT: bare visit, no OPDVisit, no
+  /// admission; OPD: visit has an OPDVisit; IPD: admissionId set).
+  source          TherapySource
+  startedAt       DateTime            @default(now()) @map("started_at")
+  completedAt     DateTime?           @map("completed_at")
+  createdById     String?             @map("created_by_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  visit      Visit            @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  admission  Admission?       @relation(fields: [admissionId], references: [id])
+  service    Service          @relation(fields: [serviceId], references: [id])
+  createdBy  User?            @relation(fields: [createdById], references: [id])
+  sessions   TherapySession[]
+
+  @@index([visitId])
+  @@map("therapy_courses")
+}
+
+/// One occurrence of a therapy or procedure. A standalone (non-course)
+/// session bills its own charge when marked performed — the plain per-
+/// sitting case (Abhyanga, ₹1,145 each time). A session that belongs to a
+/// course (`courseId` set) never bills on its own; the course already did.
+model TherapySession {
+  id             String               @id @default(uuid()) @db.Uuid
+  visitId        String               @map("visit_id") @db.Uuid
+  admissionId    String?              @map("admission_id") @db.Uuid
+  serviceId      String               @map("service_id") @db.Uuid
+  courseId       String?              @map("course_id") @db.Uuid
+  sessionNumber  Int                  @default(1) @map("session_number")
+  /// Same derivation rule as TherapyCourse.source; a session inside a course
+  /// inherits its course's source rather than re-deriving it.
+  source         TherapySource
+  scheduledAt    DateTime             @default(now()) @map("scheduled_at")
+  performedAt    DateTime?            @map("performed_at")
+  performedById  String?              @map("performed_by_id") @db.Uuid
+  /// Who booked/recommended this standalone session — the OPD doctor, the
+  /// IPD doctor, or Reception for a Direct-Therapy booking. Null only for
+  /// sessions created before this column existed.
+  createdById    String?              @map("created_by_id") @db.Uuid
+  status         TherapySessionStatus @default(SCHEDULED)
+  notes          String?
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  visit       Visit          @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  admission   Admission?     @relation(fields: [admissionId], references: [id])
+  service     Service        @relation(fields: [serviceId], references: [id])
+  course      TherapyCourse? @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  performedBy User?          @relation("TherapySessionPerformedBy", fields: [performedById], references: [id])
+  createdBy   User?          @relation("TherapySessionCreatedBy", fields: [createdById], references: [id])
+  chargeItems ChargeItem[]
+
+  @@index([visitId])
+  @@index([courseId])
+  @@map("therapy_sessions")
 }
 
 model Admission {
   id                  String            @id @default(uuid()) @db.Uuid
+  /// Permanent IPD number (IPD/2026/000045) — Feature 11's separate "IPD
+  /// number" search identifier. Nullable for pre-existing rows.
+  admissionNumber     String?           @unique @map("admission_number")
   visitId             String            @map("visit_id") @db.Uuid
   status              AdmissionStatus   @default(REQUESTED)
   eligibleCategory    String            @default("C") @map("eligible_category")
@@ -293,6 +584,11 @@ model Admission {
   assignedDoctorId    String?           @map("assigned_doctor_id") @db.Uuid
   assignedNurseId     String?           @map("assigned_nurse_id") @db.Uuid
   notes               AdmissionNote[]
+  chargeItems         ChargeItem[]
+  labOrders           LabOrder[]
+  therapyCourses      TherapyCourse[]
+  therapySessions     TherapySession[]
+  locationHistory     PatientLocationHistory[]
   assignedDoctor      User?             @relation("AdmissionDoctor", fields: [assignedDoctorId], references: [id])
   assignedNurse       User?             @relation("AdmissionNurse", fields: [assignedNurseId], references: [id])
   bed                 Bed?              @relation("AdmissionBed", fields: [bedId], references: [id])
@@ -326,10 +622,16 @@ model Ward {
   id         String           @id @default(uuid()) @db.Uuid
   name       String
   category   FacilityCategory
+  /// Official hospital location, printed on the location trail (Feature 9):
+  /// "Main Hospital → 2nd Floor → General Medicine → Room 204 → Bed 12".
+  building   String?          @default("Main Hospital")
+  floor      String?
   createdAt  DateTime         @default(now()) @map("created_at")
   updatedAt  DateTime         @updatedAt @map("updated_at")
   admissions Admission[]
   rooms      Room[]
+  locationHistoryFrom PatientLocationHistory[] @relation("LocationFromWard")
+  locationHistoryTo   PatientLocationHistory[] @relation("LocationToWard")
 
   @@map("wards")
 }
@@ -344,6 +646,8 @@ model Room {
   admissions Admission[]
   beds       Bed[]
   ward       Ward        @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  locationHistoryFrom PatientLocationHistory[] @relation("LocationFromRoom")
+  locationHistoryTo   PatientLocationHistory[] @relation("LocationToRoom")
 
   @@map("rooms")
 }
@@ -359,6 +663,8 @@ model Bed {
   admissions         Admission[] @relation("AdmissionBed")
   currentAdmission   Admission?  @relation("CurrentAdmission", fields: [currentAdmissionId], references: [id])
   room               Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  locationHistoryFrom PatientLocationHistory[] @relation("LocationFromBed")
+  locationHistoryTo   PatientLocationHistory[] @relation("LocationToBed")
 
   @@map("beds")
 }
@@ -395,6 +701,35 @@ model AdmissionNote {
   author      User      @relation(fields: [authoredBy], references: [id])
 
   @@map("admission_notes")
+}
+
+/// Feature 9: current location stays on Admission (bed/room/ward) as it
+/// already did; this is the append-only trail of every transfer — from,
+/// to, when, who moved the patient, and why.
+model PatientLocationHistory {
+  id          String   @id @default(uuid()) @db.Uuid
+  admissionId String   @map("admission_id") @db.Uuid
+  fromWardId  String?  @map("from_ward_id") @db.Uuid
+  fromRoomId  String?  @map("from_room_id") @db.Uuid
+  fromBedId   String?  @map("from_bed_id") @db.Uuid
+  toWardId    String   @map("to_ward_id") @db.Uuid
+  toRoomId    String   @map("to_room_id") @db.Uuid
+  toBedId     String   @map("to_bed_id") @db.Uuid
+  movedAt     DateTime @default(now()) @map("moved_at")
+  movedById   String   @map("moved_by_id") @db.Uuid
+  reason      String
+
+  admission Admission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  fromWard  Ward?     @relation("LocationFromWard", fields: [fromWardId], references: [id])
+  fromRoom  Room?     @relation("LocationFromRoom", fields: [fromRoomId], references: [id])
+  fromBed   Bed?      @relation("LocationFromBed", fields: [fromBedId], references: [id])
+  toWard    Ward      @relation("LocationToWard", fields: [toWardId], references: [id])
+  toRoom    Room      @relation("LocationToRoom", fields: [toRoomId], references: [id])
+  toBed     Bed       @relation("LocationToBed", fields: [toBedId], references: [id])
+  movedBy   User      @relation(fields: [movedById], references: [id])
+
+  @@index([admissionId, movedAt])
+  @@map("patient_location_history")
 }
 
 model DischargeSummary {
@@ -460,6 +795,7 @@ model MedicineBatch {
   createdAt         DateTime           @default(now()) @map("created_at")
   medicine          Medicine           @relation(fields: [medicineId], references: [id], onDelete: Cascade)
   supplier          Supplier?          @relation(fields: [supplierId], references: [id])
+  chargeItems       ChargeItem[]
   pharmacyStocks    PharmacyStock[]
   stockTransactions StockTransaction[]
   storeTransfers    StoreTransfer[]
@@ -631,6 +967,285 @@ model BrandingConfig {
   @@map("branding_configs")
 }
 
+/// Top-level grouping printed as "Service Category" on the OPD bill receipt,
+/// e.g. ROGA NIDAN, Urine Test, Panchakarma.
+model ServiceCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique
+  name      String    @unique
+  sortOrder Int       @default(0) @map("sort_order")
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  services  Service[]
+
+  @@map("service_categories")
+}
+
+/// The single master for everything the hospital can bill: consultations,
+/// laboratory tests, therapies, procedures, packages and bed-days.
+///
+/// Deliberately has no price column. Rates live in ServicePrice so that a
+/// repricing supersedes rather than overwrites, and a bill raised last month
+/// still resolves the rate that applied when it was raised.
+model Service {
+  id          String               @id @default(uuid()) @db.Uuid
+  code        String               @unique
+  name        String
+  categoryId  String               @map("category_id") @db.Uuid
+  serviceType ServiceType          @map("service_type")
+  /// Whether the service is billable in OPD, in IPD, or both.
+  ///
+  /// Replaces separate OPD/IPD rate columns: CGHS Annexure A-2 publishes one
+  /// unit cost valid in both settings, while Annexure Y-2 lists OPD and IPD
+  /// yoga packages as separate line items at different rates (₹500 vs ₹10,000).
+  /// Two rate columns could represent neither faithfully.
+  applicability ServiceApplicability @default(BOTH)
+  unit        ServiceUnit          @default(SITTING)
+  description String?
+  /// Minutes a single session is expected to take, where the source states it.
+  durationMinutes Int?             @map("duration_minutes")
+  /// Days a course package runs for, where the source states it.
+  courseDurationDays Int?          @map("course_duration_days")
+  /// Exact provenance of the seeded rate, e.g. "CGHS Annexure A-2, S.No 19".
+  /// Lets an administrator review every unapproved rate before go-live.
+  sourceReference String?          @map("source_reference")
+  active      Boolean              @default(true)
+  createdById String?              @map("created_by_id") @db.Uuid
+  updatedById String?              @map("updated_by_id") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  category        ServiceCategory      @relation(fields: [categoryId], references: [id])
+  createdBy       User?                @relation("ServiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User?                @relation("ServiceUpdatedBy", fields: [updatedById], references: [id])
+  chargeItems     ChargeItem[]
+  prices          ServicePrice[]
+  labTest         LabTest?
+  therapyCourses  TherapyCourse[]
+  therapySessions TherapySession[]
+  packageItems    ServicePackageItem[] @relation("PackageParent")
+  componentOf     ServicePackageItem[] @relation("PackageComponent")
+
+  @@index([categoryId, active])
+  @@index([serviceType, active])
+  @@map("services")
+}
+
+/// Components of a package service, e.g. Health Package-1 = CBC + LFT + Lipid
+/// + KFT + FBS + Urine Routine. The package carries its own price; components
+/// are listed for clinical fulfilment, not for pricing.
+model ServicePackageItem {
+  id                 String  @id @default(uuid()) @db.Uuid
+  packageServiceId   String  @map("package_service_id") @db.Uuid
+  componentServiceId String  @map("component_service_id") @db.Uuid
+  quantity           Int     @default(1)
+
+  packageService   Service @relation("PackageParent", fields: [packageServiceId], references: [id], onDelete: Cascade)
+  componentService Service @relation("PackageComponent", fields: [componentServiceId], references: [id], onDelete: Cascade)
+
+  @@unique([packageServiceId, componentServiceId])
+  @@map("service_package_items")
+}
+
+/// An append-only price version.
+///
+/// Repricing closes the open version by setting effectiveTo and inserts a new
+/// row; no row is ever updated in place. A partial unique index (added in the
+/// migration, as Prisma cannot express it) guarantees at most one open version
+/// per service even under concurrent edits.
+model ServicePrice {
+  id          String    @id @default(uuid()) @db.Uuid
+  serviceId   String    @map("service_id") @db.Uuid
+  amount      Decimal   @db.Decimal(10, 2)
+  effectiveFrom DateTime @map("effective_from")
+  /// NULL means this is the currently effective version.
+  effectiveTo DateTime? @map("effective_to")
+  /// Why the rate changed. Required, so price history is self-explaining.
+  reason      String
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  chargeItems ChargeItem[]
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("ServicePriceCreatedBy", fields: [createdById], references: [id])
+
+  @@index([serviceId, effectiveFrom])
+  @@map("service_prices")
+}
+
+/// The single, universal charge ledger. Every billable event in the hospital —
+/// an OPD consultation, a dispensed medicine, a lab test, a therapy session, a
+/// bed-day — becomes exactly one row here. Nothing bills any other way.
+///
+/// Two integrity rules are enforced by CHECK constraints in the migration,
+/// not just in application code, because "no orphan, ambiguous, or duplicated
+/// charge" must hold even if a future caller bypasses the service layer:
+///
+///  1. Exactly one source is set: `service_id` XOR `prescription_item_id`.
+///     A charge from the service catalogue is never also a medicine charge.
+///     (Lab and therapy sources are added as their own columns in P3/P4 —
+///     LabOrderItem and TherapySession do not exist yet, so their FKs cannot
+///     be declared before those tables do. The XOR widens to reflect that.)
+///  2. Every amount field is arithmetically consistent: gross = quantity ×
+///     rate, net = gross − discount, discount ≤ gross. A charge can never
+///     store a number that doesn't add up.
+///
+/// Rows are append-only: correcting a charge cancels it (see status/cancelled*
+/// fields) rather than editing amounts in place, so a statement reprinted
+/// later shows exactly what it showed when it was first issued.
+model ChargeItem {
+  id           String @id @default(uuid()) @db.Uuid
+  /// The permanent link to the patient: every charge resolves to exactly one
+  /// UHID through visit → employee. No module is ever given its own patient
+  /// reference — this is what makes duplicate patients structurally
+  /// impossible rather than merely discouraged.
+  visitId      String @map("visit_id") @db.Uuid
+  /// Set when the charge is part of a running IPD admission bill.
+  admissionId  String? @map("admission_id") @db.Uuid
+
+  // ── origin (see the CHECK constraints in the migration for the exact rule) ──
+  // At most one "clinical origin" — prescriptionItemId or labOrderItemId (a
+  // therapySessionId joins this set in P4) — is set; serviceId/servicePriceId
+  // are the priced-rate pair, required alongside labOrderItemId (a lab test
+  // IS a catalogue service), optional alone for a direct service charge like
+  // an OPD consultation, and forbidden alongside prescriptionItemId (medicine
+  // pricing stays on the batch, never the catalogue).
+  /// Set for a direct catalogue service charge, and alongside labOrderItemId
+  /// for a lab charge (a lab test is priced through the catalogue).
+  serviceId          String? @map("service_id") @db.Uuid
+  /// The exact price version used, so the rate is traceable to the moment it
+  /// was in effect even after the service is repriced.
+  servicePriceId     String? @map("service_price_id") @db.Uuid
+  /// Set for a pharmacy dispense charge. Not unique: an item dispensed across
+  /// several partial-dispense visits produces one charge each time.
+  prescriptionItemId String? @map("prescription_item_id") @db.Uuid
+  /// The batch dispensed from, carrying the FEFO-selected issue price.
+  medicineBatchId    String? @map("medicine_batch_id") @db.Uuid
+  /// Set for a lab test charge — the specific ordered test this charge bills,
+  /// posted at sample collection (not at order) so a cancelled-before-
+  /// collection order never bills.
+  labOrderItemId     String? @map("lab_order_item_id") @db.Uuid
+  /// Set for a per-sitting therapy or procedure charge, posted when the
+  /// session is marked performed. A course package's one opening charge does
+  /// NOT set this — it has no single session to point at, and bills as a
+  /// direct service charge (serviceId alone) exactly like an OPD
+  /// consultation.
+  therapySessionId   String? @map("therapy_session_id") @db.Uuid
+
+  // ── snapshot at the moment of charge — never recomputed ────────────────
+  description    String
+  categoryName   String  @map("category_name")
+  quantity       Decimal @db.Decimal(10, 2)
+  unitRate       Decimal @map("unit_rate") @db.Decimal(10, 2)
+  grossAmount    Decimal @map("gross_amount") @db.Decimal(10, 2)
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  netAmount      Decimal @map("net_amount") @db.Decimal(10, 2)
+
+  /// FREE/COVERED charges carry their real gross value (so the hospital can
+  /// report the value of entitlement consumed) with a full discount to zero —
+  /// they are not simply omitted, unlike the legacy BillingTransaction, which
+  /// stored no amount at all for a non-PAID item.
+  benefitOutcome BenefitOutcome @map("benefit_outcome")
+  status         ChargeStatus @default(PENDING)
+  receiptId      String?      @map("receipt_id") @db.Uuid
+
+  /// Points from a reversal back to the charge it corrects. A charge that is
+  /// itself a reversal is unique per original (enforced by @unique below), so
+  /// a charge can be reversed at most once — reverse-then-reissue for a
+  /// second correction rather than stacking reversals.
+  reversalOfId String? @unique @map("reversal_of_id") @db.Uuid
+
+  createdById   String?   @map("created_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+  cancelledById String?   @map("cancelled_by_id") @db.Uuid
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelReason  String?   @map("cancel_reason")
+
+  visit            Visit             @relation(fields: [visitId], references: [id])
+  admission        Admission?        @relation(fields: [admissionId], references: [id])
+  service          Service?          @relation(fields: [serviceId], references: [id])
+  servicePrice     ServicePrice?     @relation(fields: [servicePriceId], references: [id])
+  prescriptionItem PrescriptionItem? @relation(fields: [prescriptionItemId], references: [id])
+  labOrderItem     LabOrderItem?     @relation(fields: [labOrderItemId], references: [id])
+  therapySession   TherapySession?   @relation(fields: [therapySessionId], references: [id])
+  medicineBatch    MedicineBatch?    @relation(fields: [medicineBatchId], references: [id])
+  receipt          Receipt?          @relation(fields: [receiptId], references: [id])
+  createdBy        User?             @relation("ChargeCreatedBy", fields: [createdById], references: [id])
+  cancelledBy      User?             @relation("ChargeCancelledBy", fields: [cancelledById], references: [id])
+  reversalOf       ChargeItem?       @relation("ChargeReversal", fields: [reversalOfId], references: [id])
+  reversal         ChargeItem?       @relation("ChargeReversal")
+
+  @@index([visitId])
+  @@index([admissionId])
+  @@index([receiptId])
+  @@index([createdAt])
+  @@index([serviceId, createdAt])
+  @@index([prescriptionItemId])
+  @@index([labOrderItemId])
+  @@index([therapySessionId])
+  @@map("charge_items")
+}
+
+/// A payment collection event. One receipt can cover several charges raised
+/// in the same transaction (an OPD receipt lines up a consultation and a lab
+/// test side by side), matching the reference receipt's multi-line format —
+/// the legacy per-item `receiptReference` string never allowed that.
+model Receipt {
+  id             String        @id @default(uuid()) @db.Uuid
+  receiptNumber  String        @unique @map("receipt_number")
+  visitId        String        @map("visit_id") @db.Uuid
+  employeeId     String        @map("employee_id") @db.Uuid
+  billingType    BillingType   @default(GENERAL) @map("billing_type")
+  grossAmount    Decimal       @map("gross_amount") @db.Decimal(10, 2)
+  discountAmount Decimal       @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  netAmount      Decimal       @map("net_amount") @db.Decimal(10, 2)
+  amountInWords  String        @map("amount_in_words")
+  paymentMode    PaymentMode   @default(CASH) @map("payment_mode")
+  collectedById  String?       @map("collected_by_id") @db.Uuid
+  issuedAt       DateTime      @default(now()) @map("issued_at")
+  status         ReceiptStatus @default(ISSUED)
+  cancelledAt    DateTime?     @map("cancelled_at")
+  cancelReason   String?       @map("cancel_reason")
+
+  visit       Visit        @relation(fields: [visitId], references: [id])
+  employee    Employee     @relation(fields: [employeeId], references: [id])
+  collectedBy User?        @relation(fields: [collectedById], references: [id])
+  charges     ChargeItem[]
+
+  @@index([visitId])
+  @@index([employeeId])
+  @@index([issuedAt])
+  @@map("receipts")
+}
+
+/// Transactional, restart-safe counter for every human-readable document
+/// number in the system (OPD/IPD/Lab/Receipt numbers, daily queue tokens).
+///
+/// Allocation uses `UPDATE ... RETURNING` inside the caller's transaction, so
+/// concurrent callers serialise on the row lock and a rolled-back transaction
+/// releases its number. Replaces the in-memory Map in OpdTokenGeneratorService,
+/// which reset to zero on every process restart and could not be shared across
+/// instances.
+model DocumentSequence {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Logical counter name, e.g. "OPD", "IPD", "LAB", "RECEIPT", "TOKEN:CARDIO".
+  name      String
+  /// Rendered prefix, e.g. "OPD/2026/".
+  prefix    String
+  /// Scope the counter resets on: "2026" for yearly, "2026-08-29" for daily,
+  /// "GLOBAL" for a counter that never resets.
+  periodKey String   @map("period_key")
+  lastValue Int      @default(0) @map("last_value")
+  /// Zero-padding width for the numeric part.
+  padding   Int      @default(6)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([name, periodKey])
+  @@map("document_sequences")
+}
+
 model DoctorProfile {
   id         String  @id @default(uuid()) @db.Uuid
   userId     String  @unique @map("user_id") @db.Uuid
@@ -646,6 +1261,138 @@ model DoctorProfile {
 enum EmploymentTypeCode {
   PERMANENT
   CONTRACTUAL
+}
+
+enum ServiceType {
+  CONSULTATION
+  TEST
+  THERAPY
+  PROCEDURE
+  /// A bundle billed at its own single rate; components are listed but not
+  /// separately charged (Health Package-1, Ksharasoothra full course).
+  PACKAGE
+  /// Accommodation charged per day of admission.
+  BED_DAY
+  /// Pre/post procedure care, chargeable per day per CGHS Annexure A-2 note (c).
+  CARE_PER_DAY
+}
+
+enum ServiceApplicability {
+  OPD
+  IPD
+  BOTH
+}
+
+enum ServiceUnit {
+  SITTING
+  SESSION
+  DAY
+  COURSE
+  TEST
+  VISIT
+}
+
+enum ChargeStatus {
+  /// Raised, not yet paid. This is the "Outstanding" state for PAID-outcome
+  /// charges; FREE/COVERED charges never rest here — see ChargeService.
+  PENDING
+  PAID
+  /// Voided before payment. A PAID charge is corrected by reversal, not by
+  /// cancelling it in place — see ChargeItem.reversalOfId.
+  CANCELLED
+}
+
+enum BillingType {
+  GENERAL
+  ESIC_BENEFICIARY
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+  NOT_APPLICABLE
+}
+
+enum ReceiptStatus {
+  ISSUED
+  CANCELLED
+}
+
+enum LabOrderPriority {
+  ROUTINE
+  URGENT
+  STAT
+}
+
+/// ORDERED → SAMPLE_COLLECTED → PROCESSING → RESULT_ENTERED → VERIFIED →
+/// REPORTED, per Feature 6. CANCELLED is reachable only before collection —
+/// once a sample exists, the order runs its course or is rejected instead.
+enum LabOrderStatus {
+  ORDERED
+  SAMPLE_COLLECTED
+  PROCESSING
+  RESULT_ENTERED
+  VERIFIED
+  REPORTED
+  CANCELLED
+}
+
+enum LabOrderItemStatus {
+  ORDERED
+  RESULT_ENTERED
+  VERIFIED
+}
+
+enum LabDiscipline {
+  HAEMATOLOGY
+  BIOCHEMISTRY
+  SEROLOGY
+  CLINICAL_PATHOLOGY
+  MICROBIOLOGY
+}
+
+enum LabResultType {
+  NUMERIC
+  TEXT
+  SELECT
+}
+
+enum LabRangeSex {
+  MALE
+  FEMALE
+  ANY
+}
+
+enum LabResultFlag {
+  NORMAL
+  HIGH
+  LOW
+  CRITICAL
+}
+
+enum TherapyCourseStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TherapySessionStatus {
+  SCHEDULED
+  PERFORMED
+  CANCELLED
+  NO_SHOW
+}
+
+/// The three valid entry points a therapy course/session can originate from
+/// (Feature 1/7 extension) — always derived server-side, never client-supplied.
+enum TherapySource {
+  /// Patient came specifically for therapy — no OPD consultation, no IPD admission.
+  DIRECT
+  /// Opened from an OPD visit, recommended during consultation.
+  OPD
+  /// Opened during an IPD admission.
+  IPD
 }
 
 enum VisitType {

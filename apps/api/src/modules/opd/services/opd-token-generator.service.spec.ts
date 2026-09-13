@@ -1,32 +1,45 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OpdTokenGeneratorService } from './opd-token-generator.service';
+import { DocumentSequenceService } from '../../../common/sequence/document-sequence.service';
 
 describe('OpdTokenGeneratorService', () => {
   let service: OpdTokenGeneratorService;
+  let sequences: { nextQueueToken: jest.Mock };
 
   beforeEach(async () => {
+    sequences = { nextQueueToken: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [OpdTokenGeneratorService],
+      providers: [
+        OpdTokenGeneratorService,
+        { provide: DocumentSequenceService, useValue: sequences },
+      ],
     }).compile();
 
-    service = module.get<OpdTokenGeneratorService>(OpdTokenGeneratorService);
+    service = module.get(OpdTokenGeneratorService);
   });
 
-  it('should generate sequential tokens for the same department on the same day', async () => {
-    const token1 = await service.generateDailyToken('CARDIO');
-    const token2 = await service.generateDailyToken('CARDIO');
-    const token3 = await service.generateDailyToken('CARDIO');
+  it('delegates token issuance to the database-backed sequence service', async () => {
+    sequences.nextQueueToken.mockResolvedValue('CARDIO-001');
 
-    expect(token1).toBe('CARDIO-001');
-    expect(token2).toBe('CARDIO-002');
-    expect(token3).toBe('CARDIO-003');
+    await expect(service.generateDailyToken('CARDIO')).resolves.toBe('CARDIO-001');
+    expect(sequences.nextQueueToken).toHaveBeenCalledWith('CARDIO', undefined);
   });
 
-  it('should maintain independent counters per department', async () => {
-    const cardio1 = await service.generateDailyToken('CARDIO');
-    const ortho1 = await service.generateDailyToken('ORTHO');
+  // The token must be reserved inside the caller's transaction so a failed
+  // visit creation releases it instead of leaving a gap in the day's numbering.
+  it('forwards the caller transaction so the token rolls back with the visit', async () => {
+    const tx = { $queryRaw: jest.fn() };
+    sequences.nextQueueToken.mockResolvedValue('ORTHO-004');
 
-    expect(cardio1).toContain('CARDIO-');
-    expect(ortho1).toBe('ORTHO-001');
+    await service.generateDailyToken('ORTHO', tx as never);
+
+    expect(sequences.nextQueueToken).toHaveBeenCalledWith('ORTHO', tx);
+  });
+
+  it('propagates sequence failures rather than issuing an unbacked token', async () => {
+    sequences.nextQueueToken.mockRejectedValue(new Error('sequence unavailable'));
+
+    await expect(service.generateDailyToken('ENT')).rejects.toThrow('sequence unavailable');
   });
 });

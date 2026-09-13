@@ -5,6 +5,12 @@ import {
   createBatch,
   fetchLowStockAlerts,
   MedicineRecord,
+  downloadMedicineTemplate,
+  validateMedicineImport,
+  confirmMedicineImport,
+  downloadImportErrorReport,
+  MedicineImportValidationResult,
+  MedicineImportConfirmResult,
 } from '../../api/inventory.api';
 
 interface InventoryScreenProps {
@@ -27,6 +33,18 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
   const [showAddMedModal, setShowAddMedModal] = useState(false);
   const [showAddBatchModal, setShowAddBatchModal] = useState(false);
   const [selectedMedIdForBatch, setSelectedMedIdForBatch] = useState<string>('');
+
+  // Import Medicines Modal
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importStep, setImportStep] = useState<'UPLOAD' | 'PREVIEW' | 'RESULT'>('UPLOAD');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [validationResult, setValidationResult] = useState<MedicineImportValidationResult | null>(null);
+  const [importResult, setImportResult] = useState<MedicineImportConfirmResult | null>(null);
+  const [previewFilter, setPreviewFilter] = useState<'ALL' | 'VALID' | 'DUPLICATE' | 'INVALID'>('ALL');
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [downloadingErrorReport, setDownloadingErrorReport] = useState(false);
 
   // Add Med Form
   const [medGenericName, setMedGenericName] = useState('');
@@ -67,6 +85,81 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleDownloadTemplate = async () => {
+    setDownloadingTemplate(true);
+    try {
+      await downloadMedicineTemplate(activeToken);
+    } catch (err: unknown) {
+      alert((err as Error).message || 'Failed to download template');
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+      setImportError(null);
+    }
+  };
+
+  const handleValidateFile = async () => {
+    if (!selectedFile) {
+      setImportError('Please select an Excel or CSV file to import.');
+      return;
+    }
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      const result = await validateMedicineImport(selectedFile, activeToken);
+      setValidationResult(result);
+      setImportStep('PREVIEW');
+    } catch (err: unknown) {
+      setImportError((err as Error).message || 'Validation failed');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!validationResult || validationResult.validItems.length === 0) return;
+    setImportLoading(true);
+    setImportError(null);
+    try {
+      const res = await confirmMedicineImport(validationResult.validItems, activeToken);
+      setImportResult(res);
+      setImportStep('RESULT');
+      loadData();
+    } catch (err: unknown) {
+      setImportError((err as Error).message || 'Failed to confirm import');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleDownloadErrorReport = async () => {
+    if (!validationResult?.rejectedItems || validationResult.rejectedItems.length === 0) return;
+    setDownloadingErrorReport(true);
+    try {
+      await downloadImportErrorReport(validationResult.rejectedItems, activeToken);
+    } catch (err: unknown) {
+      alert((err as Error).message || 'Failed to download error report');
+    } finally {
+      setDownloadingErrorReport(false);
+    }
+  };
+
+  const resetImportModal = () => {
+    setShowImportModal(false);
+    setImportStep('UPLOAD');
+    setSelectedFile(null);
+    setImportLoading(false);
+    setImportError(null);
+    setValidationResult(null);
+    setImportResult(null);
+    setPreviewFilter('ALL');
+  };
 
   const handleCreateMedicine = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +219,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
       m.category.toLowerCase().includes(search.toLowerCase());
     const matchesCat = selectedCategory === 'ALL' || m.category === selectedCategory;
     return matchesSearch && matchesCat;
+  });
+
+  const filteredItems = (validationResult?.items ?? []).filter((item) => {
+    if (previewFilter === 'VALID') return item.status === 'VALID';
+    if (previewFilter === 'DUPLICATE')
+      return item.status === 'DUPLICATE_FILE' || item.status === 'DUPLICATE_EXISTING';
+    if (previewFilter === 'INVALID') return item.status === 'INVALID';
+    return true;
   });
 
   const categories = Array.from(new Set(medicines.map((m) => m.category)));
@@ -207,6 +308,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
             className="px-4 py-2 bg-esic-primary hover:bg-esic-primary-dark text-white rounded-lg text-sm font-semibold shadow-sm transition-all"
           >
             + Add Medicine Master
+          </button>
+          <button
+            onClick={() => {
+              resetImportModal();
+              setShowImportModal(true);
+            }}
+            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm font-semibold shadow-sm transition-all flex items-center gap-1.5"
+          >
+            Import Medicines (Excel)
           </button>
           <button
             onClick={loadData}
@@ -651,6 +761,314 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import Medicines Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b pb-3 shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Import Medicines (Excel)</h2>
+                <p className="text-xs text-gray-500">Bulk register medicines into Central Medicine Master</p>
+              </div>
+              <button
+                onClick={resetImportModal}
+                className="text-gray-400 hover:text-gray-600 font-bold p-1 text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Stepper Tabs */}
+            <div className="flex border-b border-gray-200 shrink-0 text-xs font-semibold">
+              <div
+                className={`py-2 px-4 border-b-2 ${
+                  importStep === 'UPLOAD'
+                    ? 'border-esic-primary text-esic-primary font-bold'
+                    : 'border-transparent text-gray-400'
+                }`}
+              >
+                1. Upload & Template
+              </div>
+              <div
+                className={`py-2 px-4 border-b-2 ${
+                  importStep === 'PREVIEW'
+                    ? 'border-esic-primary text-esic-primary font-bold'
+                    : 'border-transparent text-gray-400'
+                }`}
+              >
+                2. Validation Preview
+              </div>
+              <div
+                className={`py-2 px-4 border-b-2 ${
+                  importStep === 'RESULT'
+                    ? 'border-esic-primary text-esic-primary font-bold'
+                    : 'border-transparent text-gray-400'
+                }`}
+              >
+                3. Import Results
+              </div>
+            </div>
+
+            {/* Step 1: Upload */}
+            {importStep === 'UPLOAD' && (
+              <div className="space-y-4 overflow-y-auto pr-1">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-900 space-y-2">
+                  <div className="font-bold text-sm">Download Template & Instructions</div>
+                  <p>
+                    Download the official Excel template pre-formatted with the exact columns required for Medicine Master import (Generic Name, Category, Strength, Dosage Form, and optional Brand Name). Fill in your medicine rows and upload the file below.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    disabled={downloadingTemplate}
+                    className="mt-1 px-3.5 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {downloadingTemplate ? 'Downloading…' : 'Download Excel Template'}
+                  </button>
+                </div>
+
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-esic-primary transition-colors bg-gray-50">
+                  <input
+                    type="file"
+                    id="medicine-excel-upload"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <label htmlFor="medicine-excel-upload" className="cursor-pointer block space-y-2">
+                    <div className="text-sm font-semibold text-gray-700">
+                      {selectedFile ? selectedFile.name : 'Click to select or drop your Excel file (.xlsx, .xls, .csv)'}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Supports Microsoft Excel (.xlsx, .xls) and CSV (.csv)
+                    </div>
+                    {selectedFile && (
+                      <div className="text-xs text-emerald-700 font-semibold mt-1">
+                        File selected ({(selectedFile.size / 1024).toFixed(1)} KB)
+                      </div>
+                    )}
+                  </label>
+                </div>
+
+                {importError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">
+                    {importError}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={resetImportModal}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleValidateFile}
+                    disabled={!selectedFile || importLoading}
+                    className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {importLoading ? 'Validating File…' : 'Validate & Preview'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Validation Preview */}
+            {importStep === 'PREVIEW' && validationResult && (
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1 flex flex-col min-h-0">
+                {/* Stats Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                    <div className="text-xs text-gray-500 font-medium">Total Rows</div>
+                    <div className="text-xl font-bold text-gray-900">{validationResult.totalRows}</div>
+                  </div>
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <div className="text-xs text-emerald-700 font-medium">Valid (Will Import)</div>
+                    <div className="text-xl font-bold text-emerald-700">{validationResult.validRows}</div>
+                  </div>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <div className="text-xs text-amber-700 font-medium">Duplicates (Skipped)</div>
+                    <div className="text-xl font-bold text-amber-700">{validationResult.duplicateRows}</div>
+                  </div>
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+                    <div className="text-xs text-red-700 font-medium">Invalid (Errors)</div>
+                    <div className="text-xl font-bold text-red-700">{validationResult.invalidRows}</div>
+                  </div>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex gap-2 shrink-0 text-xs">
+                  {(
+                    [
+                      { id: 'ALL', label: `All (${validationResult.totalRows})` },
+                      { id: 'VALID', label: `Valid (${validationResult.validRows})` },
+                      { id: 'DUPLICATE', label: `Duplicates (${validationResult.duplicateRows})` },
+                      { id: 'INVALID', label: `Errors (${validationResult.invalidRows})` },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setPreviewFilter(tab.id)}
+                      className={`px-3 py-1.5 rounded-md font-semibold transition-colors ${
+                        previewFilter === tab.id
+                          ? 'bg-gray-900 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Preview Table */}
+                <div className="border border-gray-200 rounded-xl overflow-x-auto flex-1 max-h-[300px]">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-200 text-gray-600 font-semibold sticky top-0">
+                      <tr>
+                        <th className="py-2 px-3 text-left">Row</th>
+                        <th className="py-2 px-3 text-left">Generic Name</th>
+                        <th className="py-2 px-3 text-left">Brand</th>
+                        <th className="py-2 px-3 text-left">Category</th>
+                        <th className="py-2 px-3 text-left">Strength</th>
+                        <th className="py-2 px-3 text-left">Dosage</th>
+                        <th className="py-2 px-3 text-left">Status</th>
+                        <th className="py-2 px-3 text-left">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredItems.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="py-2 px-3 font-mono text-gray-500">{item.rowNum}</td>
+                          <td className="py-2 px-3 font-bold text-gray-900">{item.genericName || '—'}</td>
+                          <td className="py-2 px-3 text-gray-600">{item.brandName || '—'}</td>
+                          <td className="py-2 px-3 text-gray-600">{item.category || '—'}</td>
+                          <td className="py-2 px-3 text-gray-600">{item.strength || '—'}</td>
+                          <td className="py-2 px-3 text-gray-600">{item.dosageForm || '—'}</td>
+                          <td className="py-2 px-3 whitespace-nowrap">
+                            {item.status === 'VALID' && (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Valid
+                              </span>
+                            )}
+                            {item.status === 'DUPLICATE_EXISTING' && (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                                In Master
+                              </span>
+                            )}
+                            {item.status === 'DUPLICATE_FILE' && (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                                File Duplicate
+                              </span>
+                            )}
+                            {item.status === 'INVALID' && (
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-red-100 text-red-800 border border-red-200">
+                                Error
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-gray-500 text-[11px] max-w-xs truncate" title={item.reason}>
+                            {item.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {importError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg shrink-0">
+                    {importError}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setImportStep('UPLOAD')}
+                    className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
+                  >
+                    Back / Re-upload
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmImport}
+                    disabled={validationResult.validRows === 0 || importLoading}
+                    className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+                  >
+                    {importLoading
+                      ? 'Importing…'
+                      : `Confirm & Import (${validationResult.validRows} Medicines)`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Result */}
+            {importStep === 'RESULT' && importResult && (
+              <div className="space-y-4 overflow-y-auto pr-1">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center space-y-2">
+                  <div className="text-base font-bold text-emerald-900">{importResult.message}</div>
+                  <p className="text-xs text-emerald-700">
+                    The newly imported medicines are now active in the system and ready for prescriptions, dispensing, and inventory tracking.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                    <div className="text-xs text-emerald-700 font-medium">Successfully Imported</div>
+                    <div className="text-2xl font-bold text-emerald-800">{importResult.importedCount}</div>
+                  </div>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                    <div className="text-xs text-amber-700 font-medium">Skipped (Duplicates)</div>
+                    <div className="text-2xl font-bold text-amber-800">{importResult.skippedCount}</div>
+                  </div>
+                  <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
+                    <div className="text-xs text-gray-500 font-medium">Total Processed</div>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {validationResult?.totalRows ?? importResult.importedCount + importResult.skippedCount}
+                    </div>
+                  </div>
+                </div>
+
+                {validationResult?.rejectedItems && validationResult.rejectedItems.length > 0 && (
+                  <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-gray-900">Download Error / Skip Report</div>
+                      <div className="text-xs text-gray-500">
+                        {validationResult.rejectedItems.length} record(s) were skipped or had errors. Download an Excel report for details.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadErrorReport}
+                      disabled={downloadingErrorReport}
+                      className="px-3.5 py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+                    >
+                      {downloadingErrorReport ? 'Downloading…' : 'Download Error Report (Excel)'}
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={resetImportModal}
+                    className="px-5 py-2 bg-esic-primary hover:bg-esic-primary-dark text-white rounded-lg text-sm font-semibold transition-colors"
+                  >
+                    Done & View Inventory
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -2,12 +2,16 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { VisitStatus } from '@prisma/client';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 
 @Injectable()
 export class VisitService {
   private readonly logger = new Logger(VisitService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sequences: DocumentSequenceService,
+  ) {}
 
   async createVisit(dto: CreateVisitDto) {
     const trimmedId = dto.employeeId.trim();
@@ -70,6 +74,7 @@ export class VisitService {
         admission = await this.prisma.admission.create({
           data: {
             visitId: visit.id,
+            admissionNumber: await this.sequences.next('IPD_NUMBER'),
             status: 'REQUESTED',
             eligibleCategory: 'C',
           },

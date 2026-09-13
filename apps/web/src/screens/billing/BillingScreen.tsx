@@ -5,6 +5,8 @@ import {
   BillingTransactionRecord,
   ReceiptRecord,
 } from '../../api/billing.api';
+import { downloadReceiptPdf } from '../../api/ledger.api';
+import { Receipt } from 'lucide-react';
 
 interface BillingScreenProps {
   authToken?: string;
@@ -65,12 +67,16 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
       {/* Header Banner */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <span>🧾</span> Billing & Benefit Ledger
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              <Receipt className="w-6 h-6 text-esic-primary" /> Pharmacy Counter &amp; Dispense Ledger
+            </h1>
+            <span className="px-2.5 py-0.5 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
+              Point-of-dispense medicine bills and pharmacy receipts
+            </span>
+          </div>
           <p className="text-sm text-gray-500 mt-1">
-            Same-transaction billing ledger generated at dispense time • Paid medicine receipts &
-            benefit outcomes
+            Same-transaction billing ledger generated at dispense time • Paid medicine receipts &amp; benefit outcomes
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -345,10 +351,23 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
               </button>
               <button
                 onClick={() => window.print()}
-                className="px-4 py-2 bg-esic-primary text-white rounded-lg text-sm font-semibold hover:bg-esic-primary-dark shadow-sm flex items-center gap-1.5"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200 flex items-center gap-1.5"
+                title="Print this on-screen preview"
               >
-                🖨️ Print Receipt (PDF)
+                🖨️ Print Preview
               </button>
+              {selectedReceipt.receiptId ? (
+                <button
+                  onClick={() => downloadReceiptPdf(selectedReceipt.receiptId!, selectedReceipt.receiptReference, activeToken)}
+                  className="px-4 py-2 bg-esic-primary text-white rounded-lg text-sm font-semibold hover:bg-esic-primary-dark shadow-sm flex items-center gap-1.5"
+                >
+                  📄 Download Receipt PDF
+                </button>
+              ) : (
+                <span className="px-4 py-2 text-xs text-gray-500 self-center">
+                  No receipt issued yet for this charge — PDF unavailable until payment is collected.
+                </span>
+              )}
             </div>
           </div>
         </div>

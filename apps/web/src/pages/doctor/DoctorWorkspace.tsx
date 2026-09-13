@@ -8,6 +8,16 @@ import {
 import { evaluateBenefitRule } from '../../api/benefit.api';
 import { fetchVisitById, VisitDetail } from '../../api/patient-lookup.api';
 import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
+import { fetchLabTests, fetchLabQueue, LabTestSummary, LabOrderRecord } from '../../api/lab.api';
+import { fetchServices, ServiceListItem } from '../../api/catalog.api';
+import {
+  fetchTherapySessions,
+  fetchTherapyCourses,
+  openTherapyCourse,
+  scheduleTherapySession,
+  TherapySessionRecord,
+  TherapyCourseRecord,
+} from '../../api/therapy.api';
 import {
   User,
   Stethoscope,
@@ -19,6 +29,8 @@ import {
   Edit,
   List,
   Printer,
+  Microscope,
+  Activity,
 } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 
@@ -28,15 +40,6 @@ interface DoctorWorkspaceProps {
 
 interface RxItemState extends PrescriptionItemPayload {
   mode: 'SELECT' | 'CUSTOM';
-}
-
-export interface LabResultRecord {
-  id: string;
-  testName: string;
-  resultValue: string;
-  unit: string;
-  status: 'NORMAL' | 'ABNORMAL' | 'PENDING' | 'COMPLETED';
-  notes: string;
 }
 
 export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) => {
@@ -57,16 +60,21 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
     { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days', mode: 'SELECT' },
   ]);
 
-  const [labTests, setLabTests] = useState<string[]>([]);
-  const [newLabTest, setNewLabTest] = useState('');
+  /* Diagnostic Lab Orders — real Lab Test Master catalogue (Feature 6), never free text. */
+  const [availableLabTests, setAvailableLabTests] = useState<LabTestSummary[]>([]);
+  const [selectedLabTestIds, setSelectedLabTestIds] = useState<string[]>([]);
+  const [labTestPicker, setLabTestPicker] = useState('');
+  const [existingLabOrders, setExistingLabOrders] = useState<LabOrderRecord[]>([]);
+  const [labOrdersLoading, setLabOrdersLoading] = useState(false);
 
-  /* Diagnosis Lab Results State */
-  const [labResults, setLabResults] = useState<LabResultRecord[]>([]);
-  const [resultTestName, setResultTestName] = useState('');
-  const [resultValue, setResultValue] = useState('');
-  const [resultUnit, setResultUnit] = useState('');
-  const [resultStatus, setResultStatus] = useState<'NORMAL' | 'ABNORMAL' | 'PENDING' | 'COMPLETED'>('NORMAL');
-  const [resultNotes, setResultNotes] = useState('');
+  /* Recommend Therapy — OPD entry point 2, straight from the consultation. */
+  const [availableTherapyServices, setAvailableTherapyServices] = useState<ServiceListItem[]>([]);
+  const [selectedTherapyServiceId, setSelectedTherapyServiceId] = useState('');
+  const [therapyPlannedSessions, setTherapyPlannedSessions] = useState(1);
+  const [existingTherapySessions, setExistingTherapySessions] = useState<TherapySessionRecord[]>([]);
+  const [existingTherapyCourses, setExistingTherapyCourses] = useState<TherapyCourseRecord[]>([]);
+  const [therapyLoading, setTherapyLoading] = useState(false);
+  const [recommendingTherapy, setRecommendingTherapy] = useState(false);
 
   const [activePrescription, setActivePrescription] = useState<PrescriptionRecord | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -78,8 +86,74 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       fetchMedicines(authToken)
         .then((meds) => setAvailableMedicines(meds))
         .catch((err) => console.error('Failed to load medicines catalog', err));
+      fetchLabTests(authToken)
+        .then((tests) => setAvailableLabTests(tests))
+        .catch((err) => console.error('Failed to load lab test catalogue', err));
+      fetchServices({ serviceType: 'THERAPY', active: true, limit: 100 }, authToken)
+        .then((res) => setAvailableTherapyServices(res.items))
+        .catch((err) => console.error('Failed to load therapy catalogue', err));
     }
   }, [authToken]);
+
+  const loadExistingLabOrders = useCallback(
+    async (visitId: string) => {
+      setLabOrdersLoading(true);
+      try {
+        const orders = await fetchLabQueue(authToken, { visitId });
+        setExistingLabOrders(orders);
+      } catch (err) {
+        console.error('Failed to load lab orders for visit', err);
+      } finally {
+        setLabOrdersLoading(false);
+      }
+    },
+    [authToken],
+  );
+
+  const loadExistingTherapy = useCallback(
+    async (visitId: string) => {
+      setTherapyLoading(true);
+      try {
+        const [sessions, courses] = await Promise.all([
+          fetchTherapySessions(authToken, { visitId }),
+          fetchTherapyCourses(authToken, { visitId }),
+        ]);
+        setExistingTherapySessions(sessions);
+        setExistingTherapyCourses(courses);
+      } catch (err) {
+        console.error('Failed to load therapy for visit', err);
+      } finally {
+        setTherapyLoading(false);
+      }
+    },
+    [authToken],
+  );
+
+  const selectedTherapyService = availableTherapyServices.find((s) => s.id === selectedTherapyServiceId);
+
+  const handleRecommendTherapy = async () => {
+    if (!visit || !selectedTherapyServiceId) return;
+    setRecommendingTherapy(true);
+    setError(null);
+    try {
+      if (selectedTherapyService?.unit === 'COURSE') {
+        await openTherapyCourse(
+          { visitId: visit.id, serviceId: selectedTherapyServiceId, plannedSessions: therapyPlannedSessions },
+          authToken,
+        );
+        setSuccessMessage(`Therapy course recommended: ${selectedTherapyService.name}.`);
+      } else {
+        await scheduleTherapySession({ visitId: visit.id, serviceId: selectedTherapyServiceId }, authToken);
+        setSuccessMessage(`Therapy session recommended: ${selectedTherapyService?.name}.`);
+      }
+      setSelectedTherapyServiceId('');
+      await loadExistingTherapy(visit.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to recommend therapy');
+    } finally {
+      setRecommendingTherapy(false);
+    }
+  };
 
   const employmentTypeCode = visit?.employee.employmentType.code;
 
@@ -108,13 +182,14 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       try {
         const res = await fetchVisitById(visitIdInput.trim(), authToken);
         setVisit(res);
+        await Promise.all([loadExistingLabOrders(res.id), loadExistingTherapy(res.id)]);
       } catch (err: unknown) {
         setVisitError(err instanceof Error ? err.message : 'Failed to load visit');
       } finally {
         setVisitLoading(false);
       }
     },
-    [visitIdInput, authToken],
+    [visitIdInput, authToken, loadExistingLabOrders, loadExistingTherapy],
   );
 
   const handleAddItem = () => {
@@ -146,54 +221,18 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
   };
 
   const handleAddLabTest = () => {
-    if (!newLabTest.trim()) return;
-    const testName = newLabTest.trim();
-    setLabTests([...labTests, testName]);
-
-    // Also auto-populate a pending result entry for convenience
-    if (!labResults.some((r) => r.testName.toLowerCase() === testName.toLowerCase())) {
-      setLabResults((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          testName,
-          resultValue: 'Pending',
-          unit: '-',
-          status: 'PENDING',
-          notes: 'Order initiated',
-        },
-      ]);
+    if (!labTestPicker) return;
+    if (!selectedLabTestIds.includes(labTestPicker)) {
+      setSelectedLabTestIds([...selectedLabTestIds, labTestPicker]);
     }
-
-    setNewLabTest('');
+    setLabTestPicker('');
   };
 
-  const handleRemoveLabTest = (index: number) => {
-    setLabTests(labTests.filter((_, i) => i !== index));
+  const handleRemoveLabTest = (testId: string) => {
+    setSelectedLabTestIds(selectedLabTestIds.filter((id) => id !== testId));
   };
 
-  const handleAddLabResult = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!resultTestName.trim()) return;
-
-    const newResult: LabResultRecord = {
-      id: Date.now().toString(),
-      testName: resultTestName.trim(),
-      resultValue: resultValue.trim() || 'N/A',
-      unit: resultUnit.trim(),
-      status: resultStatus,
-      notes: resultNotes.trim(),
-    };
-
-    setLabResults([...labResults, newResult]);
-    setResultTestName('');
-    setResultValue('');
-    setResultNotes('');
-  };
-
-  const handleRemoveLabResult = (id: string) => {
-    setLabResults(labResults.filter((r) => r.id !== id));
-  };
+  const labTestName = (id: string) => availableLabTests.find((t) => t.id === id)?.name ?? id;
 
   const handleSaveDraft = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -235,13 +274,19 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
           followUpFlag,
           admissionRecommended,
           items: validItems,
-          labTests,
+          labTestIds: selectedLabTestIds.length > 0 ? selectedLabTestIds : undefined,
         },
         authToken,
       );
 
       setActivePrescription(res.prescription);
-      setSuccessMessage('Prescription draft saved in DRAFT state.');
+      setSuccessMessage(
+        selectedLabTestIds.length > 0
+          ? `Prescription draft saved. ${selectedLabTestIds.length} lab test(s) ordered.`
+          : 'Prescription draft saved in DRAFT state.',
+      );
+      setSelectedLabTestIds([]);
+      await loadExistingLabOrders(visit.id);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(Array.isArray(msg) ? msg.join(', ') : msg);
@@ -356,41 +401,40 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
           </table>
         </div>
 
-        {/* Diagnosis Lab Results */}
+        {/* Diagnostic Lab Orders — real orders placed for this visit, not local mock data */}
         <div className="mb-4 text-xs">
           <h3 className="font-bold text-sm border-b border-gray-400 pb-1 mb-2 uppercase">
-            Diagnostic Lab Orders & Diagnosis Lab Results
+            Diagnostic Lab Orders
           </h3>
-          {labResults.length > 0 ? (
+          {existingLabOrders.length > 0 ? (
             <table className="w-full border-collapse border border-gray-400 text-left text-xs mb-2">
               <thead>
                 <tr className="bg-gray-200">
-                  <th className="border border-gray-400 p-1.5">Test Name</th>
-                  <th className="border border-gray-400 p-1.5">Result / Value</th>
-                  <th className="border border-gray-400 p-1.5">Unit</th>
+                  <th className="border border-gray-400 p-1.5">Lab No.</th>
+                  <th className="border border-gray-400 p-1.5">Test(s)</th>
                   <th className="border border-gray-400 p-1.5">Status</th>
-                  <th className="border border-gray-400 p-1.5">Notes</th>
                 </tr>
               </thead>
               <tbody>
-                {labResults.map((res) => (
-                  <tr key={res.id}>
-                    <td className="border border-gray-400 p-1.5 font-semibold">{res.testName}</td>
-                    <td className="border border-gray-400 p-1.5 font-mono">{res.resultValue}</td>
-                    <td className="border border-gray-400 p-1.5">{res.unit}</td>
-                    <td className="border border-gray-400 p-1.5 font-bold">{res.status}</td>
-                    <td className="border border-gray-400 p-1.5">{res.notes || '-'}</td>
+                {existingLabOrders.map((o) => (
+                  <tr key={o.id}>
+                    <td className="border border-gray-400 p-1.5 font-mono">{o.labNumber ?? '—'}</td>
+                    <td className="border border-gray-400 p-1.5 font-semibold">
+                      {o.items.map((i) => i.labTest.name).join(', ')}
+                    </td>
+                    <td className="border border-gray-400 p-1.5 font-bold">{o.status.replace(/_/g, ' ')}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <p className="text-gray-600">No laboratory results recorded for this visit.</p>
+            <p className="text-gray-600">No laboratory orders recorded for this visit.</p>
           )}
 
-          {labTests.length > 0 && (
+          {selectedLabTestIds.length > 0 && (
             <p className="mt-1">
-              <strong>Ordered Tests:</strong> {labTests.join(', ')}
+              <strong>Newly Ordered (this draft):</strong>{' '}
+              {selectedLabTestIds.map((id) => labTestName(id)).join(', ')}
             </p>
           )}
         </div>
@@ -729,42 +773,50 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
               </div>
             </div>
 
-            {/* Diagnostic Lab Orders */}
+            {/* Diagnostic Lab Orders — real Lab Test Master catalogue */}
             <div className="card p-4 space-y-3">
               <h3 className="text-sm font-bold text-[var(--color-text-primary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
-                <Stethoscope className="w-4 h-4 text-secondary-500" />
+                <Microscope className="w-4 h-4 text-secondary-500" />
                 Diagnostic Lab Orders
               </h3>
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Order lab test..."
-                  value={newLabTest}
-                  onChange={(e) => setNewLabTest(e.target.value)}
+                <select
+                  value={labTestPicker}
+                  onChange={(e) => setLabTestPicker(e.target.value)}
                   disabled={isSigned}
-                  className="input py-1 px-2 text-xs"
-                />
+                  className="input py-1 px-2 text-xs flex-1"
+                >
+                  <option value="">-- Select from Lab Test Master --</option>
+                  {availableLabTests
+                    .filter((t) => !selectedLabTestIds.includes(t.id))
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        🧪 {t.name} ({t.discipline.replace(/_/g, ' ')})
+                      </option>
+                    ))}
+                </select>
                 {!isSigned && (
                   <button
                     type="button"
                     onClick={handleAddLabTest}
+                    disabled={!labTestPicker}
                     className="btn btn-secondary btn-sm"
                   >
-                    Add Order
+                    Add
                   </button>
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {labTests.map((test, i) => (
+                {selectedLabTestIds.map((id) => (
                   <span
-                    key={i}
+                    key={id}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary-50 text-primary-700 text-xs font-medium border border-primary-100"
                   >
-                    🧪 {test}
+                    🧪 {labTestName(id)}
                     {!isSigned && (
                       <button
                         type="button"
-                        onClick={() => handleRemoveLabTest(i)}
+                        onClick={() => handleRemoveLabTest(id)}
                         className="hover:text-danger-600 ml-1 font-bold"
                       >
                         ×
@@ -772,130 +824,143 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
                     )}
                   </span>
                 ))}
+                {selectedLabTestIds.length === 0 && (
+                  <p className="text-[11px] text-[var(--color-text-tertiary)]">
+                    Selected tests are ordered together as one Lab Order when the draft is saved.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Diagnosis Lab Results */}
+            {/* Lab orders already placed for this visit — real backend state, not local mock data */}
             <div className="card p-4 space-y-3">
               <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
                 <h3 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2">
-                  <Stethoscope className="w-4 h-4 text-emerald-600" />
-                  Diagnosis Lab Results
+                  <Microscope className="w-4 h-4 text-emerald-600" />
+                  Lab Orders for This Visit
                 </h3>
                 <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  {labResults.length} Results Recorded
+                  {existingLabOrders.length} Order(s)
                 </span>
               </div>
 
-              {!isSigned && (
-                <form onSubmit={handleAddLabResult} className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/40 border border-gray-200 dark:border-gray-700 space-y-2">
-                  <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300">
-                    Record New Lab Result
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <input
-                      type="text"
-                      placeholder="Test Name (e.g. Hb, FBS)..."
-                      value={resultTestName}
-                      onChange={(e) => setResultTestName(e.target.value)}
-                      className="input py-1 px-2 text-xs col-span-2"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Result Value (e.g. 13.5)"
-                      value={resultValue}
-                      onChange={(e) => setResultValue(e.target.value)}
-                      className="input py-1 px-2 text-xs"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Unit (e.g. g/dL)"
-                      value={resultUnit}
-                      onChange={(e) => setResultUnit(e.target.value)}
-                      className="input py-1 px-2 text-xs"
-                    />
-                    <select
-                      value={resultStatus}
-                      onChange={(e) => setResultStatus(e.target.value as any)}
-                      className="input py-1 px-2 text-xs font-semibold"
-                    >
-                      <option value="NORMAL">✅ Normal</option>
-                      <option value="ABNORMAL">⚠️ Abnormal</option>
-                      <option value="PENDING">⏳ Pending</option>
-                      <option value="COMPLETED">✔️ Completed</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Notes / Normal Range..."
-                      value={resultNotes}
-                      onChange={(e) => setResultNotes(e.target.value)}
-                      className="input py-1 px-2 text-xs col-span-2"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={!resultTestName.trim()}
-                    className="btn btn-secondary btn-sm w-full gap-1 mt-1 text-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-emerald-600" /> Save Lab Result
-                  </button>
-                </form>
-              )}
-
-              {/* Lab Results Display List */}
               <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                {labResults.length === 0 ? (
+                {labOrdersLoading ? (
+                  <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">Loading…</p>
+                ) : existingLabOrders.length === 0 ? (
                   <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">
-                    No lab test results recorded yet.
+                    No lab orders placed for this visit yet.
                   </p>
                 ) : (
-                  labResults.map((res) => (
+                  existingLabOrders.map((order) => (
                     <div
-                      key={res.id}
+                      key={order.id}
                       className="p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] space-y-1 text-xs"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-[var(--color-text-primary)]">
-                          {res.testName}
+                        <span className="font-bold text-[var(--color-text-primary)] font-mono">
+                          {order.labNumber ?? 'Pending No.'}
                         </span>
-                        <div className="flex items-center gap-1.5">
-                          <Badge
-                            variant={
-                              res.status === 'NORMAL' || res.status === 'COMPLETED'
-                                ? 'success'
-                                : res.status === 'ABNORMAL'
-                                ? 'danger'
-                                : 'warning'
-                            }
-                            className="text-[10px] px-1.5 py-0.5"
-                          >
-                            {res.status}
-                          </Badge>
-                          {!isSigned && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveLabResult(res.id)}
-                              className="text-danger-500 hover:text-danger-600 p-0.5"
-                              title="Delete result"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
+                        <Badge
+                          variant={
+                            order.status === 'REPORTED'
+                              ? 'success'
+                              : order.status === 'CANCELLED'
+                              ? 'danger'
+                              : 'warning'
+                          }
+                          className="text-[10px] px-1.5 py-0.5"
+                        >
+                          {order.status.replace(/_/g, ' ')}
+                        </Badge>
                       </div>
-
-                      <div className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="font-bold text-primary-600">
-                          {res.resultValue} {res.unit}
-                        </span>
-                        {res.notes && (
-                          <span className="text-[var(--color-text-secondary)] italic font-sans text-[10px] truncate max-w-[140px]">
-                            {res.notes}
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-[11px] text-[var(--color-text-secondary)]">
+                        {order.items.map((i) => i.labTest.name).join(', ')}
+                      </p>
                     </div>
                   ))
+                )}
+              </div>
+            </div>
+
+            {/* Recommend Therapy — OPD entry point 2, right from the consultation */}
+            <div className="card p-4 space-y-3">
+              <h3 className="text-sm font-bold text-[var(--color-text-primary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-secondary-500" />
+                Recommend Therapy
+              </h3>
+              <div className="flex gap-2">
+                <select
+                  value={selectedTherapyServiceId}
+                  onChange={(e) => setSelectedTherapyServiceId(e.target.value)}
+                  disabled={isSigned}
+                  className="input py-1 px-2 text-xs flex-1"
+                >
+                  <option value="">-- Select from Therapy Catalogue --</option>
+                  {availableTherapyServices.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      💆 {s.name} {s.currentPrice ? `— ₹${s.currentPrice}` : '(unpriced)'} [{s.unit}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedTherapyService?.unit === 'COURSE' && (
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={therapyPlannedSessions}
+                  onChange={(e) => setTherapyPlannedSessions(Number(e.target.value))}
+                  className="input py-1 px-2 text-xs w-32"
+                  placeholder="Planned sessions"
+                />
+              )}
+              {!isSigned && (
+                <button
+                  type="button"
+                  onClick={handleRecommendTherapy}
+                  disabled={!selectedTherapyServiceId || recommendingTherapy || !visit}
+                  className="btn btn-secondary btn-sm w-full"
+                >
+                  {recommendingTherapy
+                    ? 'Recommending…'
+                    : selectedTherapyService?.unit === 'COURSE'
+                      ? 'Recommend Course'
+                      : 'Recommend Session'}
+                </button>
+              )}
+
+              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                {therapyLoading ? (
+                  <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">Loading…</p>
+                ) : existingTherapySessions.length === 0 && existingTherapyCourses.length === 0 ? (
+                  <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">
+                    No therapy recommended for this visit yet.
+                  </p>
+                ) : (
+                  <>
+                    {existingTherapyCourses.map((c) => (
+                      <div key={c.id} className="p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs">
+                        <span className="font-semibold text-[var(--color-text-primary)]">{c.service.name}</span>
+                        <Badge variant={c.status === 'COMPLETED' ? 'success' : 'warning'} className="text-[10px] px-1.5 py-0.5">
+                          {c.status}
+                        </Badge>
+                      </div>
+                    ))}
+                    {existingTherapySessions
+                      .filter((s) => !s.courseId)
+                      .map((s) => (
+                        <div key={s.id} className="p-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] flex items-center justify-between text-xs">
+                          <span className="font-semibold text-[var(--color-text-primary)]">{s.service.name}</span>
+                          <Badge
+                            variant={s.status === 'PERFORMED' ? 'success' : s.status === 'SCHEDULED' ? 'warning' : 'danger'}
+                            className="text-[10px] px-1.5 py-0.5"
+                          >
+                            {s.status}
+                          </Badge>
+                        </div>
+                      ))}
+                  </>
                 )}
               </div>
             </div>

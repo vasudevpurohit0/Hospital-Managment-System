@@ -3,6 +3,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { OpdTokenGeneratorService } from './opd-token-generator.service';
 import { DepartmentService } from './department.service';
 import { CreateOpdVisitDto } from '../dto/create-opd-visit.dto';
+import { ChargeService } from '../../billing/charge.service';
+import { BenefitRuleService } from '../../benefit/benefit-rule.service';
+import { DocumentSequenceService } from '../../../common/sequence/document-sequence.service';
+
+/** The consultation service auto-charged on every OPD visit, once priced. */
+const OPD_CONSULTATION_SERVICE_CODE = 'CONSULT-GEN';
 
 @Injectable()
 export class OpdService {
@@ -12,6 +18,9 @@ export class OpdService {
     private prisma: PrismaService,
     private tokenGenerator: OpdTokenGeneratorService,
     private departmentService: DepartmentService,
+    private chargeService: ChargeService,
+    private benefitRuleService: BenefitRuleService,
+    private sequences: DocumentSequenceService,
   ) {}
 
   /**
@@ -23,22 +32,56 @@ export class OpdService {
       throw new NotFoundException(`Department not found for ID: ${dto.departmentId}`);
     }
 
-    const tokenNumber = await this.tokenGenerator.generateDailyToken(dept.code);
+    // Token, visit and (if priced) the consultation charge are written
+    // together: if any step fails, the token is rolled back instead of
+    // leaving a hole in the day's sequence, and no charge can exist for an
+    // OPDVisit that doesn't.
+    const { opdVisit, tokenNumber } = await this.prisma.$transaction(async (tx) => {
+      const issuedToken = await this.tokenGenerator.generateDailyToken(dept.code, tx);
 
-    const opdVisit = await this.prisma.oPDVisit.create({
-      data: {
-        visitId: dto.visitId,
-        departmentId: dept.id,
-        tokenNumber,
-      },
-      include: {
-        department: true,
-        visit: {
-          include: {
-            employee: true,
+      // Permanent OPD number, distinct from the daily queue token — Feature
+      // 11 searches by both as separate identifiers.
+      const opdNumber = await this.sequences.next('OPD_NUMBER', tx);
+
+      const created = await tx.oPDVisit.create({
+        data: {
+          visitId: dto.visitId,
+          departmentId: dept.id,
+          tokenNumber: issuedToken,
+          opdNumber,
+        },
+        include: {
+          department: true,
+          visit: {
+            include: {
+              employee: { include: { employmentType: true } },
+            },
           },
         },
-      },
+      });
+
+      // Best-effort: CONSULT-GEN is seeded with no rate (no ESIC consultation
+      // fee is published in the reference material), so this quietly skips
+      // rather than blocking OPD visit creation. The moment an administrator
+      // prices it, new visits start charging automatically — no code change
+      // needed. Uses the benefit evaluator's employment-type wildcard, the
+      // same default that already governs medicine charges, rather than
+      // inventing a second rule engine for non-medicine services.
+      const consultationService = await tx.service.findUnique({
+        where: { code: OPD_CONSULTATION_SERVICE_CODE },
+      });
+      if (consultationService) {
+        const outcome = await this.benefitRuleService.evaluate(
+          created.visit.employee.employmentType.code,
+        );
+        await this.chargeService.postServiceChargeIfPriced(
+          { visitId: dto.visitId, serviceId: consultationService.id },
+          outcome,
+          tx,
+        );
+      }
+
+      return { opdVisit: created, tokenNumber: issuedToken };
     });
 
     this.logger.log(`✅ Created OPDVisit ${opdVisit.id} with token ${tokenNumber}`);

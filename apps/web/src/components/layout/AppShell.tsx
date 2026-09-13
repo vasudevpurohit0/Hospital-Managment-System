@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Sidebar, PageId } from './Sidebar';
 import { TopNav } from './TopNav';
 import { BreadcrumbItem } from './Breadcrumb';
@@ -17,11 +18,18 @@ import { InventoryScreen } from '../../screens/inventory/InventoryScreen';
 import { ExpiryManagementScreen } from '../../screens/inventory/ExpiryManagementScreen';
 import { ProcurementScreen } from '../../screens/procurement/ProcurementScreen';
 import { BillingScreen } from '../../screens/billing/BillingScreen';
+import { PatientLedgerScreen } from '../../screens/billing/PatientLedgerScreen';
 import { SystemConfigScreen } from '../../screens/admin/SystemConfigScreen';
 import { OpdQueueScreen } from '../../screens/opd/OpdQueueScreen';
 import { FacilityRulesScreen } from '../../screens/admin/FacilityRulesScreen';
+import { ServicePricingScreen } from '../../screens/admin/ServicePricingScreen';
 import { AdmissionDeskScreen } from '../../screens/admission/AdmissionDeskScreen';
 import { WardStaffScreen } from '../../screens/admission/WardStaffScreen';
+import { LabWorkbenchScreen } from '../../screens/laboratory/LabWorkbenchScreen';
+import { TherapyConsoleScreen } from '../../screens/therapy/TherapyConsoleScreen';
+import { AnalyticsScreen } from '../../screens/analytics/AnalyticsScreen';
+import { ReportsScreen } from '../../screens/reports/ReportsScreen';
+import { RbacManagementScreen } from '../../screens/admin/RbacManagementScreen';
 
 import { useAuth } from '../../hooks/useAuth';
 
@@ -40,15 +48,35 @@ const PAGE_LABELS: Record<PageId, string> = {
   'doctor-schedule': 'Doctor Schedule',
   'ipd-admissions': 'IPD / Admissions',
   'ward-console': 'Ward Console',
+  laboratory: 'Laboratory',
+  therapy: 'Therapy & Massage',
   pharmacy: 'Dispensing',
   inventory: 'Inventory',
   'expiry-fefo': 'Expiry & FEFO',
   'supply-chain': 'Supply Chain',
-  billing: 'Billing',
+  billing: 'Pharmacy Counter',
+  'patient-ledger': 'Patient Ledger',
+  'service-pricing': 'Service Pricing',
   'facility-rules': 'Facility Rules',
   analytics: 'Analytics',
+  reports: 'Reports',
+  'rbac-management': 'Roles & Permissions',
   'system-config': 'System Config',
-  'system-status': 'System Status',
+};
+
+/**
+ * Routes mirror the PageId values one-for-one (`/opd-queue`, `/billing`, …),
+ * so adding a page to PAGE_LABELS gives it a URL automatically and no separate
+ * route table can drift out of step with the navigation.
+ */
+export const pathForPageId = (page: PageId): string => `/${page}`;
+
+const KNOWN_PAGE_IDS = new Set(Object.keys(PAGE_LABELS) as PageId[]);
+
+/** Resolves a URL path back to a page, falling back for unknown paths. */
+export const pageIdFromPath = (pathname: string, fallback: PageId): PageId => {
+  const segment = pathname.replace(/^\/+/, '').split('/')[0];
+  return KNOWN_PAGE_IDS.has(segment as PageId) ? (segment as PageId) : fallback;
 };
 
 const PAGE_GROUP: Record<PageId, string> = {
@@ -61,15 +89,20 @@ const PAGE_GROUP: Record<PageId, string> = {
   'doctor-schedule': 'Clinical',
   'ipd-admissions': 'Clinical',
   'ward-console': 'Clinical',
+  laboratory: 'Clinical',
+  therapy: 'Clinical',
   pharmacy: 'Pharmacy & Inventory',
   inventory: 'Pharmacy & Inventory',
   'expiry-fefo': 'Pharmacy & Inventory',
   'supply-chain': 'Pharmacy & Inventory',
   billing: 'Finance',
+  'patient-ledger': 'Finance',
+  'service-pricing': 'Administration',
   'facility-rules': 'Administration',
   analytics: 'Administration',
+  reports: 'Administration',
+  'rbac-management': 'Administration',
   'system-config': 'Administration',
-  'system-status': 'System',
 };
 
 export const AppShell: React.FC = () => {
@@ -77,9 +110,24 @@ export const AppShell: React.FC = () => {
   const authToken = token || '';
   const userRole = user?.role || '';
 
-  const [activePage, setActivePage] = useState<PageId>(() => {
-    return user?.role === 'QueueManager' ? 'opd-queue' : 'dashboard';
-  });
+  // The active page is derived from the URL rather than held in component
+  // state, so every screen is linkable, bookmarkable and reachable with the
+  // browser's Back button. The activePage / onNavigate interface below is
+  // unchanged, so Sidebar, breadcrumbs and the command palette are untouched.
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const activePage = pageIdFromPath(
+    location.pathname,
+    user?.role === 'QueueManager' ? 'opd-queue' : 'dashboard',
+  );
+
+  const setActivePage = useCallback(
+    (page: PageId, options?: { replace?: boolean }) => {
+      navigate(pathForPageId(page), { replace: options?.replace ?? false });
+    },
+    [navigate],
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
@@ -94,12 +142,21 @@ export const AppShell: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Redirect QueueManager back to opd-queue if they are on another page
+  // Normalise bare "/" (and any unrecognised path) to the landing page for the
+  // signed-in role, so the address bar always names the screen on display.
+  useEffect(() => {
+    if (pathForPageId(activePage) !== location.pathname) {
+      setActivePage(activePage, { replace: true });
+    }
+  }, [activePage, location.pathname, setActivePage]);
+
+  // Redirect QueueManager back to opd-queue if they are on another page.
+  // Replaces rather than pushes, so Back does not bounce them around.
   useEffect(() => {
     if (userRole === 'QueueManager' && activePage !== 'opd-queue') {
-      setActivePage('opd-queue');
+      setActivePage('opd-queue', { replace: true });
     }
-  }, [userRole, activePage]);
+  }, [userRole, activePage, setActivePage]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -116,9 +173,12 @@ export const AppShell: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleNavigate = useCallback((page: PageId) => {
-    setActivePage(page);
-  }, []);
+  const handleNavigate = useCallback(
+    (page: PageId) => {
+      setActivePage(page);
+    },
+    [setActivePage],
+  );
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev);
@@ -163,7 +223,11 @@ export const AppShell: React.FC = () => {
       case 'ipd-admissions':
         return <AdmissionDeskScreen authToken={authToken} />;
       case 'ward-console':
-        return <WardStaffScreen authToken={authToken} userRole={userRole} />;
+        return <WardStaffScreen authToken={authToken} userRole={userRole} onNavigate={handleNavigate} />;
+      case 'laboratory':
+        return <LabWorkbenchScreen authToken={authToken} userRole={userRole} />;
+      case 'therapy':
+        return <TherapyConsoleScreen authToken={authToken} userRole={userRole} />;
       case 'pharmacy':
         return <PharmacyWorkspace authToken={authToken} />;
       case 'inventory':
@@ -172,12 +236,20 @@ export const AppShell: React.FC = () => {
         return <ExpiryManagementScreen authToken={authToken} />;
       case 'supply-chain':
         return <ProcurementScreen authToken={authToken} />;
+      case 'patient-ledger':
+        return <PatientLedgerScreen authToken={authToken} />;
       case 'billing':
         return <BillingScreen authToken={authToken} />;
+      case 'service-pricing':
+        return <ServicePricingScreen authToken={authToken} />;
       case 'facility-rules':
         return <FacilityRulesScreen authToken={authToken} />;
       case 'analytics':
-        return <DashboardPage />;
+        return <AnalyticsScreen authToken={authToken} />;
+      case 'reports':
+        return <ReportsScreen authToken={authToken} />;
+      case 'rbac-management':
+        return <RbacManagementScreen authToken={authToken} />;
       case 'system-config':
         return <SystemConfigScreen authToken={authToken} />;
       default:
@@ -300,6 +372,18 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
     keywords: ['ward', 'bed', 'nurse', 'nursing'],
   },
   {
+    id: 'laboratory',
+    label: 'Laboratory',
+    group: 'Clinical',
+    keywords: ['lab', 'sample', 'test', 'pathology', 'report'],
+  },
+  {
+    id: 'therapy',
+    label: 'Therapy & Massage',
+    group: 'Clinical',
+    keywords: ['therapy', 'massage', 'ayurveda', 'panchakarma', 'session', 'course'],
+  },
+  {
     id: 'pharmacy',
     label: 'Dispensing',
     group: 'Pharmacy',
@@ -324,16 +408,34 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
     keywords: ['procurement', 'purchase', 'order', 'grn'],
   },
   {
-    id: 'billing',
-    label: 'Billing',
+    id: 'patient-ledger',
+    label: 'Patient Ledger',
     group: 'Finance',
-    keywords: ['bill', 'receipt', 'payment', 'revenue'],
+    keywords: ['ledger', 'billing', 'receipt', 'payment', 'outstanding', 'charges', 'collect'],
+  },
+  {
+    id: 'billing',
+    label: 'Pharmacy Counter',
+    group: 'Finance',
+    keywords: ['bill', 'receipt', 'payment', 'revenue', 'pharmacy', 'dispense', 'counter'],
   },
   {
     id: 'analytics',
     label: 'Analytics',
     group: 'Admin',
     keywords: ['analytics', 'report', 'chart', 'statistics'],
+  },
+  {
+    id: 'reports',
+    label: 'Reports',
+    group: 'Admin',
+    keywords: ['reports', 'csv', 'export', 'download', 'billing report'],
+  },
+  {
+    id: 'rbac-management',
+    label: 'Roles & Permissions',
+    group: 'Admin',
+    keywords: ['rbac', 'roles', 'permissions', 'access', 'security'],
   },
   {
     id: 'facility-rules',

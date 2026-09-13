@@ -1,20 +1,19 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body } from '@nestjs/common';
 import { DoctorService } from './doctor.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { Public } from '../../common/decorators/public.decorator';
+import { RequirePermission } from '../../common/decorators/permissions.decorator';
 
 @Controller('doctors')
 export class DoctorController {
   constructor(private readonly doctorService: DoctorService) {}
 
   @Get()
-  @Public()
+  @RequirePermission('Doctor', 'read')
   async findAll() {
     return this.doctorService.findAllDoctors();
   }
 
   @Post()
-  @Public() // Or apply specific guard if needed, but keeping simple for demo
+  @RequirePermission('Doctor', 'create')
   async createDoctor(
     @Body()
     body: {

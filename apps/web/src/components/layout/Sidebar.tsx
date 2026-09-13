@@ -15,12 +15,17 @@ import {
   Truck,
   Receipt,
   Shield,
+  IndianRupee,
   BarChart3,
   Settings,
   LogOut,
   ChevronLeft,
   ChevronDown,
   ChevronRight,
+  Microscope,
+  Activity,
+  Download,
+  Lock,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════
@@ -38,21 +43,27 @@ export type PageId =
   | 'doctor-schedule'
   | 'ipd-admissions'
   | 'ward-console'
+  | 'laboratory'
+  | 'therapy'
   | 'pharmacy'
   | 'inventory'
   | 'expiry-fefo'
   | 'supply-chain'
   | 'billing'
+  | 'patient-ledger'
   | 'facility-rules'
+  | 'service-pricing'
   | 'analytics'
-  | 'system-config'
-  | 'system-status';
+  | 'reports'
+  | 'rbac-management'
+  | 'system-config';
 
 interface MenuItem {
   id: PageId;
   label: string;
   icon: React.ElementType;
   roles: string[];
+  description?: string;
 }
 
 interface MenuGroup {
@@ -114,7 +125,22 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'ward-console',
         label: 'Ward Console',
         icon: Building2,
-        roles: ['Nurse', 'SuperAdmin', 'Administrator'],
+        // Doctor holds Admission:approve (discharge) and can already reach
+        // this screen's discharge action once here — the nav item was
+        // missing, so there was no way to click through to it.
+        roles: ['Nurse', 'Doctor', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'laboratory',
+        label: 'Laboratory',
+        icon: Microscope,
+        roles: ['LabTechnician', 'Pathologist', 'Doctor', 'SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'therapy',
+        label: 'Therapy & Massage',
+        icon: Activity,
+        roles: ['Doctor', 'Nurse', 'SuperAdmin', 'Administrator'],
       },
     ],
   },
@@ -151,16 +177,30 @@ const MENU_GROUPS: MenuGroup[] = [
     title: 'Finance',
     items: [
       {
+        id: 'patient-ledger',
+        label: 'Patient Ledger',
+        icon: IndianRupee,
+        roles: ['Reception', 'AdmissionDesk', 'SuperAdmin', 'Administrator'],
+        description: 'Central multi-department patient accounts and unified billing ledger',
+      },
+      {
         id: 'billing',
-        label: 'Billing',
+        label: 'Pharmacy Counter',
         icon: Receipt,
         roles: ['Pharmacist', 'SuperAdmin', 'Administrator'],
+        description: 'Point-of-dispense medicine bills and pharmacy receipts',
       },
     ],
   },
   {
     title: 'Administration',
     items: [
+      {
+        id: 'service-pricing',
+        label: 'Service Pricing',
+        icon: IndianRupee,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
       {
         id: 'facility-rules',
         label: 'Facility Rules',
@@ -171,6 +211,18 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'analytics',
         label: 'Analytics',
         icon: BarChart3,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'reports',
+        label: 'Reports',
+        icon: Download,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'rbac-management',
+        label: 'Roles & Permissions',
+        icon: Lock,
         roles: ['SuperAdmin', 'Administrator'],
       },
       {
@@ -293,7 +345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <button
                         key={item.id}
                         onClick={() => onNavigate(item.id)}
-                        title={collapsed ? item.label : undefined}
+                        title={collapsed ? item.label : (item.description || undefined)}
                         className={`
                           w-full flex items-center gap-3 sidebar-item-transition relative
                           ${collapsed ? 'justify-center px-2 py-2.5 mx-auto' : 'px-5 py-2'}

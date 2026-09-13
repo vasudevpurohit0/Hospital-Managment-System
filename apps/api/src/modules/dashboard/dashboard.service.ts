@@ -61,26 +61,28 @@ export class DashboardService {
       this.prisma.purchaseRequisition.count({ where: { status: 'PENDING' } }),
       this.prisma.purchaseRequisition.count({ where: { status: 'APPROVED' } }),
       this.prisma.purchaseOrder.count({ where: { status: { in: ['ISSUED', 'DISPATCHED'] } } }),
-      this.prisma.billingTransaction.count(),
-      this.prisma.billingTransaction.count({ where: { outcome: 'PAID' } }),
+      // Reads ChargeItem, not the retired BillingTransaction: pharmacy (and
+      // every other module) has posted charges there exclusively since P2 —
+      // BillingTransaction stopped growing, so counting it here would have
+      // frozen this whole section at its pre-P2 values.
+      this.prisma.chargeItem.count({ where: { status: { not: 'CANCELLED' } } }),
+      this.prisma.chargeItem.count({ where: { status: 'PAID' } }),
       this.prisma.auditLog.count(),
       this.prisma.admission.groupBy({
         by: ['eligibleCategory'],
         where: { status: { in: ['ALLOCATED', 'UNDER_TREATMENT'] } },
         _count: { _all: true },
       }),
-      this.prisma.billingTransaction.count({
+      this.prisma.chargeItem.count({
         where: {
-          prescriptionItem: {
-            prescription: { visit: { employee: { employmentType: { code: 'PERMANENT' } } } },
-          },
+          status: { not: 'CANCELLED' },
+          visit: { employee: { employmentType: { code: 'PERMANENT' } } },
         },
       }),
-      this.prisma.billingTransaction.count({
+      this.prisma.chargeItem.count({
         where: {
-          prescriptionItem: {
-            prescription: { visit: { employee: { employmentType: { code: 'CONTRACTUAL' } } } },
-          },
+          status: { not: 'CANCELLED' },
+          visit: { employee: { employmentType: { code: 'CONTRACTUAL' } } },
         },
       }),
       this.prisma.auditLog.findMany({

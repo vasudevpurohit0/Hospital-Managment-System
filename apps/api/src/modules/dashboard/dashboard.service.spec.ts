@@ -18,13 +18,17 @@ describe('DashboardService (Phase 14 — Admin Dashboard & Analytics)', () => {
     medicineBatch: { count: jest.fn().mockResolvedValue(4) },
     purchaseRequisition: { count: jest.fn().mockResolvedValue(2) },
     purchaseOrder: { count: jest.fn().mockResolvedValue(3) },
-    billingTransaction: {
+    // As of P7, billing metrics read ChargeItem (the live ledger) rather than
+    // the retired BillingTransaction table — see the comment in
+    // dashboard.service.ts on why counting the old table would have frozen
+    // this section at its pre-P2 values.
+    chargeItem: {
       count: jest
         .fn()
-        .mockResolvedValueOnce(86) // totalBillingTransactions
-        .mockResolvedValueOnce(24) // paidBillingTransactions
-        .mockResolvedValueOnce(65) // permanentTransactionCount
-        .mockResolvedValueOnce(35), // contractualTransactionCount
+        .mockResolvedValueOnce(86) // totalCharges
+        .mockResolvedValueOnce(24) // paidCharges
+        .mockResolvedValueOnce(65) // permanentChargeCount
+        .mockResolvedValueOnce(35), // contractualChargeCount
     },
     auditLog: {
       count: jest.fn().mockResolvedValue(12),

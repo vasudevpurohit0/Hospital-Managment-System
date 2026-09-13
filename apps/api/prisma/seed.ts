@@ -1,5 +1,7 @@
 import { PrismaClient, EmploymentTypeCode, FacilityCategory, RoomType, BedStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { seedCatalog } from './seeds/catalog.seed';
+import { seedLabCatalog } from './seeds/lab-catalog.seed';
 
 const prisma = new PrismaClient();
 
@@ -15,33 +17,23 @@ export const SYSTEM_ROLES = [
   'Administrator',
   'SuperAdmin',
   'QueueManager',
+  'LabTechnician',
+  'Pathologist',
 ] as const;
 
 export type SystemRoleName = (typeof SYSTEM_ROLES)[number];
 
-export async function main() {
-  console.log('🌱 Starting database seed...');
+export interface PermissionGrant {
+  roleName: SystemRoleName;
+  resource: string;
+  action: string;
+}
 
-  // 1. Seed System Roles & Permissions
-  const roleMap: Record<string, string> = {};
-
-  for (const roleName of SYSTEM_ROLES) {
-    const role = await prisma.role.upsert({
-      where: { name: roleName },
-      update: { isSystemRole: true },
-      create: {
-        name: roleName,
-        isSystemRole: true,
-      },
-    });
-
-    roleMap[roleName] = role.id;
-    console.log(`  ✓ Role: ${roleName} (${role.id})`);
-  }
-
-  // 2. Define Permissions per Role
-  // DataEntryOperator is strictly scoped to Employee create/update only (FR-SEC-13)
-  const permissionsData: { roleName: SystemRoleName; resource: string; action: string }[] = [
+// Every permission grant seeded into the database, keyed by role. This is
+// the single source of truth for "who can do what" — the RBAC matrix test
+// (src/common/guards/rbac-matrix.spec.ts) imports it directly rather than
+// re-deriving it, so the two can never drift apart silently.
+export const PERMISSION_GRANTS: PermissionGrant[] = [
     // --- DataEntryOperator (Demographic CRUD only) ---
     { roleName: 'DataEntryOperator', resource: 'Employee', action: 'create' },
     { roleName: 'DataEntryOperator', resource: 'Employee', action: 'read' },
@@ -57,9 +49,21 @@ export async function main() {
     { roleName: 'Reception', resource: 'Visit', action: 'read' },
     { roleName: 'Reception', resource: 'OPDVisit', action: 'create' },
     { roleName: 'Reception', resource: 'OPDVisit', action: 'read' },
+    { roleName: 'Reception', resource: 'Charge', action: 'read' },
+    { roleName: 'Reception', resource: 'Receipt', action: 'create' },
+    { roleName: 'Reception', resource: 'Receipt', action: 'read' },
+    // Reception assigns patients to a doctor at OPD registration (found
+    // unauthenticated — GET/POST /doctors were @Public() — during the P8 RBAC audit).
+    { roleName: 'Reception', resource: 'Doctor', action: 'read' },
+    // Direct-Therapy patients (entry point 1) book at Registration with no
+    // doctor involved — Reception needs to open/schedule that therapy
+    // episode itself, though marking a session performed stays with Nurse.
+    { roleName: 'Reception', resource: 'TherapySession', action: 'create' },
+    { roleName: 'Reception', resource: 'TherapySession', action: 'read' },
 
     // --- Doctor ---
     { roleName: 'Doctor', resource: 'Employee', action: 'read' },
+    { roleName: 'Doctor', resource: 'Doctor', action: 'read' },
     { roleName: 'Doctor', resource: 'Visit', action: 'read' },
     { roleName: 'Doctor', resource: 'OPDVisit', action: 'read' },
     { roleName: 'Doctor', resource: 'Diagnosis', action: 'create' },
@@ -70,6 +74,15 @@ export async function main() {
     { roleName: 'Doctor', resource: 'Admission', action: 'create' }, // Recommendation stub
     { roleName: 'Doctor', resource: 'Admission', action: 'read' },
     { roleName: 'Doctor', resource: 'Admission', action: 'approve' }, // Discharge approval
+    { roleName: 'Doctor', resource: 'Charge', action: 'read' },
+    // A doctor orders investigations (Feature 6); lab staff never do.
+    { roleName: 'Doctor', resource: 'LabTest', action: 'read' },
+    { roleName: 'Doctor', resource: 'LabOrder', action: 'create' },
+    { roleName: 'Doctor', resource: 'LabOrder', action: 'read' },
+    { roleName: 'Doctor', resource: 'LabReport', action: 'read' },
+    // A doctor orders/schedules therapy (Feature 7); a nurse marks it performed.
+    { roleName: 'Doctor', resource: 'TherapySession', action: 'create' },
+    { roleName: 'Doctor', resource: 'TherapySession', action: 'read' },
 
     // --- AdmissionDesk ---
     { roleName: 'AdmissionDesk', resource: 'Employee', action: 'read' },
@@ -77,13 +90,23 @@ export async function main() {
     { roleName: 'AdmissionDesk', resource: 'Admission', action: 'create' },
     { roleName: 'AdmissionDesk', resource: 'Admission', action: 'read' },
     { roleName: 'AdmissionDesk', resource: 'Admission', action: 'update' },
+    { roleName: 'AdmissionDesk', resource: 'Admission', action: 'transfer' },
+    { roleName: 'AdmissionDesk', resource: 'Charge', action: 'read' },
+    { roleName: 'AdmissionDesk', resource: 'Receipt', action: 'create' },
+    { roleName: 'AdmissionDesk', resource: 'Receipt', action: 'read' },
+    { roleName: 'AdmissionDesk', resource: 'Doctor', action: 'read' },
 
     // --- Nurse ---
     { roleName: 'Nurse', resource: 'Employee', action: 'read' },
+    { roleName: 'Nurse', resource: 'Doctor', action: 'read' },
     { roleName: 'Nurse', resource: 'Visit', action: 'read' },
     { roleName: 'Nurse', resource: 'Admission', action: 'read' },
+    { roleName: 'Nurse', resource: 'Admission', action: 'transfer' },
     { roleName: 'Nurse', resource: 'AdmissionNote', action: 'create' },
     { roleName: 'Nurse', resource: 'AdmissionNote', action: 'read' },
+    { roleName: 'Nurse', resource: 'Charge', action: 'read' },
+    { roleName: 'Nurse', resource: 'TherapySession', action: 'read' },
+    { roleName: 'Nurse', resource: 'TherapySession', action: 'update' }, // mark performed
 
     // --- Pharmacist ---
     { roleName: 'Pharmacist', resource: 'Employee', action: 'read' },
@@ -91,6 +114,8 @@ export async function main() {
     { roleName: 'Pharmacist', resource: 'StockTransaction', action: 'dispense' },
     { roleName: 'Pharmacist', resource: 'StockTransaction', action: 'read' },
     { roleName: 'Pharmacist', resource: 'MedicineBatch', action: 'read' },
+    { roleName: 'Pharmacist', resource: 'Charge', action: 'read' },
+    { roleName: 'Pharmacist', resource: 'Receipt', action: 'read' },
 
     // --- StoreManager ---
     { roleName: 'StoreManager', resource: 'Inventory', action: 'create' },
@@ -115,6 +140,11 @@ export async function main() {
     { roleName: 'Administrator', resource: 'Employee', action: 'create' },
     { roleName: 'Administrator', resource: 'Employee', action: 'read' },
     { roleName: 'Administrator', resource: 'Employee', action: 'update' },
+    { roleName: 'Administrator', resource: 'Doctor', action: 'read' },
+    // Onboarding a doctor creates a real login-capable account, so it is kept
+    // to Administrator only, not handed to Reception/DataEntryOperator alongside
+    // plain Employee:create.
+    { roleName: 'Administrator', resource: 'Doctor', action: 'create' },
     { roleName: 'Administrator', resource: 'HospitalUID', action: 'create' },
     { roleName: 'Administrator', resource: 'HospitalUID', action: 'read' },
     { roleName: 'Administrator', resource: 'Inventory', action: 'create' },
@@ -143,6 +173,7 @@ export async function main() {
     { roleName: 'Administrator', resource: 'Admission', action: 'read' },
     { roleName: 'Administrator', resource: 'Admission', action: 'update' },
     { roleName: 'Administrator', resource: 'Admission', action: 'approve' },
+    { roleName: 'Administrator', resource: 'Admission', action: 'transfer' },
     { roleName: 'Administrator', resource: 'AdmissionNote', action: 'create' },
     { roleName: 'Administrator', resource: 'AdmissionNote', action: 'read' },
     { roleName: 'Administrator', resource: 'Medicine', action: 'create' },
@@ -159,15 +190,123 @@ export async function main() {
     { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'create' },
     { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'read' },
     { roleName: 'Administrator', resource: 'Approval', action: 'approve' },
+    // Administrator no longer bypasses the RbacGuard (only SuperAdmin does), so
+    // every endpoint it must reach needs an explicit grant. These two were
+    // previously reachable only through that bypass.
+    { roleName: 'Administrator', resource: 'Billing', action: 'read' },
+    { roleName: 'Administrator', resource: 'BrandingConfig', action: 'update' },
+    // Service catalogue and pricing. Setting a rate is an administrative act:
+    // no operational role holds ServicePrice:create, so the staff who bill a
+    // service cannot decide what it costs.
+    { roleName: 'Administrator', resource: 'Service', action: 'create' },
+    { roleName: 'Administrator', resource: 'Service', action: 'read' },
+    { roleName: 'Administrator', resource: 'Service', action: 'update' },
+    { roleName: 'Administrator', resource: 'ServicePrice', action: 'create' },
+    { roleName: 'Administrator', resource: 'ServicePrice', action: 'read' },
+    // The unified charge ledger and receipting (Phase 2). Administrator gets
+    // full oversight and can act as a payment-collection backstop; setting a
+    // rate (ServicePrice above) remains the only pricing-adjacent action a
+    // charge-issuing role never receives.
+    { roleName: 'Administrator', resource: 'Charge', action: 'read' },
+    { roleName: 'Administrator', resource: 'Charge', action: 'create' },
+    { roleName: 'Administrator', resource: 'Charge', action: 'cancel' },
+    { roleName: 'Administrator', resource: 'Receipt', action: 'create' },
+    { roleName: 'Administrator', resource: 'Receipt', action: 'read' },
+    // Oversight of the laboratory: configuration and read-only visibility.
+    // Administrator deliberately cannot enter or verify a clinical result.
+    { roleName: 'Administrator', resource: 'LabTest', action: 'create' },
+    { roleName: 'Administrator', resource: 'LabTest', action: 'read' },
+    { roleName: 'Administrator', resource: 'LabTest', action: 'update' },
+    { roleName: 'Administrator', resource: 'LabOrder', action: 'create' },
+    { roleName: 'Administrator', resource: 'LabOrder', action: 'read' },
+    { roleName: 'Administrator', resource: 'LabReport', action: 'read' },
+    { roleName: 'Administrator', resource: 'TherapySession', action: 'read' },
+    // Administrator can also book a Direct-Therapy episode at Registration,
+    // same non-clinical booking capability as Reception.
+    { roleName: 'Administrator', resource: 'TherapySession', action: 'create' },
+    // Feature 12/13: analytics and the report centre are administrative
+    // oversight, not clinical or operational action.
+    { roleName: 'Administrator', resource: 'Analytics', action: 'read' },
+    { roleName: 'Administrator', resource: 'Report', action: 'generate' },
+    { roleName: 'Administrator', resource: 'RbacConfig', action: 'read' },
+    { roleName: 'Administrator', resource: 'RbacConfig', action: 'update' },
+
+    // --- Service catalogue read access ---
+    // Ordering or billing a service requires knowing it exists and what it
+    // costs. None of these roles may create or change a rate.
+    { roleName: 'Doctor', resource: 'Service', action: 'read' },
+    { roleName: 'Reception', resource: 'Service', action: 'read' },
+    { roleName: 'Nurse', resource: 'Service', action: 'read' },
+    { roleName: 'AdmissionDesk', resource: 'Service', action: 'read' },
+    { roleName: 'Pharmacist', resource: 'Service', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'Service', action: 'read' },
+    { roleName: 'Pathologist', resource: 'Service', action: 'read' },
 
     // --- SuperAdmin (Wildcard / all permissions) ---
     { roleName: 'SuperAdmin', resource: '*', action: '*' },
 
+    // --- LabTechnician (accessions samples and enters results) ---
+    // Deliberately cannot verify or release: a technician's entry is never the
+    // final report. Enforced here and in the laboratory service layer.
+    { roleName: 'LabTechnician', resource: 'Employee', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'Visit', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'LabTest', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'LabOrder', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'LabOrder', action: 'update' },
+    { roleName: 'LabTechnician', resource: 'LabSample', action: 'create' },
+    { roleName: 'LabTechnician', resource: 'LabSample', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'LabResult', action: 'create' },
+    { roleName: 'LabTechnician', resource: 'LabResult', action: 'read' },
+    { roleName: 'LabTechnician', resource: 'LabResult', action: 'update' },
+    { roleName: 'LabTechnician', resource: 'LabReport', action: 'read' },
+
+    // --- Pathologist (verifies results and releases reports) ---
+    { roleName: 'Pathologist', resource: 'Employee', action: 'read' },
+    { roleName: 'Pathologist', resource: 'Visit', action: 'read' },
+    { roleName: 'Pathologist', resource: 'LabTest', action: 'read' },
+    { roleName: 'Pathologist', resource: 'LabTest', action: 'update' },
+    { roleName: 'Pathologist', resource: 'LabOrder', action: 'read' },
+    { roleName: 'Pathologist', resource: 'LabOrder', action: 'update' },
+    { roleName: 'Pathologist', resource: 'LabSample', action: 'create' },
+    { roleName: 'Pathologist', resource: 'LabSample', action: 'read' },
+    { roleName: 'Pathologist', resource: 'LabResult', action: 'create' },
+    { roleName: 'Pathologist', resource: 'LabResult', action: 'read' },
+    { roleName: 'Pathologist', resource: 'LabResult', action: 'update' },
+    { roleName: 'Pathologist', resource: 'LabResult', action: 'verify' },
+    { roleName: 'Pathologist', resource: 'LabReport', action: 'create' },
+    { roleName: 'Pathologist', resource: 'LabReport', action: 'read' },
+    { roleName: 'Pathologist', resource: 'LabReport', action: 'release' },
+
     // --- QueueManager (OPD Queue operations) ---
     { roleName: 'QueueManager', resource: 'Employee', action: 'read' },
+    { roleName: 'QueueManager', resource: 'Doctor', action: 'read' },
     { roleName: 'QueueManager', resource: 'Visit', action: 'read' },
     { roleName: 'QueueManager', resource: 'OPDVisit', action: 'read' },
-  ];
+];
+
+export async function main() {
+  console.log('🌱 Starting database seed...');
+
+  // 1. Seed System Roles & Permissions
+  const roleMap: Record<string, string> = {};
+
+  for (const roleName of SYSTEM_ROLES) {
+    const role = await prisma.role.upsert({
+      where: { name: roleName },
+      update: { isSystemRole: true },
+      create: {
+        name: roleName,
+        isSystemRole: true,
+      },
+    });
+
+    roleMap[roleName] = role.id;
+    console.log(`  ✓ Role: ${roleName} (${role.id})`);
+  }
+
+  // 2. Define Permissions per Role
+  // DataEntryOperator is strictly scoped to Employee create/update only (FR-SEC-13)
+  const permissionsData = PERMISSION_GRANTS;
 
   for (const perm of permissionsData) {
     const roleId = roleMap[perm.roleName];
@@ -187,7 +326,7 @@ export async function main() {
       },
     });
   }
-  console.log(`  ✓ Seeded permissions for all 10 roles`);
+  console.log(`  ✓ Seeded permissions for all ${SYSTEM_ROLES.length} roles`);
 
   // 3. Seed Employment Types
   const permanentType = await prisma.employmentType.upsert({
@@ -753,6 +892,42 @@ export async function main() {
 
   console.log(`  ✓ Seeded QueueManager user: queuemanager@esic.gov.in (${queueManagerUser.id})`);
 
+  const labTechPasswordHash = await bcrypt.hash('LabTechPass123!', 10);
+  const labTechUser = await prisma.user.upsert({
+    where: { identifier: 'labtech@esic.gov.in' },
+    update: {
+      passwordHash: labTechPasswordHash,
+      roleId: roleMap['LabTechnician'],
+      active: true,
+    },
+    create: {
+      identifier: 'labtech@esic.gov.in',
+      passwordHash: labTechPasswordHash,
+      roleId: roleMap['LabTechnician'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded LabTechnician user: labtech@esic.gov.in (${labTechUser.id})`);
+
+  const pathologistPasswordHash = await bcrypt.hash('PathologistPass123!', 10);
+  const pathologistUser = await prisma.user.upsert({
+    where: { identifier: 'pathologist@esic.gov.in' },
+    update: {
+      passwordHash: pathologistPasswordHash,
+      roleId: roleMap['Pathologist'],
+      active: true,
+    },
+    create: {
+      identifier: 'pathologist@esic.gov.in',
+      passwordHash: pathologistPasswordHash,
+      roleId: roleMap['Pathologist'],
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Seeded Pathologist user: pathologist@esic.gov.in (${pathologistUser.id})`);
+
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   // 6. Seed Doctor Profiles (Replacing Fake Patients)
   const doctorsData = [
@@ -1002,6 +1177,12 @@ export async function main() {
   });
 
   console.log(`  ✓ Seeded Procurement Master (Suppliers, Purchase Requisitions & Issued Purchase Orders)`);
+
+  // 13. Seed Service Catalogue & Pricing Master (Phase 1)
+  await seedCatalog(prisma);
+
+  // 14. Seed Laboratory Test Master (Phase 3)
+  await seedLabCatalog(prisma);
 
   console.log('✅ Seed completed successfully!');
 }

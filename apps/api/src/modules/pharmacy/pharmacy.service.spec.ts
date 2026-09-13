@@ -2,6 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PharmacyService } from './pharmacy.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { BenefitRuleService } from '../benefit/benefit-rule.service';
+import { ProcurementService } from '../procurement/procurement.service';
+import { ChargeService } from '../billing/charge.service';
+import { ReceiptService } from '../billing/receipt.service';
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { StockStatus, BenefitOutcome } from '@prisma/client';
 
@@ -35,12 +38,27 @@ describe('PharmacyService', () => {
     evaluate: jest.fn().mockResolvedValue(BenefitOutcome.COVERED),
   };
 
+  const mockProcurementService = {
+    checkAndTriggerLowStockRequisition: jest.fn().mockResolvedValue(null),
+  };
+
+  const mockChargeService = {
+    postPharmacyCharge: jest.fn().mockResolvedValue({ id: 'charge-1', status: 'PENDING' }),
+  };
+
+  const mockReceiptService = {
+    issue: jest.fn().mockResolvedValue({ id: 'receipt-1' }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PharmacyService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: BenefitRuleService, useValue: mockBenefitRuleService },
+        { provide: ProcurementService, useValue: mockProcurementService },
+        { provide: ChargeService, useValue: mockChargeService },
+        { provide: ReceiptService, useValue: mockReceiptService },
       ],
     }).compile();
 
@@ -141,6 +159,7 @@ describe('PharmacyService', () => {
       currentStock: 50,
       stockStatus: StockStatus.IN_STOCK,
       expiryDate: new Date('2027-01-01'),
+      issuePrice: 10,
     });
 
     mockPrismaService.medicineBatch.update.mockResolvedValue({

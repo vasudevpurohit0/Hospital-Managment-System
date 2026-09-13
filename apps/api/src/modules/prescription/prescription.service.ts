@@ -2,12 +2,18 @@ import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nest
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { PrescriptionStatus, AdmissionStatus } from '@prisma/client';
+import { LabService } from '../laboratory/lab.service';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 
 @Injectable()
 export class PrescriptionService {
   private readonly logger = new Logger(PrescriptionService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private labService: LabService,
+    private sequences: DocumentSequenceService,
+  ) {}
 
   /**
    * Create Draft Prescription with Diagnosis, PrescriptionItems, and LabOrders
@@ -50,17 +56,10 @@ export class PrescriptionService {
         include: { items: true },
       });
 
-      // 3. Create LabOrders if specified
-      if (dto.labTests && dto.labTests.length > 0) {
-        for (const testName of dto.labTests) {
-          await tx.labOrder.create({
-            data: {
-              visitId: dto.visitId,
-              testName,
-              orderedBy: doctorId,
-            },
-          });
-        }
+      // 3. Order lab tests, grouped under one Lab Order (Feature 6), if any
+      // were selected from the Lab Test Master.
+      if (dto.labTestIds && dto.labTestIds.length > 0) {
+        await this.labService.orderTests({ visitId: dto.visitId, labTestIds: dto.labTestIds }, doctorId, tx);
       }
 
       return { diagnosis, prescription };
@@ -145,6 +144,7 @@ export class PrescriptionService {
           const admissionStub = await tx.admission.create({
             data: {
               visitId: rx.visitId,
+              admissionNumber: await this.sequences.next('IPD_NUMBER', tx),
               status: AdmissionStatus.REQUESTED,
               eligibleCategory: 'C',
             },

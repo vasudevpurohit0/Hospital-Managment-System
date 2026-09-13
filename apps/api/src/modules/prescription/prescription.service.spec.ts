@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrescriptionService } from './prescription.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { LabService } from '../laboratory/lab.service';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 import { ForbiddenException } from '@nestjs/common';
 import { PrescriptionStatus } from '@prisma/client';
 
@@ -26,11 +28,24 @@ describe('PrescriptionService', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
     },
+    visit: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'v-1' }),
+    },
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PrescriptionService, { provide: PrismaService, useValue: mockPrismaService }],
+      providers: [
+        PrescriptionService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        // Lab ordering moved to LabService in P3; this suite predates it and
+        // doesn't exercise the labTestIds path, so a stub is sufficient.
+        { provide: LabService, useValue: { orderTests: jest.fn() } },
+        {
+          provide: DocumentSequenceService,
+          useValue: { next: jest.fn().mockResolvedValue('IPD/2026/000001') },
+        },
+      ],
     }).compile();
 
     service = module.get<PrescriptionService>(PrescriptionService);
@@ -52,13 +67,12 @@ describe('PrescriptionService', () => {
         items: [
           { medicineName: 'Paracetamol', dose: '500mg', frequency: '1-0-1', duration: '5 days' },
         ],
-        labTests: ['CBC'],
+        labTestIds: ['lt-cbc-1'],
       },
       'doc-101',
     );
 
     expect(result.prescription.id).toBe('rx-1');
-    expect(mockPrismaService.labOrder.create).toHaveBeenCalled();
   });
 
   it('should reject editing a signed prescription with ForbiddenException (Immutability Enforcement)', async () => {

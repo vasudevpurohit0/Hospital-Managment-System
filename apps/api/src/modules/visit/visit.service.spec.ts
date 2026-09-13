@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { VisitService } from './visit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 import { VisitType, VisitStatus } from '@prisma/client';
 
 describe('VisitService', () => {
@@ -15,11 +16,19 @@ describe('VisitService', () => {
       create: jest.fn(),
       findMany: jest.fn(),
     },
+    admission: {
+      findFirst: jest.fn(),
+      create: jest.fn().mockResolvedValue({ id: 'adm-1' }),
+    },
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [VisitService, { provide: PrismaService, useValue: mockPrismaService }],
+      providers: [
+        VisitService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: DocumentSequenceService, useValue: { next: jest.fn().mockResolvedValue('IPD/2026/000001') } },
+      ],
     }).compile();
 
     service = module.get<VisitService>(VisitService);

@@ -45,6 +45,7 @@ export interface PatientProfileResponse {
   hospitalUid: string | null;
   qrDataUrl: string | null;
   name: string;
+  photoUrl: string | null;
   department: string;
   post: string;
   grade: string;
@@ -197,6 +198,8 @@ export async function createPatientVisit(
     type: 'OPD' | 'IPD' | 'EMERGENCY';
     departmentId?: string;
     doctorId?: string;
+    /** 'THERAPY' registers a patient who came specifically for therapy/massage — no OPD token, no consultation charge. Defaults to 'OPD_CONSULTATION'. */
+    visitPurpose?: 'OPD_CONSULTATION' | 'THERAPY';
     ignoreOpenVisitWarning?: boolean;
   },
   token?: string,

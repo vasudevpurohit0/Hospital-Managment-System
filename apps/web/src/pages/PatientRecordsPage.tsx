@@ -9,6 +9,7 @@ import {
 import { Badge } from '../components/ui/Badge';
 import { searchPatients, getPatientMasterRecord, updatePatientProfile } from '../api/patient.api';
 import { fetchDepartments, Department } from '../api/opd.api';
+import { downloadStatementPdf } from '../api/ledger.api';
 
 /* ═══════════════════════════════════════════════════════════
    Patient Master / Central Records Module
@@ -694,24 +695,44 @@ export const PatientRecordsPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* TAB CONTENT: BILLING SUMMARY */}
+                {/* TAB CONTENT: BILLING SUMMARY — every figure below is a real
+                    ChargeItem/Receipt aggregate (ChargeService.patientLedger),
+                    the same source the Patient Ledger screen reads. */}
                 {activeTab === 'billing' && (
                   <div className="space-y-4 text-xs">
-                    <h3 className="font-bold text-xs text-[var(--color-text-primary)] border-b border-[var(--color-border)] pb-2">Billing Breakdown & Transactions</h3>
-                    
+                    <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
+                      <h3 className="font-bold text-xs text-[var(--color-text-primary)]">Billing Breakdown & Transactions</h3>
+                      <button
+                        onClick={() => downloadStatementPdf(detailData.personalInfo.employeeId, authToken)}
+                        className="btn btn-secondary btn-sm text-[11px] gap-1.5 py-1"
+                      >
+                        📄 Download Statement PDF
+                      </button>
+                    </div>
+
                     <div className="space-y-2 bg-[var(--color-surface-secondary)] p-3.5 rounded-lg border border-[var(--color-border)]">
                       <div className="flex justify-between py-1 border-b border-white/[0.08]">
-                        <span className="text-[var(--color-text-secondary)]">OPD Consultation Charges (₹150/visit)</span>
+                        <span className="text-[var(--color-text-secondary)]">Consultation</span>
                         <span className="font-semibold font-mono">₹{detailData.billingSummary.consultation}.00</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-white/[0.08]">
-                        <span className="text-[var(--color-text-secondary)]">Pharmacy Dispensation cost</span>
+                        <span className="text-[var(--color-text-secondary)]">Pharmacy</span>
                         <span className="font-semibold font-mono">₹{detailData.billingSummary.pharmacy}.00</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-white/[0.08]">
-                        <span className="text-[var(--color-text-secondary)]">Lab Diagnostics fee (₹200/order)</span>
+                        <span className="text-[var(--color-text-secondary)]">Laboratory</span>
                         <span className="font-semibold font-mono">₹{detailData.billingSummary.lab}.00</span>
                       </div>
+                      <div className="flex justify-between py-1 border-b border-white/[0.08]">
+                        <span className="text-[var(--color-text-secondary)]">Therapy & Massage</span>
+                        <span className="font-semibold font-mono">₹{detailData.billingSummary.therapy}.00</span>
+                      </div>
+                      {Number(detailData.billingSummary.other) > 0 && (
+                        <div className="flex justify-between py-1 border-b border-white/[0.08]">
+                          <span className="text-[var(--color-text-secondary)]">Other (IPD accommodation, procedures)</span>
+                          <span className="font-semibold font-mono">₹{detailData.billingSummary.other}.00</span>
+                        </div>
+                      )}
                       <div className="flex justify-between py-1.5 font-bold text-[13px] border-t border-[var(--color-border)] pt-2 text-[var(--color-text-primary)]">
                         <span>Total Invoice Amount</span>
                         <span className="font-mono">₹{detailData.billingSummary.total}.00</span>

@@ -13,9 +13,10 @@ import {
   PrescriptionItemStatus,
   StockStatus,
   StockTransactionType,
-  BenefitOutcome,
 } from '@prisma/client';
 import { ProcurementService } from '../procurement/procurement.service';
+import { ChargeService } from '../billing/charge.service';
+import { ReceiptService } from '../billing/receipt.service';
 
 @Injectable()
 export class PharmacyService {
@@ -25,6 +26,8 @@ export class PharmacyService {
     private prisma: PrismaService,
     private benefitRuleService: BenefitRuleService,
     private procurementService: ProcurementService,
+    private chargeService: ChargeService,
+    private receiptService: ReceiptService,
   ) {}
 
   /**
@@ -134,6 +137,11 @@ export class PharmacyService {
 
       const totalItems = rxData.items.length;
       let dispensedItemCount = 0;
+      // PAID-outcome charges from this dispense call are batched into ONE
+      // receipt at the end, matching the reference receipt's multi-line
+      // format — the legacy per-item `receiptReference` string could not
+      // represent one receipt covering several medicines.
+      const paidChargeIds: string[] = [];
 
       for (const payloadItem of dto.items) {
         const rxItem = rxData.items.find((i: any) => i.id === payloadItem.prescriptionItemId);
@@ -202,25 +210,38 @@ export class PharmacyService {
           },
         });
 
-        // Same-transaction BillingTransaction creation (Phase 13)
-        const isPaid = outcome === BenefitOutcome.PAID;
-        const totalAmount = isPaid
-          ? payloadItem.dispenseQuantity * Number(batch.issuePrice)
-          : null;
-        const rcptRef = isPaid
-          ? `RCPT-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`
-          : null;
-
-        await tx.billingTransaction.create({
-          data: {
+        // Charge posts in the same transaction as the stock deduction, so a
+        // dispensed medicine and its charge can never exist independently of
+        // one another (Feature 17 — no orphan billing records).
+        const charge = await this.chargeService.postPharmacyCharge(
+          {
+            visitId: rx.visitId,
             prescriptionItemId: rxItem.id,
-            outcome: outcome as BenefitOutcome,
-            amount: totalAmount !== null ? totalAmount : undefined,
-            receiptReference: rcptRef,
+            medicineBatchId: batch.id,
+            quantity: payloadItem.dispenseQuantity,
+            unitRate: batch.issuePrice,
+            benefitOutcome: outcome,
+            medicineName: rxItem.medicineName,
+            actorUserId: userId,
           },
-        });
+          tx,
+        );
+
+        if (charge.status === 'PENDING') {
+          paidChargeIds.push(charge.id);
+        }
 
         dispensedItemCount++;
+      }
+
+      // One receipt for every PAID-outcome medicine dispensed in this call.
+      // FREE/COVERED charges settle immediately with no money to collect and
+      // never reach this list.
+      if (paidChargeIds.length > 0) {
+        await this.receiptService.issue(
+          { chargeIds: paidChargeIds, collectedById: userId },
+          tx,
+        );
       }
 
       const newRxStatus =

@@ -1,13 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BillingService } from './billing.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { BenefitOutcome } from '@prisma/client';
+import { BenefitOutcome, ChargeStatus } from '@prisma/client';
 
-describe('BillingService (Phase 13 — Billing & Benefit Ledger)', () => {
+/**
+ * As of P2, this screen reads ChargeItem rather than the retired
+ * BillingTransaction table — see the class doc on BillingService for why it
+ * stays scoped to pharmacy-origin charges rather than becoming the unified
+ * ledger. These tests were rewritten accordingly; the old mocks against
+ * `prisma.billingTransaction` no longer describe how this service works.
+ */
+describe('BillingService (Phase 13 → P2 — pharmacy billing screen)', () => {
   let service: BillingService;
 
   const mockPrisma: any = {
-    billingTransaction: {
+    chargeItem: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
@@ -27,54 +34,69 @@ describe('BillingService (Phase 13 — Billing & Benefit Ledger)', () => {
     expect(service).toBeDefined();
   });
 
-  it('findAllTransactions should return billing ledger entries with patient and prescription details', async () => {
-    mockPrisma.billingTransaction.findMany.mockResolvedValue([
+  it('findAllTransactions scopes to pharmacy-origin charges and returns the legacy-compatible shape', async () => {
+    mockPrisma.chargeItem.findMany.mockResolvedValue([
       {
-        id: 'tx-01',
-        outcome: BenefitOutcome.PAID,
-        amount: 150.0,
-        receiptReference: 'RCPT-2026-001',
+        id: 'charge-01',
+        prescriptionItemId: 'rxitem-01',
+        benefitOutcome: BenefitOutcome.PAID,
+        netAmount: { toString: () => '150' } as any,
+        grossAmount: { toString: () => '150' } as any,
+        discountAmount: { toString: () => '0' } as any,
+        quantity: { toString: () => '1' } as any,
+        unitRate: { toString: () => '150' } as any,
+        description: 'Paracetamol 500mg',
+        categoryName: 'Pharmacy',
+        status: ChargeStatus.PENDING,
         createdAt: new Date().toISOString(),
-        prescriptionItem: {
-          medicineName: 'Paracetamol 500mg',
-        },
+        receipt: null,
+        prescriptionItem: { medicineName: 'Paracetamol 500mg' },
       },
     ]);
 
     const res = await service.findAllTransactions();
+
+    expect(mockPrisma.chargeItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { prescriptionItemId: { not: null } } }),
+    );
     expect(res).toHaveLength(1);
-    expect(res[0].id).toBe('tx-01');
+    expect(res[0].id).toBe('charge-01');
     expect(res[0].outcome).toBe(BenefitOutcome.PAID);
+    // Superset fields the legacy shape never carried.
+    expect(res[0].netAmount).toBe('150');
+    expect(res[0].status).toBe(ChargeStatus.PENDING);
   });
 
-  it('getReceipt should construct printable receipt structure', async () => {
-    mockPrisma.billingTransaction.findUnique.mockResolvedValue({
-      id: 'tx-01',
-      outcome: BenefitOutcome.PAID,
-      amount: 150.0,
-      receiptReference: 'RCPT-2026-001',
+  it('getReceipt takes a ChargeItem id (what the frontend has always sent) and renders the print shape', async () => {
+    mockPrisma.chargeItem.findUnique.mockResolvedValue({
+      id: 'charge-01',
+      benefitOutcome: BenefitOutcome.PAID,
+      netAmount: { toString: () => '150', valueOf: () => 150 } as any,
+      description: 'Paracetamol 500mg',
+      status: ChargeStatus.PAID,
       createdAt: new Date().toISOString(),
-      prescriptionItem: {
-        medicineName: 'Paracetamol 500mg',
-        dose: '1 tab',
-        frequency: 'TDS',
-        duration: '5 days',
-        prescription: {
-          visit: {
-            employee: {
-              employeeId: 'EMP-9001',
-              employmentType: { name: 'Contractual' },
-              patientProfile: { fullName: 'Rajesh Kumar' },
-            },
-          },
+      prescriptionItem: { dose: '1 tab', frequency: 'TDS', duration: '5 days' },
+      visit: {
+        employee: {
+          employeeId: 'EMP-9001',
+          name: 'Rajesh Kumar',
+          employmentType: { name: 'Contractual' },
+          patientProfile: null,
         },
       },
+      receipt: { receiptNumber: 'RCPT/2026/000001' },
     });
 
-    const receipt = await service.getReceipt('tx-01');
-    expect(receipt.receiptReference).toBe('RCPT-2026-001');
+    const receipt = await service.getReceipt('charge-01');
+
+    expect(receipt.receiptReference).toBe('RCPT/2026/000001');
     expect(receipt.patientName).toBe('Rajesh Kumar');
-    expect(receipt.amountCharged).toBe(150.0);
+    expect(receipt.amountCharged).toBe(150);
     expect(receipt.status).toBe('PAID & ISSUED');
+  });
+
+  it('getReceipt throws when the charge does not exist', async () => {
+    mockPrisma.chargeItem.findUnique.mockResolvedValue(null);
+    await expect(service.getReceipt('missing')).rejects.toThrow('Billing transaction not found');
   });
 });

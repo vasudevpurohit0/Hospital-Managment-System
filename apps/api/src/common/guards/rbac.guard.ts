@@ -31,12 +31,13 @@ export class RbacGuard implements CanActivate {
       throw new ForbiddenException('Access denied: unauthenticated or missing user role');
     }
 
-    // SuperAdmin & Administrator bypass role/permission checks
-    if (
-      user.roleName === 'SuperAdmin' ||
-      user.roleName === 'Administrator' ||
-      user.roleName === 'Admin'
-    ) {
+    // SuperAdmin is the only role that bypasses role and permission checks.
+    //
+    // Administrator previously bypassed as well, which made it indistinguishable
+    // from SuperAdmin and meant permission grants could not be reasoned about
+    // for the role most widely handed out. Administrator now carries explicit
+    // permission rows (see prisma/seed.ts) and is evaluated like any other role.
+    if (user.roleName === 'SuperAdmin') {
       return true;
     }
 

@@ -39,8 +39,14 @@ export class CreatePrescriptionDto {
   @Type(() => CreatePrescriptionItemDto)
   items: CreatePrescriptionItemDto[] = [];
 
+  /**
+   * Lab Test Master ids (P3). Previously free-text names, one LabOrder per
+   * name — replaced so investigations resolve to real catalogue tests
+   * (Feature 6) instead of unmatched strings, and group under one Lab Order
+   * the way a doctor actually orders them.
+   */
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  labTests?: string[];
+  labTestIds?: string[];
 }

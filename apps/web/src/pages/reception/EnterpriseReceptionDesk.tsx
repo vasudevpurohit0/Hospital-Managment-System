@@ -13,13 +13,28 @@ import {
   Ticket,
   Sparkles,
   CreditCard,
+  X as XIcon,
 } from 'lucide-react';
+
+/** lucide-react's shipped type declarations for this version omit several
+ * icon names (Camera included) even though they exist at runtime, so this
+ * one is a small inline SVG instead of fighting the type mismatch. */
+const CameraIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+    />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
 import {
-  verifyEmployeeId,
   VerifiedEmployeeData,
   RegistrationResponse,
 } from '../../api/employee.api';
-import { registerPatient } from '../../api/patient.api';
+import { registerPatient, verifyEmployee, getPatientByEmployeeId } from '../../api/patient.api';
 import {
   lookupPatientByUid,
   createVisit,
@@ -34,6 +49,8 @@ import {
   OPDVisitRecord,
 } from '../../api/opd.api';
 import { fetchDashboardMetrics, DashboardMetrics } from '../../api/dashboard.api';
+import { fetchServices, ServiceListItem } from '../../api/catalog.api';
+import { openTherapyCourse, scheduleTherapySession } from '../../api/therapy.api';
 import { PatientWorkspace } from '../PatientWorkspace';
 
 /* ═══════════════════════════════════════════════════════════
@@ -109,8 +126,48 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [existingPatient, setExistingPatient] = useState<any | null>(null);
 
   /* Form Fields */
-  const [careType, setCareType] = useState<'OPD' | 'IPD'>('OPD');
+  const [careType, setCareType] = useState<'OPD' | 'IPD' | 'THERAPY'>('OPD');
+
+  /* ── Therapy / Course selection — chosen directly in the initial
+     Registration form (entry point 1), not as a separate step afterward. ── */
+  const [therapyServices, setTherapyServices] = useState<ServiceListItem[]>([]);
+  const [selectedTherapyServiceId, setSelectedTherapyServiceId] = useState('');
+  const [therapyPlannedSessions, setTherapyPlannedSessions] = useState(1);
+
+  useEffect(() => {
+    if (careType === 'THERAPY') {
+      fetchServices({ serviceType: 'THERAPY', active: true, limit: 100 }, authToken)
+        .then((res) => setTherapyServices(res.items))
+        .catch(() => {});
+    }
+  }, [careType, authToken]);
+
+  const selectedTherapyService = therapyServices.find((s) => s.id === selectedTherapyServiceId);
+
+  /**
+   * Books the therapy/course chosen on the form against the just-opened
+   * visit, in the same submit as registration — no separate "Select
+   * Therapy / Course" step afterward. Returns a short status string reused
+   * as the success view's "Token" line, the same slot IPD already reuses
+   * for its own descriptive (non-token) status.
+   */
+  const bookSelectedTherapy = async (visitId: string): Promise<string> => {
+    if (!selectedTherapyService) {
+      throw new Error('Select a therapy or course before continuing.');
+    }
+    if (selectedTherapyService.unit === 'COURSE') {
+      await openTherapyCourse(
+        { visitId, serviceId: selectedTherapyService.id, plannedSessions: therapyPlannedSessions },
+        authToken,
+      );
+      return `Course Opened: ${selectedTherapyService.name}`;
+    }
+    await scheduleTherapySession({ visitId, serviceId: selectedTherapyService.id }, authToken);
+    return `Session Scheduled: ${selectedTherapyService.name}`;
+  };
+
   const [photoUrl, setPhotoUrl] = useState<string>('');
+  const [showCameraModal, setShowCameraModal] = useState(false);
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
@@ -158,6 +215,8 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     setPassExpiryMode('days');
     setPassExpiryDays('30');
     setPassExpiryDate('');
+    setSelectedTherapyServiceId('');
+    setTherapyPlannedSessions(1);
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,7 +241,14 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     resetVerificationState();
 
     try {
-      const res = await verifyEmployeeId(employeeIdInput.trim(), authToken);
+      // Bug fix: this used to call /api/employees/verify (EmployeeVerificationService),
+      // a legacy verification path that never checks for an existing patient at all —
+      // existingPatient was always undefined, so the "patient already registered"
+      // branch below never ran. Registration/verify-employee (PatientService) does
+      // the same Labour Dept check but also reports existingPatient, letting an
+      // already-registered patient continue straight to a new visit/service instead
+      // of hitting the ALREADY_REGISTERED conflict only at final submission.
+      const res = await verifyEmployee(employeeIdInput.trim(), authToken);
       if (res.status === 'VERIFIED' && res.verifiedData) {
         setVerifiedData(res.verifiedData);
         setContactPhone(res.verifiedData.contactPhone || '');
@@ -231,14 +297,26 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     if (e) e.preventDefault();
     if (!employeeIdInput.trim() || registering) return;
 
+    // Therapy/Massage selects its therapy or course right here on the
+    // initial form — validate it up front, before creating anything, the
+    // same way the OPD department picker is implicitly required by the
+    // browser's native <select required>.
+    if (careType === 'THERAPY' && !selectedTherapyServiceId) {
+      setRegistrationError('Select a therapy or course before continuing.');
+      return;
+    }
+
     setRegistering(true);
     setRegistrationError(null);
 
     try {
       if (existingPatient) {
-        // Patient already exists, create new Visit
+        // Patient already exists, create new Visit. Therapy books against a
+        // bare OPD-typed visit (VisitType has no THERAPY value) — what makes
+        // it a Direct-Therapy visit is simply that no OPDVisit token gets
+        // created for it below, which TherapyService reads back later.
         const visitRes = await createVisit(
-          { employeeId: existingPatient.id, type: careType },
+          { employeeId: existingPatient.id, type: careType === 'THERAPY' ? 'OPD' : careType },
           authToken,
         );
 
@@ -251,34 +329,58 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             setIssuedToken(opdRes.tokenNumber);
           } else if (careType === 'IPD') {
             setIssuedToken('IPD-ADMISSION-REQUESTED');
+          } else if (careType === 'THERAPY') {
+            // Booked in this same submit — no separate "Select Therapy /
+            // Course" step afterward.
+            setIssuedToken(await bookSelectedTherapy(visitRes.visit.id));
           }
         }
 
-        const mockResult: any = {
+        // Load the patient's actual saved record rather than reconstructing
+        // an approximation from Labour Dept verifiedData — the point of
+        // continuing an existing patient is that their previously saved
+        // information (photo, post/grade at registration, etc.) loads as-is.
+        let savedRecord: Awaited<ReturnType<typeof getPatientByEmployeeId>> | null = null;
+        try {
+          savedRecord = await getPatientByEmployeeId(existingPatient.employeeId, authToken);
+        } catch {
+          // Fall back to the minimal fields already known from verification below.
+        }
+
+        setRegistrationResult({
           status: 'REGISTERED',
           employee: {
             id: existingPatient.id,
             employeeId: existingPatient.employeeId,
-            name: existingPatient.name,
-            department: verifiedData?.department || '',
-            post: { title: verifiedData?.postTitle || 'Officer' },
-            grade: { payLevel: verifiedData?.gradePayLevel || 'Pay Level 4' },
+            name: savedRecord?.name || existingPatient.name,
+            department: savedRecord?.department || verifiedData?.department || '',
+            post: { title: savedRecord?.post || verifiedData?.postTitle || 'Officer' },
+            grade: { payLevel: savedRecord?.grade || verifiedData?.gradePayLevel || 'Pay Level 4' },
             employmentType: {
-              code: verifiedData?.employmentTypeCode || 'PERMANENT',
-              name: verifiedData?.employmentTypeCode === 'CONTRACTUAL' ? 'Contractual Employee' : 'Permanent Employee',
+              code: savedRecord?.employmentType || verifiedData?.employmentTypeCode || 'PERMANENT',
+              name:
+                savedRecord?.employmentTypeName ||
+                (verifiedData?.employmentTypeCode === 'CONTRACTUAL' ? 'Contractual Employee' : 'Permanent Employee'),
             },
           },
           hospitalUid: {
-            uidCode: existingPatient.hospitalUid,
+            uidCode: savedRecord?.hospitalUid || existingPatient.hospitalUid || 'UHID-REG',
+            issuedAt: existingPatient.registeredAt,
           },
           patientProfile: {
-            photoUrl: null,
+            photoUrl: savedRecord?.photoUrl || null,
           },
-        };
-        setRegistrationResult(mockResult);
+        });
 
         if (issuePass) {
-          setPassData(generatePassData(existingPatient.name, existingPatient.hospitalUid || 'UHID-REG'));
+          setPassData(
+            generatePassData(
+              savedRecord?.name || existingPatient.name,
+              savedRecord?.hospitalUid || existingPatient.hospitalUid || 'UHID-REG',
+              savedRecord?.department,
+              savedRecord?.employmentTypeName,
+            ),
+          );
         }
 
         setActiveWorkflow('success-slip');
@@ -308,7 +410,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
         if (empId) {
           const visitRes = await createVisit(
-            { employeeId: empId, type: careType },
+            { employeeId: empId, type: careType === 'THERAPY' ? 'OPD' : careType },
             authToken,
           );
           if (visitRes.status === 'CREATED' && visitRes.visit) {
@@ -320,6 +422,8 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               setIssuedToken(opdRes.tokenNumber);
             } else if (careType === 'IPD') {
               setIssuedToken('IPD-ADMISSION-REQUESTED');
+            } else if (careType === 'THERAPY') {
+              setIssuedToken(await bookSelectedTherapy(visitRes.visit.id));
             }
           }
         }
@@ -779,8 +883,13 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                         <h3 className="text-xs font-bold uppercase tracking-wider text-primary-700 dark:text-primary-400">
                           Patient Profile & Medical Details Form
                         </h3>
-                        <Badge variant={careType === 'IPD' ? 'warning' : 'info'}>
-                          Selected Mode: {careType === 'IPD' ? '🏥 IPD Emergency Admission' : '🩺 OPD Consultation'}
+                        <Badge variant={careType === 'IPD' ? 'warning' : careType === 'THERAPY' ? 'success' : 'info'}>
+                          Selected Mode:{' '}
+                          {careType === 'IPD'
+                            ? '🏥 IPD Emergency Admission'
+                            : careType === 'THERAPY'
+                              ? '💆 Therapy / Massage'
+                              : '🩺 OPD Consultation'}
                         </Badge>
                       </div>
 
@@ -789,7 +898,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                         <label className="text-xs font-bold text-primary-900 block">
                           Care & Service Classification *
                         </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                           <button
                             type="button"
                             onClick={() => setCareType('OPD')}
@@ -825,8 +934,74 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                               </span>
                             </div>
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setCareType('THERAPY')}
+                            className={`p-3 rounded-lg border text-left flex items-start gap-2.5 transition-all ${
+                              careType === 'THERAPY'
+                                ? 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-sm ring-2 ring-emerald-500/20'
+                                : 'bg-gray-50/70 border-gray-200 text-gray-600 hover:bg-white'
+                            }`}
+                          >
+                            <span className="text-lg">💆</span>
+                            <div>
+                              <span className="font-bold block text-emerald-900">Therapy / Massage</span>
+                              <span className="text-[11px] text-emerald-700/90 block">
+                                Direct therapy visit — no OPD consultation or IPD admission required.
+                              </span>
+                            </div>
+                          </button>
                         </div>
                       </div>
+
+                      {/* Select Therapy / Course — chosen right here in the initial
+                          Registration form, for both new and existing patients, so
+                          there is no separate step after the visit opens. */}
+                      {careType === 'THERAPY' && (
+                        <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/10 dark:border-emerald-900 space-y-2">
+                          <label className="text-xs font-bold text-emerald-900 dark:text-emerald-300 block">
+                            Select Therapy / Course *
+                          </label>
+                          <select
+                            value={selectedTherapyServiceId}
+                            onChange={(e) => setSelectedTherapyServiceId(e.target.value)}
+                            className="input text-xs py-2 w-full"
+                            required
+                          >
+                            <option value="">-- Select from Therapy &amp; Massage Catalogue --</option>
+                            {therapyServices.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name} {s.currentPrice ? `— ₹${s.currentPrice}` : '(unpriced — administrator must set a rate)'} [{s.unit}]
+                              </option>
+                            ))}
+                          </select>
+
+                          {selectedTherapyService?.unit === 'COURSE' && (
+                            <div>
+                              <label className="text-xs font-semibold text-emerald-900 dark:text-emerald-300 block mb-1">
+                                Planned Sessions in Course
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={60}
+                                value={therapyPlannedSessions}
+                                onChange={(e) => setTherapyPlannedSessions(Number(e.target.value))}
+                                className="input text-xs py-1.5 w-32"
+                              />
+                            </div>
+                          )}
+
+                          {selectedTherapyService && (
+                            <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+                              {selectedTherapyService.unit === 'COURSE'
+                                ? `Bills the full course rate once${selectedTherapyService.currentPrice ? ` — ₹${selectedTherapyService.currentPrice}` : ''} when registration is submitted.`
+                                : `Bills ${selectedTherapyService.currentPrice ? `₹${selectedTherapyService.currentPrice}` : 'once priced'} when the therapist marks the session performed.`}
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       {/* Photo Upload */}
                       {!existingPatient && (
@@ -870,18 +1045,28 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                             )}
 
                             <div className="space-y-1 flex-1">
-                              <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100 cursor-pointer inline-flex items-center gap-1.5 transition-colors">
-                                <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                </svg>
-                                <span>{photoUrl ? 'Change Patient Photo' : 'Upload / Capture Photo'}</span>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={handlePhotoUpload}
-                                  className="hidden"
-                                />
-                              </label>
+                              <div className="flex flex-wrap gap-2">
+                                <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 hover:bg-primary-100 cursor-pointer inline-flex items-center gap-1.5 transition-colors">
+                                  <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                  </svg>
+                                  <span>{photoUrl ? 'Change Photo' : 'Upload Photo'}</span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handlePhotoUpload}
+                                    className="hidden"
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCameraModal(true)}
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 inline-flex items-center gap-1.5 transition-colors"
+                                >
+                                  <CameraIcon className="w-4 h-4 text-emerald-600" />
+                                  <span>Capture from Camera</span>
+                                </button>
+                              </div>
                               <p className="text-[10px] text-gray-500 dark:text-gray-400">
                                 Sourced for Patient Record & 30-Day Gate Visitor Pass
                               </p>
@@ -893,23 +1078,25 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                       {!existingPatient && (
                         <>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                            <div>
-                              <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
-                                Initial OPD Department *
-                              </label>
-                              <select
-                                value={selectedDeptId}
-                                onChange={(e) => setSelectedDeptId(e.target.value)}
-                                className="input text-xs font-semibold py-2 w-full"
-                                required
-                              >
-                                {departments.map((d) => (
-                                  <option key={d.id} value={d.id}>
-                                    {d.name} ({d.code})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
+                            {careType !== 'THERAPY' && (
+                              <div>
+                                <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
+                                  Initial OPD Department *
+                                </label>
+                                <select
+                                  value={selectedDeptId}
+                                  onChange={(e) => setSelectedDeptId(e.target.value)}
+                                  className="input text-xs font-semibold py-2 w-full"
+                                  required
+                                >
+                                  {departments.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                      {d.name} ({d.code})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
 
                             <div>
                               <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
@@ -1156,25 +1343,33 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                       </button>
                       <button
                         type="submit"
-                        disabled={registering}
-                        className={`btn btn-lg gap-2 border-none px-6 text-white ${
+                        disabled={registering || (careType === 'THERAPY' && !selectedTherapyServiceId)}
+                        className={`btn btn-lg gap-2 border-none px-6 text-white disabled:opacity-50 ${
                           careType === 'IPD'
                             ? 'bg-amber-600 hover:bg-amber-700'
-                            : 'bg-secondary-500 hover:bg-secondary-600'
+                            : careType === 'THERAPY'
+                              ? 'bg-emerald-600 hover:bg-emerald-700'
+                              : 'bg-secondary-500 hover:bg-secondary-600'
                         }`}
                       >
                         <Sparkles className="w-5 h-5" />
                         {registering
                           ? existingPatient
-                            ? 'Processing Visit...'
+                            ? careType === 'THERAPY'
+                              ? 'Booking Therapy...'
+                              : 'Processing Visit...'
                             : 'Registering Patient...'
                           : existingPatient
                             ? careType === 'IPD'
                               ? 'Create IPD Admission Request'
-                              : 'Create OPD Visit & Issue Token'
+                              : careType === 'THERAPY'
+                                ? 'Create Therapy Visit & Book Session'
+                                : 'Create OPD Visit & Issue Token'
                             : careType === 'IPD'
                               ? 'Submit Form & Request IPD Bed Allocation'
-                              : 'Submit Form & Issue Hospital UID + OPD Token'}
+                              : careType === 'THERAPY'
+                                ? 'Register Patient & Book Therapy Session'
+                                : 'Submit Form & Issue Hospital UID + OPD Token'}
                       </button>
                     </div>
                   </form>
@@ -1754,6 +1949,93 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {showCameraModal && (
+        <CameraCaptureModal
+          onCapture={(dataUrl) => {
+            setPhotoUrl(dataUrl);
+            setShowCameraModal(false);
+          }}
+          onClose={() => setShowCameraModal(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+/**
+ * Direct camera patient photo capture (Feature 10) — a live video preview
+ * with a single Capture button that snapshots the current frame to a data
+ * URL, the same shape the file-upload path already produces, so it feeds
+ * straight into the existing `photoUrl` state and registration payload.
+ */
+const CameraCaptureModal: React.FC<{ onCapture: (dataUrl: string) => void; onClose: () => void }> = ({
+  onCapture,
+  onClose,
+}) => {
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      })
+      .catch(() => setError('Could not access the camera. Check browser permissions and try again.'));
+
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const handleCapture = () => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    onCapture(canvas.toDataURL('image/jpeg', 0.9));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4">
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <CameraIcon className="w-4 h-4 text-emerald-600" /> Capture Patient Photo
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-4 space-y-3">
+          {error ? (
+            <p className="text-sm text-red-600 text-center py-8">{error}</p>
+          ) : (
+            <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-lg bg-black aspect-[4/3]" />
+          )}
+          <button
+            type="button"
+            onClick={handleCapture}
+            disabled={!!error}
+            className="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            <CameraIcon className="w-4 h-4" /> Capture Photo
+          </button>
         </div>
       </div>
     </div>

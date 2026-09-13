@@ -180,3 +180,132 @@ export async function disposeBatch(
   }
   return res.json();
 }
+
+export interface MedicineImportItem {
+  rowNum: number;
+  genericName: string;
+  brandName?: string;
+  category: string;
+  strength: string;
+  dosageForm: string;
+  status: 'VALID' | 'DUPLICATE_FILE' | 'DUPLICATE_EXISTING' | 'INVALID';
+  reason: string;
+}
+
+export interface MedicineImportValidationResult {
+  totalRows: number;
+  validRows: number;
+  duplicateRows: number;
+  invalidRows: number;
+  items: MedicineImportItem[];
+  validItems: Array<{
+    genericName: string;
+    brandName?: string;
+    category: string;
+    strength: string;
+    dosageForm: string;
+  }>;
+  rejectedItems: MedicineImportItem[];
+}
+
+export interface MedicineImportConfirmResult {
+  importedCount: number;
+  skippedCount: number;
+  message: string;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
+export async function downloadMedicineTemplate(token?: string): Promise<void> {
+  const res = await apiFetch('/api/inventory/medicines/template', {}, token);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || 'Failed to download medicine import template');
+  }
+  const blob = await res.blob();
+  downloadBlob(blob, 'medicine_import_template.xlsx');
+}
+
+export async function validateMedicineImport(
+  file: File,
+  token?: string,
+): Promise<MedicineImportValidationResult> {
+  const fileBase64 = await fileToBase64(file);
+  const res = await apiFetch(
+    '/api/inventory/medicines/import/validate',
+    {
+      method: 'POST',
+      body: JSON.stringify({ fileBase64 }),
+    },
+    token,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Validation failed for medicine import file');
+  }
+  return res.json();
+}
+
+export async function confirmMedicineImport(
+  items: Array<{
+    genericName: string;
+    brandName?: string;
+    category: string;
+    strength: string;
+    dosageForm: string;
+  }>,
+  token?: string,
+): Promise<MedicineImportConfirmResult> {
+  const res = await apiFetch(
+    '/api/inventory/medicines/import/confirm',
+    {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    },
+    token,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to import medicines into Medicine Master');
+  }
+  return res.json();
+}
+
+export async function downloadImportErrorReport(
+  rejectedItems: MedicineImportItem[],
+  token?: string,
+): Promise<void> {
+  const res = await apiFetch(
+    '/api/inventory/medicines/import/error-report',
+    {
+      method: 'POST',
+      body: JSON.stringify({ rejectedItems }),
+    },
+    token,
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || 'Failed to download error report');
+  }
+  const blob = await res.blob();
+  downloadBlob(blob, 'medicine_import_errors.xlsx');
+}
+

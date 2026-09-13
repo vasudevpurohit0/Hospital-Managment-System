@@ -1,6 +1,9 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { SequenceModule } from './common/sequence/sequence.module';
+import { RenderingModule } from './common/rendering/rendering.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { EmployeeModule } from './modules/employee/employee.module';
@@ -14,9 +17,15 @@ import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProcurementModule } from './modules/procurement/procurement.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
+import { LaboratoryModule } from './modules/laboratory/laboratory.module';
+import { TherapyModule } from './modules/therapy/therapy.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { UserModule } from './modules/user/user.module';
 import { PatientModule } from './modules/patient/patient.module';
+import { RbacAdminModule } from './modules/rbac-admin/rbac-admin.module';
 import { BrandingController } from './modules/auth/branding.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RbacGuard } from './common/guards/rbac.guard';
@@ -25,7 +34,10 @@ import { SecurityMiddleware } from './common/middleware/security.middleware';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     PrismaModule,
+    SequenceModule,
+    RenderingModule,
     HealthModule,
     AuthModule,
     EmployeeModule,
@@ -40,8 +52,14 @@ import { SecurityMiddleware } from './common/middleware/security.middleware';
     InventoryModule,
     ProcurementModule,
     BillingModule,
+    CatalogModule,
+    LaboratoryModule,
+    TherapyModule,
+    AnalyticsModule,
+    ReportsModule,
     DashboardModule,
     UserModule,
+    RbacAdminModule,
   ],
   controllers: [BrandingController],
   providers: [

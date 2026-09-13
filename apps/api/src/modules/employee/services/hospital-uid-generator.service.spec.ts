@@ -7,7 +7,7 @@ describe('HospitalUidGeneratorService', () => {
 
   const mockPrismaService = {
     hospitalUID: {
-      count: jest.fn(),
+      findFirst: jest.fn(),
     },
   };
 
@@ -24,7 +24,7 @@ describe('HospitalUidGeneratorService', () => {
   });
 
   it('should generate UID formatted as ESIC-YYYY-000001 for first issuance of the year', async () => {
-    mockPrismaService.hospitalUID.count.mockResolvedValue(0);
+    mockPrismaService.hospitalUID.findFirst.mockResolvedValue(null);
 
     const year = new Date().getFullYear();
     const uid = await service.generateUid();
@@ -33,9 +33,9 @@ describe('HospitalUidGeneratorService', () => {
   });
 
   it('should increment sequence number correctly', async () => {
-    mockPrismaService.hospitalUID.count.mockResolvedValue(42);
-
     const year = new Date().getFullYear();
+    mockPrismaService.hospitalUID.findFirst.mockResolvedValue({ uidCode: `ESIC-${year}-000042` });
+
     const uid = await service.generateUid();
 
     expect(uid).toBe(`ESIC-${year}-000043`);

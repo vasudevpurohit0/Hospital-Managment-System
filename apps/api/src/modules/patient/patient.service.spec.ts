@@ -5,6 +5,9 @@ import { LABOUR_DEPT_CLIENT } from '../employee/adapters/labour-dept.client';
 import { HospitalUidGeneratorService } from '../employee/services/hospital-uid-generator.service';
 import { QrCodeService } from '../employee/services/qr-code.service';
 import { OpdTokenGeneratorService } from '../opd/services/opd-token-generator.service';
+import { ChargeService } from '../billing/charge.service';
+import { BenefitRuleService } from '../benefit/benefit-rule.service';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 import { ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { VisitType, VisitStatus, EmploymentTypeCode } from '@prisma/client';
 
@@ -91,6 +94,13 @@ describe('PatientService', () => {
       auditLog: {
         create: jest.fn(),
       },
+      // No consultation service exists in this mock world, so the best-effort
+      // charge-posting added in P2 (OPD_CONSULTATION_SERVICE_CODE lookup)
+      // naturally no-ops here, exactly as it does in production when
+      // CONSULT-GEN is unpriced or absent — no behaviour to additionally mock.
+      service: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
       $transaction: jest.fn().mockImplementation((cb) => cb(prisma)),
     };
 
@@ -114,6 +124,18 @@ describe('PatientService', () => {
         {
           provide: OpdTokenGeneratorService,
           useValue: { generateDailyToken: jest.fn().mockResolvedValue('GENMED-001') },
+        },
+        {
+          provide: ChargeService,
+          useValue: { postServiceChargeIfPriced: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          provide: BenefitRuleService,
+          useValue: { evaluate: jest.fn().mockResolvedValue('COVERED') },
+        },
+        {
+          provide: DocumentSequenceService,
+          useValue: { next: jest.fn().mockResolvedValue('OPD/2026/000001') },
         },
       ],
     }).compile();
@@ -273,10 +295,13 @@ describe('PatientService', () => {
             type: VisitType.OPD,
             status: VisitStatus.CLOSED,
             createdAt: new Date(),
-            opdVisit: { tokenNumber: 'GENMED-001', department: { name: 'General Medicine' } },
+            opdVisit: { tokenNumber: 'GENMED-001', opdNumber: 'OPD/2026/000001', department: { name: 'General Medicine' } },
             diagnoses: [{ id: 'diag-1', diagnosisText: 'Viral Fever' }],
             prescriptions: [{ id: 'rx-1', status: 'SIGNED', items: [] }],
             labOrders: [],
+            therapySessions: [],
+            therapyCourses: [],
+            chargeItems: [],
             admissions: [],
           },
         ],

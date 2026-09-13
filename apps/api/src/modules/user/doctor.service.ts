@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 @Injectable()
@@ -52,10 +54,14 @@ export class DoctorService {
         doctorRole = await tx.role.create({ data: { name: 'Doctor', isSystemRole: true } });
       }
 
-      // Generate a hashed password for the new doctor (using bcrypt would be better, but mock it here if bcrypt is not imported, wait we can just use a dummy hash or import bcrypt)
-      // Actually, since we're in a service, we could just put a dummy hash for now, but let's require bcryptjs.
-      const bcrypt = require('bcryptjs');
-      const passwordHash = await bcrypt.hash('DoctorPass123!', 10);
+      // A fresh, random one-time password per account — the previous code used
+      // the literal string "DoctorPass123!" for every doctor ever created here,
+      // which meant every self-service-onboarded doctor shared one publicly
+      // guessable login. It is returned once below so the administrator
+      // creating the account can hand it to the doctor; it is never stored or
+      // logged in plaintext.
+      const temporaryPassword = randomBytes(9).toString('base64url');
+      const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
       const user = await tx.user.create({
         data: {
@@ -110,6 +116,7 @@ export class DoctorService {
         experience: profile.experience,
         timing: profile.timing,
         available: profile.available,
+        temporaryPassword,
       };
     });
   }

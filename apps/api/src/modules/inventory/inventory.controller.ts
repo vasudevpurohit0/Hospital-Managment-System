@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  Res,
+  UseGuards,
+  Req,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { InventoryService } from './inventory.service';
 import { ExpiryScannerService } from './services/expiry-scanner.service';
 import { CreateMedicineDto } from './dto/create-medicine.dto';
@@ -6,6 +19,11 @@ import { CreateBatchDto } from './dto/create-batch.dto';
 import { DisposeBatchDto } from './dto/dispose-batch.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import {
+  generateMedicineTemplateXlsx,
+  generateMedicineErrorReportXlsx,
+  RejectedImportRow,
+} from './excel/medicine-excel.util';
 
 @Controller('inventory')
 @UseGuards(JwtAuthGuard)
@@ -14,6 +32,62 @@ export class InventoryController {
     private readonly inventoryService: InventoryService,
     private readonly expiryScannerService: ExpiryScannerService,
   ) {}
+
+  @Get('medicines/template')
+  @RequirePermission('Medicine', 'create')
+  async downloadTemplate(@Res() res: Response) {
+    const buffer = generateMedicineTemplateXlsx();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="medicine_import_template.xlsx"',
+    );
+    res.send(buffer);
+  }
+
+  @Post('medicines/import/validate')
+  @RequirePermission('Medicine', 'create')
+  async validateImport(@Body() body: { fileBase64: string }) {
+    if (!body?.fileBase64) {
+      throw new BadRequestException('No file data provided.');
+    }
+    const cleanBase64 = body.fileBase64.replace(/^data:.*?;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    return this.inventoryService.validateMedicineImport(buffer);
+  }
+
+  @Post('medicines/import/confirm')
+  @RequirePermission('Medicine', 'create')
+  async confirmImport(@Body() body: { items: CreateMedicineDto[] }) {
+    if (!body?.items || !Array.isArray(body.items)) {
+      throw new BadRequestException('Invalid medicine items payload.');
+    }
+    return this.inventoryService.confirmMedicineImport(body.items);
+  }
+
+  @Post('medicines/import/error-report')
+  @RequirePermission('Medicine', 'create')
+  async downloadErrorReport(
+    @Body() body: { rejectedItems: RejectedImportRow[] },
+    @Res() res: Response,
+  ) {
+    if (!body?.rejectedItems || !Array.isArray(body.rejectedItems)) {
+      throw new BadRequestException('No error items provided.');
+    }
+    const buffer = generateMedicineErrorReportXlsx(body.rejectedItems);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="medicine_import_errors.xlsx"',
+    );
+    res.send(buffer);
+  }
 
   @Get('medicines')
   @RequirePermission('MedicineBatch', 'read')

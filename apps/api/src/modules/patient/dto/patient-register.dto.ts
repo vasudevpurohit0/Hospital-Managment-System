@@ -68,6 +68,9 @@ export class RegisterPatientDto {
   photoUrl?: string;
 }
 
+export const VISIT_PURPOSES = ['OPD_CONSULTATION', 'THERAPY'] as const;
+export type VisitPurpose = (typeof VISIT_PURPOSES)[number];
+
 export class CreatePatientVisitDto {
   @IsString()
   @IsNotEmpty()
@@ -83,6 +86,18 @@ export class CreatePatientVisitDto {
   @IsString()
   @IsOptional()
   doctorId?: string;
+
+  /**
+   * Only meaningful when type is OPD. 'THERAPY' registers a patient who came
+   * specifically for therapy/massage — Registration opens a bare visit with
+   * no OPD token/queue entry and no consultation charge, so the Therapy
+   * module can correctly derive this as a DIRECT-source booking rather than
+   * an OPD consultation. Defaults to 'OPD_CONSULTATION', the existing
+   * behaviour, so every current caller is unaffected.
+   */
+  @IsEnum(VISIT_PURPOSES)
+  @IsOptional()
+  visitPurpose?: VisitPurpose;
 
   @IsBoolean()
   @IsOptional()

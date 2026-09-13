@@ -11,6 +11,9 @@ import { LABOUR_DEPT_CLIENT, LabourDeptClient } from '../employee/adapters/labou
 import { HospitalUidGeneratorService } from '../employee/services/hospital-uid-generator.service';
 import { QrCodeService } from '../employee/services/qr-code.service';
 import { OpdTokenGeneratorService } from '../opd/services/opd-token-generator.service';
+import { ChargeService } from '../billing/charge.service';
+import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
+import { BenefitRuleService } from '../benefit/benefit-rule.service';
 import {
   RegisterPatientDto,
   VerifyEmployeeDto,
@@ -18,7 +21,10 @@ import {
   PatientSearchQueryDto,
   UpdatePatientProfileDto,
 } from './dto/patient-register.dto';
-import { EmploymentTypeCode, VisitType, VisitStatus } from '@prisma/client';
+import { EmploymentTypeCode, VisitType, VisitStatus, Prisma } from '@prisma/client';
+
+/** Kept identical to OpdService's — one consultation charge, wherever an OPD visit is created. */
+const OPD_CONSULTATION_SERVICE_CODE = 'CONSULT-GEN';
 
 @Injectable()
 export class PatientService {
@@ -30,6 +36,9 @@ export class PatientService {
     private uidGenerator: HospitalUidGeneratorService,
     private qrService: QrCodeService,
     private opdTokenGenerator: OpdTokenGeneratorService,
+    private chargeService: ChargeService,
+    private benefitRuleService: BenefitRuleService,
+    private sequences: DocumentSequenceService,
   ) {}
 
   /**
@@ -289,11 +298,27 @@ export class PatientService {
 
     if (query && query.trim()) {
       const q = query.trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q);
+
+      // Feature 11: the same permanent patient must be discoverable through
+      // every identifier the hospital issues — name, UHID, Employee ID,
+      // mobile, OPD/IPD/Lab/Receipt number, queue token, or a raw record id —
+      // never by creating a second record under a different one. Every
+      // branch here resolves back to Employee, so there is no code path that
+      // could turn a search hit into a new patient.
       whereClause.OR = [
         { employeeId: { contains: q, mode: 'insensitive' } },
         { name: { contains: q, mode: 'insensitive' } },
         { contactPhone: { contains: q, mode: 'insensitive' } },
         { hospitalUid: { uidCode: { contains: q, mode: 'insensitive' } } },
+        { visits: { some: { opdVisit: { opdNumber: { equals: q, mode: 'insensitive' } } } } },
+        { visits: { some: { opdVisit: { tokenNumber: { equals: q, mode: 'insensitive' } } } } },
+        { visits: { some: { admissions: { some: { admissionNumber: { equals: q, mode: 'insensitive' } } } } } },
+        { visits: { some: { labOrders: { some: { labNumber: { equals: q, mode: 'insensitive' } } } } } },
+        { visits: { some: { chargeItems: { some: { receipt: { receiptNumber: { equals: q, mode: 'insensitive' } } } } } } },
+        ...(isUuid
+          ? [{ id: q }, { visits: { some: { id: q } } }]
+          : []),
       ];
     }
 
@@ -514,8 +539,14 @@ export class PatientService {
 
       let opdVisitRecord: any = null;
       let tokenNumber: string | null = null;
+      const isDirectTherapyVisit = dto.type === VisitType.OPD && dto.visitPurpose === 'THERAPY';
 
-      if (dto.type === VisitType.OPD) {
+      // A Direct-Therapy registration (Feature: Therapy entry point 1) opens
+      // a bare visit only — no OPD token, no queue entry, no consultation
+      // charge. That absence of an OPDVisit row is exactly what lets
+      // TherapyService derive this later as a DIRECT-source booking rather
+      // than an OPD one.
+      if (dto.type === VisitType.OPD && !isDirectTherapyVisit) {
         let deptId = dto.departmentId;
         let deptCode = 'GENMED';
 
@@ -538,17 +569,42 @@ export class PatientService {
           }
         }
 
-        const generatedToken = await this.opdTokenGenerator.generateDailyToken(deptCode);
+        // Allocate inside the caller's transaction so a failed visit creation
+        // releases the token rather than leaving a gap in the day's numbering.
+        const generatedToken = await this.opdTokenGenerator.generateDailyToken(deptCode, tx);
         tokenNumber = generatedToken;
+
+        // Permanent OPD number, distinct from the daily queue token — kept
+        // identical to OpdService.createOpdVisit.
+        const opdNumber = await this.sequences.next('OPD_NUMBER', tx);
 
         opdVisitRecord = await tx.oPDVisit.create({
           data: {
             visitId: visit.id,
             departmentId: deptId,
             tokenNumber: generatedToken,
+            opdNumber,
           },
           include: { department: true },
         });
+
+        // Best-effort, identical to OpdService.createOpdVisit: CONSULT-GEN has
+        // no rate until an administrator sets one, so this quietly skips
+        // rather than blocking visit creation.
+        const consultationService = await tx.service.findUnique({
+          where: { code: OPD_CONSULTATION_SERVICE_CODE },
+        });
+        if (consultationService) {
+          const empType = employee.employmentTypeId
+            ? await tx.employmentType.findUnique({ where: { id: employee.employmentTypeId } })
+            : null;
+          const outcome = await this.benefitRuleService.evaluate(empType?.code ?? 'PERMANENT');
+          await this.chargeService.postServiceChargeIfPriced(
+            { visitId: visit.id, serviceId: consultationService.id },
+            outcome,
+            tx,
+          );
+        }
       }
 
       await tx.auditLog.create({
@@ -561,6 +617,7 @@ export class PatientService {
           afterSnapshot: {
             employeeId: employee.employeeId,
             visitType: dto.type,
+            visitPurpose: dto.visitPurpose ?? 'OPD_CONSULTATION',
             tokenNumber,
           },
         },
@@ -571,6 +628,7 @@ export class PatientService {
         visit,
         opdVisit: opdVisitRecord,
         tokenNumber,
+        visitPurpose: isDirectTherapyVisit ? 'THERAPY' : 'OPD_CONSULTATION',
       };
     });
   }
@@ -607,14 +665,28 @@ export class PatientService {
             prescriptions: {
               orderBy: { createdAt: 'desc' },
               include: {
-                items: {
-                  include: {
-                    billingTransactions: true,
-                  },
-                },
+                items: true,
               },
             },
-            labOrders: { orderBy: { createdAt: 'desc' } },
+            labOrders: {
+              orderBy: { createdAt: 'desc' },
+              include: {
+                items: { include: { labTest: { select: { name: true, code: true } } } },
+                report: { select: { releasedAt: true, verifiedById: true } },
+              },
+            },
+            therapySessions: {
+              orderBy: { scheduledAt: 'desc' },
+              include: { service: { select: { name: true, code: true } } },
+            },
+            therapyCourses: {
+              orderBy: { startedAt: 'desc' },
+              include: { service: { select: { name: true, code: true } } },
+            },
+            chargeItems: {
+              orderBy: { createdAt: 'desc' },
+              include: { receipt: { select: { receiptNumber: true } } },
+            },
             admissions: {
               orderBy: { requestedAt: 'desc' },
               include: {
@@ -623,6 +695,7 @@ export class PatientService {
                 bed: true,
                 notes: { orderBy: { createdAt: 'desc' } },
                 dischargeSummary: true,
+                locationHistory: { orderBy: { movedAt: 'desc' } },
               },
             },
           },
@@ -636,20 +709,64 @@ export class PatientService {
 
     const patientInfo = this.formatPatientProfileResponse(employee, employee.hospitalUid);
 
-    // Aggregate clinical timeline history
-    const timeline = employee.visits.map((v) => ({
-      visitId: v.id,
-      date: v.createdAt,
-      type: v.type,
-      status: v.status,
-      closedAt: v.closedAt,
-      department: v.opdVisit?.department?.name || 'General Medicine',
-      tokenNumber: v.opdVisit?.tokenNumber || null,
-      diagnoses: v.diagnoses,
-      prescriptions: v.prescriptions,
-      labOrders: v.labOrders,
-      admissions: v.admissions,
-    }));
+    // Aggregate clinical + financial timeline history, per visit. Every
+    // module here (lab, therapy, billing, admission) hangs off Visit and
+    // nothing else — the same structural rule that makes duplicate patients
+    // impossible (Feature 20/21) also guarantees this one query surfaces
+    // everything Feature 5 asks for: clinical AND financial, connected by
+    // the one permanent UHID.
+    const timeline = employee.visits.map((v) => {
+      const grossAmount = v.chargeItems.reduce((a, c) => a.add(c.grossAmount), new Prisma.Decimal(0));
+      const netAmount = v.chargeItems.reduce((a, c) => a.add(c.netAmount), new Prisma.Decimal(0));
+      const outstandingAmount = v.chargeItems
+        .filter((c) => c.status === 'PENDING')
+        .reduce((a, c) => a.add(c.netAmount), new Prisma.Decimal(0));
+
+      return {
+        visitId: v.id,
+        date: v.createdAt,
+        type: v.type,
+        status: v.status,
+        closedAt: v.closedAt,
+        department: v.opdVisit?.department?.name || 'General Medicine',
+        opdNumber: v.opdVisit?.opdNumber ?? null,
+        tokenNumber: v.opdVisit?.tokenNumber || null,
+        diagnoses: v.diagnoses,
+        prescriptions: v.prescriptions,
+        labOrders: v.labOrders.map((lo) => ({
+          id: lo.id,
+          labNumber: lo.labNumber,
+          status: lo.status,
+          priority: lo.priority,
+          tests: lo.items.map((i) => ({ name: i.labTest.name, code: i.labTest.code, status: i.status })),
+          reportReleasedAt: lo.report?.releasedAt ?? null,
+        })),
+        therapySessions: v.therapySessions.map((s) => ({
+          id: s.id,
+          service: s.service.name,
+          status: s.status,
+          scheduledAt: s.scheduledAt,
+          performedAt: s.performedAt,
+        })),
+        therapyCourses: v.therapyCourses.map((c) => ({
+          id: c.id,
+          service: c.service.name,
+          status: c.status,
+          plannedSessions: c.plannedSessions,
+        })),
+        admissions: v.admissions.map((a) => ({
+          ...a,
+          admissionNumber: a.admissionNumber,
+          locationTrail: a.locationHistory,
+        })),
+        financials: {
+          grossAmount: grossAmount.toString(),
+          netAmount: netAmount.toString(),
+          outstandingAmount: outstandingAmount.toString(),
+          chargeCount: v.chargeItems.length,
+        },
+      };
+    });
 
     return {
       patient: patientInfo,
@@ -658,6 +775,8 @@ export class PatientService {
         totalDiagnoses: employee.visits.reduce((acc, v) => acc + v.diagnoses.length, 0),
         totalPrescriptions: employee.visits.reduce((acc, v) => acc + v.prescriptions.length, 0),
         totalAdmissions: employee.visits.reduce((acc, v) => acc + v.admissions.length, 0),
+        totalLabOrders: employee.visits.reduce((acc, v) => acc + v.labOrders.length, 0),
+        totalTherapySessions: employee.visits.reduce((acc, v) => acc + v.therapySessions.length, 0),
       },
       timeline,
     };
@@ -768,7 +887,9 @@ export class PatientService {
       throw new NotFoundException(`Patient not found`);
     }
 
-    // 2. Fetch all visits
+    // 2. Fetch all visits — includes every clinical module (Feature 5), so the
+    // timeline built below in buildTimelineEvents() is real and complete, not
+    // reconstructed from a narrower query.
     const visits = (await this.prisma.visit.findMany({
       where: { employeeId: id },
       orderBy: { createdAt: 'desc' },
@@ -777,14 +898,17 @@ export class PatientService {
           include: { department: true },
         },
         diagnoses: true,
-        labOrders: true,
+        labOrders: {
+          include: {
+            items: { include: { labTest: { select: { name: true, code: true } } } },
+            report: { select: { releasedAt: true } },
+          },
+        },
+        therapySessions: { include: { service: { select: { name: true } } } },
+        therapyCourses: { include: { service: { select: { name: true } } } },
         prescriptions: {
           include: {
-            items: {
-              include: {
-                billingTransactions: true,
-              },
-            },
+            items: true,
           },
         },
       },
@@ -825,6 +949,7 @@ export class PatientService {
 
     const personalInfo = {
       uhid: employee.hospitalUid?.uidCode || '—',
+      employeeId: employee.employeeId,
       name: employee.name,
       age: age !== null ? `${age} Yrs` : '—',
       gender: profile.gender || '—',
@@ -895,42 +1020,39 @@ export class PatientService {
       });
     });
 
-    // 9. Build Billing Summary
-    let consultationCharges = visits.length * 150;
-    let pharmacyCharges = 0;
-    let labCharges = visits.reduce((acc, v) => acc + (v.labOrders?.length || 0) * 200, 0);
+    // 9. Build Billing Summary — 100% real, sourced from the same charge
+    // ledger Feature 3/4's Patient Ledger screen reads (ChargeService.
+    // patientLedger). This used to be invented arithmetic
+    // (visits.length * 150, labOrders.length * 200) plus a read of the
+    // retired BillingTransaction table; neither ever agreed with what a
+    // patient was actually billed or had actually paid. There is exactly one
+    // billing computation in the system now, and every screen that shows a
+    // rupee figure resolves it from here.
+    const ledger = await this.chargeService.patientLedger(employee.employeeId);
+    const categoryBucket = (categoryName: string): 'consultation' | 'pharmacy' | 'lab' | 'therapy' | 'other' => {
+      if (categoryName === 'Consultation') return 'consultation';
+      if (categoryName === 'Pharmacy') return 'pharmacy';
+      if (['Roga Nidan (Pathology)', 'Urine Test', 'Sputum Test', 'Stool Test'].includes(categoryName)) return 'lab';
+      if (['Panchakarma & Ayurvedic Therapy', 'Yoga & Naturopathy'].includes(categoryName)) return 'therapy';
+      return 'other';
+    };
 
-    let totalAmount = consultationCharges + pharmacyCharges + labCharges;
-    let paidAmount = 0;
-    let pendingAmount = totalAmount;
-
-    visits.forEach((v: any) => {
-      v.prescriptions.forEach((p: any) => {
-        p.items.forEach((item: any) => {
-          item.billingTransactions.forEach((t: any) => {
-            const amt = Number(t.amount || 0);
-            pharmacyCharges += amt;
-            if (t.outcome === 'PAID' || t.outcome === 'FREE') {
-              paidAmount += amt;
-            } else {
-              pendingAmount += amt;
-            }
-          });
-        });
-      });
-    });
-
-    totalAmount = consultationCharges + pharmacyCharges + labCharges;
-    pendingAmount = totalAmount - paidAmount;
+    const bucketTotals = { consultation: 0, pharmacy: 0, lab: 0, therapy: 0, other: 0 };
+    for (const txn of ledger.transactions) {
+      bucketTotals[categoryBucket(txn.category)] += Number(txn.totalAmount);
+    }
 
     const billingSummary = {
-      consultation: consultationCharges,
-      pharmacy: pharmacyCharges,
-      lab: labCharges,
-      total: totalAmount,
-      paid: paidAmount,
-      pending: Math.max(0, pendingAmount),
+      consultation: bucketTotals.consultation,
+      pharmacy: bucketTotals.pharmacy,
+      lab: bucketTotals.lab,
+      therapy: bucketTotals.therapy,
+      other: bucketTotals.other,
+      total: Number(ledger.summary.totalAmount),
+      paid: Number(ledger.summary.paidAmount),
+      pending: Number(ledger.summary.outstandingAmount),
     };
+    const pendingAmount = billingSummary.pending;
 
     // 10. Build Medical Timeline (chronological events)
     const timelineEvents: any[] = [];
@@ -967,7 +1089,12 @@ export class PatientService {
           type: 'prescription',
         });
 
-        const hasDispensed = p.items.some((item: any) => item.billingTransactions.length > 0);
+        // dispenseStatus is the real, currently-written field (Feature 3/4's
+        // charge ledger drives it via PharmacyService) — BillingTransaction
+        // stopped being written to after P2 and would always read false here.
+        const hasDispensed = p.items.some(
+          (item: any) => item.dispenseStatus === 'DISPENSED' || item.dispenseStatus === 'PARTIALLY_DISPENSED',
+        );
         if (hasDispensed) {
           timelineEvents.push({
             title: 'Medicines Issued',
@@ -976,6 +1103,45 @@ export class PatientService {
             type: 'dispensation',
           });
         }
+      });
+
+      // Laboratory (Feature 6) — real orders and report releases, not a count.
+      v.labOrders.forEach((lo: any) => {
+        const testNames = lo.items.map((i: any) => i.labTest.name).join(', ') || 'Investigation';
+        timelineEvents.push({
+          title: `Lab Order ${lo.labNumber ?? ''}`.trim(),
+          description: `${testNames} — ${lo.status.replace(/_/g, ' ')}`,
+          date: lo.createdAt,
+          type: 'lab-order',
+        });
+        if (lo.report?.releasedAt) {
+          timelineEvents.push({
+            title: 'Lab Report Released',
+            description: `${lo.labNumber ?? 'Report'}: ${testNames}`,
+            date: lo.report.releasedAt,
+            type: 'lab-report',
+          });
+        }
+      });
+
+      // Therapy (Feature 1/7) — courses and individual sessions, tagged with
+      // which of the three entry points opened them (Direct/OPD/IPD).
+      v.therapyCourses.forEach((c: any) => {
+        timelineEvents.push({
+          title: `Therapy Course Opened — ${c.service.name}`,
+          description: `${c.plannedSessions} session(s) planned, status ${c.status} · source: ${c.source}`,
+          date: c.startedAt,
+          type: 'therapy-course',
+        });
+      });
+      v.therapySessions.forEach((s: any) => {
+        if (s.status === 'SCHEDULED') return; // only report what actually happened
+        timelineEvents.push({
+          title: `Therapy Session — ${s.service.name}`,
+          description: `Session #${s.sessionNumber} ${s.status.toLowerCase()} · source: ${s.source}`,
+          date: s.performedAt ?? s.scheduledAt,
+          type: 'therapy-session',
+        });
       });
     });
 
@@ -996,6 +1162,24 @@ export class PatientService {
         });
       }
     });
+
+    // Payments (Feature 3/4/15) — one event per receipt actually issued,
+    // from the same ledger the billing summary above resolves.
+    const receiptTotals = new Map<string, { amount: number; date: Date }>();
+    for (const txn of ledger.transactions) {
+      if (!txn.receiptNumber) continue;
+      const existing = receiptTotals.get(txn.receiptNumber);
+      const amount = (existing?.amount ?? 0) + Number(txn.totalAmount);
+      receiptTotals.set(txn.receiptNumber, { amount, date: existing?.date ?? txn.date });
+    }
+    for (const [receiptNumber, { amount, date }] of receiptTotals) {
+      timelineEvents.push({
+        title: `Payment Received — ${receiptNumber}`,
+        description: `₹${amount.toFixed(2)} collected`,
+        date,
+        type: 'payment',
+      });
+    }
 
     timelineEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
