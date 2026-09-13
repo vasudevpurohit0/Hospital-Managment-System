@@ -9,6 +9,12 @@ describe('PatientLookupService', () => {
     employee: {
       findFirst: jest.fn(),
     },
+    hospitalUID: {
+      create: jest.fn(),
+    },
+    patientProfile: {
+      create: jest.fn(),
+    },
     admission: {
       findFirst: jest.fn(),
     },
@@ -49,6 +55,32 @@ describe('PatientLookupService', () => {
     expect(result.employee.name).toBe('Rajesh Kumar');
     expect(result.historySummary.length).toBe(1);
     expect(result.historySummary[0].type).toBe('OPD');
+  });
+
+  it('should not create missing UID/profile records during lookup', async () => {
+    mockPrismaService.employee.findFirst.mockResolvedValue({
+      id: 'emp-1001-id',
+      employeeId: 'EMP-1001',
+      name: 'Rajesh Kumar',
+      department: 'Public Works',
+      post: null,
+      grade: null,
+      employmentType: null,
+      patientProfile: null,
+      hospitalUid: null,
+      visits: [],
+    });
+    mockPrismaService.admission.findFirst.mockResolvedValue(null);
+    mockPrismaService.prescription.findMany.mockResolvedValue([]);
+
+    const result = await service.lookupByUid('EMP-1001');
+
+    expect(result.employee.uid).toBe('EMP-1001');
+    expect(result.employee.post).toBe('Unknown');
+    expect(result.employee.grade).toBe('Unknown');
+    expect(result.employee.employmentType).toBe('Unknown');
+    expect(mockPrismaService.hospitalUID.create).not.toHaveBeenCalled();
+    expect(mockPrismaService.patientProfile.create).not.toHaveBeenCalled();
   });
 
   it('should propagate a real error instead of masking a database failure', async () => {

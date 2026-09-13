@@ -67,29 +67,6 @@ export class PatientLookupService {
       throw new NotFoundException(`No patient profile found for UID / Employee ID: ${trimmed}`);
     }
 
-    if (!employee.hospitalUid) {
-      const numPart = employee.employeeId.replace(/[^0-9]/g, '') || '1001';
-      const generatedUid = `ESIC-2026-${numPart.padStart(6, '0')}`;
-      const uidRecord = await this.prisma.hospitalUID.create({
-        data: {
-          employeeId: employee.id,
-          uidCode: generatedUid,
-          qrPayload: generatedUid,
-        },
-      });
-      (employee as any).hospitalUid = uidRecord;
-    }
-
-    if (!employee.patientProfile) {
-      const profileRecord = await this.prisma.patientProfile.create({
-        data: {
-          employeeId: employee.id,
-          eligibilityCategory: 'C',
-        },
-      });
-      (employee as any).patientProfile = profileRecord;
-    }
-
     const openVisit = employee.visits.find((v) => v.status === 'OPEN') || null;
     const lastVisit = employee.visits[0] || null;
 
@@ -115,12 +92,12 @@ export class PatientLookupService {
       employee: {
         id: employee.id,
         employeeId: employee.employeeId,
-        uid: employee.hospitalUid?.uidCode || 'ESIC-2026-000000',
+        uid: employee.hospitalUid?.uidCode || employee.employeeId,
         name: employee.name,
         department: employee.department,
-        post: employee.post.title,
-        grade: employee.grade.payLevel,
-        employmentType: employee.employmentType.name,
+        post: employee.post?.title || 'Unknown',
+        grade: employee.grade?.payLevel || 'Unknown',
+        employmentType: employee.employmentType?.name || 'Unknown',
         eligibilityCategory: employee.patientProfile?.eligibilityCategory || 'C',
       },
       lastVisit: lastVisit

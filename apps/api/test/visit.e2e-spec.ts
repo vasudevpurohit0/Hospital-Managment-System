@@ -65,8 +65,9 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
     },
     employee: {
       findFirst: jest.fn().mockImplementation(async ({ where }) => {
-        const uidCode = where?.OR?.find((o: any) => o.hospitalUid?.uidCode)?.hospitalUid?.uidCode;
-        const employeeId = where?.OR?.find((o: any) => o.employeeId)?.employeeId;
+        const uidCode =
+          where?.OR?.find((o: any) => o.hospitalUid?.uidCode)?.hospitalUid?.uidCode?.equals;
+        const employeeId = where?.OR?.find((o: any) => o.employeeId)?.employeeId?.equals;
         const id = where?.OR?.find((o: any) => o.id)?.id;
 
         const emp = employeesStore.find(
@@ -80,6 +81,50 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
         const empVisits = visitsStore.filter((v) => v.employeeId === emp.id);
         return { ...emp, visits: empVisits };
       }),
+    },
+    department: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'dept-1', code: 'GENMED', name: 'General Medicine' }),
+      create: jest.fn().mockResolvedValue({ id: 'dept-1', code: 'GENMED', name: 'General Medicine' }),
+    },
+    post: {
+      findMany: jest.fn().mockResolvedValue([
+        { id: 'post-1', title: 'Senior Officer' },
+        { id: 'post-2', title: 'Officer' },
+        { id: 'post-3', title: 'Clerk' },
+        { id: 'post-4', title: 'Assistant' },
+        { id: 'post-5', title: 'Support Staff' },
+        { id: 'post-6', title: 'Contract Worker' },
+      ]),
+    },
+    facilityEligibilityRule: {
+      count: jest.fn().mockResolvedValue(1),
+      findFirst: jest.fn(),
+    },
+    employmentType: {
+      findUnique: jest.fn().mockImplementation(async ({ where }) => {
+        if (where?.code === 'CONTRACTUAL') {
+          return { id: 'emp-contractual', code: 'CONTRACTUAL', name: 'Contractual Employee' };
+        }
+        if (where?.code === 'PERMANENT') {
+          return { id: 'emp-permanent', code: 'PERMANENT', name: 'Permanent Employee' };
+        }
+        return null;
+      }),
+    },
+    benefitRule: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue([]),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    admission: {
+      count: jest.fn().mockResolvedValue(0),
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({}),
+    },
+    prescription: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     visit: {
       findFirst: jest.fn().mockImplementation(async ({ where }) => {
