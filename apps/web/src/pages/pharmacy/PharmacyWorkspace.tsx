@@ -8,6 +8,7 @@ import {
 } from '../../api/pharmacy.api';
 import { Pill, Clock, User, Stethoscope, ShieldCheck } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
+import { fetchBranding } from '../../api/security.api';
 
 interface PharmacyWorkspaceProps {
   authToken: string;
@@ -23,6 +24,15 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
 
   const [dispensing, setDispensing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hospitalName, setHospitalName] = useState('ESIC Model Hospital & ODC');
+
+  useEffect(() => {
+    fetchBranding()
+      .then((b) => b.hospitalName && setHospitalName(b.hospitalName))
+      .catch(() => {
+        // Non-fatal: the printed medicine label falls back to the default hospital name.
+      });
+  }, []);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [lastDispensedRx, setLastDispensedRx] = useState<{
     rx: PharmacyQueueRecord;
@@ -129,7 +139,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
       {lastDispensedRx && (
         <div className="hidden print:block p-8 font-sans bg-white text-black max-w-2xl mx-auto">
           <div className="text-center mb-6 border-b-2 border-black pb-4">
-            <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">ESIC MODEL HOSPITAL</h1>
+            <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">{hospitalName}</h1>
             <h2 className="text-lg font-semibold uppercase mb-1">Pharmacy Dispensing Label</h2>
             <p className="text-sm">Ministry of Labour &amp; Employment, Govt. of India</p>
           </div>
@@ -145,12 +155,22 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
             </div>
           </div>
 
-          {lastDispensedRx.rx.visit?.diagnoses && lastDispensedRx.rx.visit.diagnoses.length > 0 && (
-            <div className="mb-6 border border-gray-300 p-4 rounded bg-gray-50 text-sm">
-              <h3 className="font-bold text-base mb-2 uppercase border-b border-gray-300 pb-1">Clinical Examination &amp; Diagnosis</h3>
-              
-              {lastDispensedRx.rx.visit.diagnoses.map((diag: any, idx: number) => (
-                <div key={diag.id || idx} className="space-y-2">
+          {(() => {
+            // A visit can carry several Diagnosis rows over its lifetime (one per
+            // "Save Draft"), but only one belongs to THIS prescription — the one
+            // created in the same save action, so its createdAt is the latest
+            // diagnosis at or before this prescription's own createdAt.
+            const allDiagnoses: any[] = lastDispensedRx.rx.visit?.diagnoses || [];
+            const rxCreatedAt = new Date(lastDispensedRx.rx.createdAt).getTime();
+            const matching = allDiagnoses
+              .filter((d) => new Date(d.createdAt).getTime() <= rxCreatedAt)
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            const diag = matching[0] || allDiagnoses[allDiagnoses.length - 1];
+            if (!diag) return null;
+            return (
+              <div className="mb-6 border border-gray-300 p-4 rounded bg-gray-50 text-sm">
+                <h3 className="font-bold text-base mb-2 uppercase border-b border-gray-300 pb-1">Clinical Examination &amp; Diagnosis</h3>
+                <div className="space-y-2">
                   <div>
                     <span className="font-semibold text-gray-700">Patient Symptoms &amp; History:</span>
                     <p className="ml-2 text-gray-800">{diag.symptoms || 'None recorded'}</p>
@@ -170,9 +190,9 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            );
+          })()}
 
           <table className="w-full text-sm border-collapse mb-8">
             <thead>

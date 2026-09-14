@@ -14,6 +14,13 @@ import {
   TrendingUp,
   Building,
   ShieldCheck,
+  ClipboardList,
+  PackageX,
+  Truck,
+  BedDouble,
+  UserPlus,
+  ReceiptText,
+  UserCog,
 } from 'lucide-react';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -68,6 +75,22 @@ export const DashboardPage: React.FC = () => {
               (metrics?.procurement && metrics.inventory
                 ? `Inventory summary: ${metrics.procurement.pendingRequisitions} requisitions pending approval. ${metrics.inventory.quarantinedBatches} batches quarantined.`
                 : 'Loading inventory summary...')}
+            {role === 'Nurse' &&
+              (metrics?.ipd
+                ? `${metrics.ipd.activeAdmissions} patients currently admitted. ${metrics.ipd.availableBeds} beds available.`
+                : 'Loading ward summary...')}
+            {role === 'Reception' &&
+              (metrics?.opd
+                ? `${metrics.opd.waitingQueue} patients waiting in the OPD queue. ${metrics.opd.totalVisits} total visits today.`
+                : 'Loading front desk summary...')}
+            {role === 'AdmissionDesk' &&
+              (metrics?.ipd
+                ? `${metrics.ipd.availableBeds} beds available out of ${metrics.ipd.totalBeds}. ${metrics.ipd.activeAdmissions} active admissions.`
+                : 'Loading bed availability...')}
+            {role === 'DataEntryOperator' &&
+              (metrics?.staff
+                ? `${metrics.staff.totalEmployees} employees registered. ${metrics.staff.employeesAddedToday} added today.`
+                : 'Loading employee directory summary...')}
             {(role === 'SuperAdmin' || role === 'Administrator') &&
               (metrics?.ipd && metrics.billing
                 ? `Hospital operational summary: Bed occupancy at ${metrics.ipd.bedOccupancyRate}%. ${metrics.billing.paidTransactions} paid billing transactions.`
@@ -121,6 +144,181 @@ export const DashboardPage: React.FC = () => {
               value={metrics?.billing?.paidTransactions ?? '—'}
               icon={DollarSign}
               variant="success"
+            />
+          </>
+        ) : role === 'StoreManager' ? (
+          <>
+            {/* Store Manager's job is stock and procurement, not OPD/IPD — so
+                this dashboard shows the four numbers its own welcome banner
+                already talks about, instead of the generic hospital tiles
+                that were showing here before (Total OPD Visits, Active
+                Admissions) and meant nothing to this role. */}
+            <StatCard
+              title="Low Stock Alerts"
+              value={metrics?.inventory?.lowStockAlerts ?? '—'}
+              icon={AlertTriangle}
+              variant="danger"
+              subtitle="Reorder required"
+            />
+            <StatCard
+              title="Quarantined Batches"
+              value={metrics?.inventory?.quarantinedBatches ?? '—'}
+              icon={PackageX}
+              variant="warning"
+              subtitle="Expired / set aside"
+            />
+            <StatCard
+              title="Requisitions Pending Approval"
+              value={metrics?.procurement?.pendingRequisitions ?? '—'}
+              icon={ClipboardList}
+              variant="info"
+            />
+            <StatCard
+              title="Open Purchase Orders"
+              value={metrics?.procurement?.openPurchaseOrders ?? '—'}
+              icon={Truck}
+              variant="success"
+            />
+          </>
+        ) : role === 'ProcurementOfficer' ? (
+          <>
+            {/* Same reasoning as Store Manager — a Procurement Officer never
+                touches OPD/IPD, so their numbers are Supply Chain ones. */}
+            <StatCard
+              title="Requisitions Awaiting Approval"
+              value={metrics?.procurement?.pendingRequisitions ?? '—'}
+              icon={ClipboardList}
+              variant="warning"
+              subtitle="Needs your decision"
+            />
+            <StatCard
+              title="Approved Requisitions"
+              value={metrics?.procurement?.approvedRequisitions ?? '—'}
+              icon={CheckCircle2}
+              variant="info"
+              subtitle="Ready to become a PO"
+            />
+            <StatCard
+              title="Open Purchase Orders"
+              value={metrics?.procurement?.openPurchaseOrders ?? '—'}
+              icon={Truck}
+              variant="success"
+            />
+            <StatCard
+              title="Low Stock Alerts"
+              value={metrics?.inventory?.lowStockAlerts ?? '—'}
+              icon={AlertTriangle}
+              variant="danger"
+              subtitle="May need a new requisition"
+            />
+          </>
+        ) : role === 'Nurse' ? (
+          <>
+            <StatCard
+              title="Active Admissions"
+              value={metrics?.ipd?.activeAdmissions ?? '—'}
+              icon={Users}
+              variant="primary"
+            />
+            <StatCard
+              title="Available Beds"
+              value={metrics?.ipd?.availableBeds ?? '—'}
+              icon={BedDouble}
+              variant="success"
+            />
+            <StatCard
+              title="Occupied Beds"
+              value={metrics?.ipd?.occupiedBeds ?? '—'}
+              icon={Building}
+              variant="info"
+            />
+            <StatCard
+              title="Bed Occupancy"
+              value={metrics?.ipd ? `${metrics.ipd.bedOccupancyRate}%` : '—'}
+              icon={TrendingUp}
+              variant="warning"
+            />
+          </>
+        ) : role === 'Reception' ? (
+          <>
+            <StatCard
+              title="Today's OPD Visits"
+              value={metrics?.opd?.totalVisits ?? '—'}
+              icon={Stethoscope}
+              variant="primary"
+            />
+            <StatCard
+              title="Waiting Queue"
+              value={metrics?.opd ? `${metrics.opd.waitingQueue} Patients` : '—'}
+              icon={Clock}
+              variant="warning"
+            />
+            <StatCard
+              title="Receipts Issued"
+              value={metrics?.billing?.totalTransactions ?? '—'}
+              icon={ReceiptText}
+              variant="success"
+            />
+            <StatCard
+              title="Beds Available"
+              value={metrics?.ipd?.availableBeds ?? '—'}
+              icon={BedDouble}
+              variant="info"
+              subtitle="For admission referral"
+            />
+          </>
+        ) : role === 'AdmissionDesk' ? (
+          <>
+            <StatCard
+              title="Available Beds"
+              value={metrics?.ipd?.availableBeds ?? '—'}
+              icon={BedDouble}
+              variant="success"
+            />
+            <StatCard
+              title="Occupied Beds"
+              value={metrics?.ipd?.occupiedBeds ?? '—'}
+              icon={Building}
+              variant="info"
+            />
+            <StatCard
+              title="Active Admissions"
+              value={metrics?.ipd?.activeAdmissions ?? '—'}
+              icon={Users}
+              variant="primary"
+            />
+            <StatCard
+              title="Bed Occupancy"
+              value={metrics?.ipd ? `${metrics.ipd.bedOccupancyRate}%` : '—'}
+              icon={TrendingUp}
+              variant="warning"
+            />
+          </>
+        ) : role === 'DataEntryOperator' ? (
+          <>
+            <StatCard
+              title="Total Employees"
+              value={metrics?.staff?.totalEmployees ?? '—'}
+              icon={UserCog}
+              variant="primary"
+            />
+            <StatCard
+              title="Added Today"
+              value={metrics?.staff?.employeesAddedToday ?? '—'}
+              icon={UserPlus}
+              variant="success"
+            />
+            <StatCard
+              title="Today's OPD Visits"
+              value={metrics?.opd?.totalVisits ?? '—'}
+              icon={Stethoscope}
+              variant="info"
+            />
+            <StatCard
+              title="Waiting Queue"
+              value={metrics?.opd ? `${metrics.opd.waitingQueue} Patients` : '—'}
+              icon={Clock}
+              variant="warning"
             />
           </>
         ) : (

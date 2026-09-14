@@ -31,6 +31,7 @@ import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
 import { fetchVisitById } from '../../api/patient-lookup.api';
 import { fetchPatientLedger } from '../../api/ledger.api';
 import { useNavigate } from 'react-router-dom';
+import { fetchBranding } from '../../api/security.api';
 import { TestTube, Pill, Plus, Trash2, IndianRupee, ArrowRight } from 'lucide-react';
 
 interface WardStaffScreenProps {
@@ -44,9 +45,19 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const [activeTab, setActiveTab] = useState<'rounds' | 'management'>('rounds');
 
   const [admissions, setAdmissions] = useState<AdmissionRecord[]>([]);
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
   const [wards, setWards] = useState<WardManagementRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hospitalName, setHospitalName] = useState('ESIC Model Hospital & ODC');
+
+  useEffect(() => {
+    fetchBranding()
+      .then((b) => b.hospitalName && setHospitalName(b.hospitalName))
+      .catch(() => {
+        // Non-fatal: the printed discharge card falls back to the default hospital name.
+      });
+  }, []);
 
   // Notes state
   const [selectedAdmissionForNote, setSelectedAdmissionForNote] = useState<AdmissionRecord | null>(
@@ -544,7 +555,15 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
     }
   };
 
-  const activeAdmissions = admissions.filter((a) => a.status === 'UNDER_TREATMENT');
+  const activeAdmissionsUnfiltered = admissions.filter((a) => a.status === 'UNDER_TREATMENT');
+  const patientSearchQueryLower = patientSearchQuery.trim().toLowerCase();
+  const activeAdmissions = patientSearchQueryLower
+    ? activeAdmissionsUnfiltered.filter(
+        (a) =>
+          a.visit.employee.name.toLowerCase().includes(patientSearchQueryLower) ||
+          a.visit.employee.employeeId.toLowerCase().includes(patientSearchQueryLower),
+      )
+    : activeAdmissionsUnfiltered;
   const isDoctorOrAdmin =
     userRole === 'Doctor' || userRole === 'SuperAdmin' || userRole === 'Administrator';
 
@@ -606,7 +625,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          <span>🧑‍⚕️</span> Clinical Rounds & Active Patients ({activeAdmissions.length})
+          <span>🧑‍⚕️</span> Clinical Rounds & Active Patients ({activeAdmissionsUnfiltered.length})
         </button>
         <button
           onClick={() => setActiveTab('management')}
@@ -665,14 +684,30 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
       ) : activeTab === 'rounds' ? (
         /* TAB 1: CLINICAL ROUNDS & PATIENTS */
         <div className="space-y-4">
-          <h3 className="text-lg font-bold text-gray-800">
-            Patients Under Treatment ({activeAdmissions.length})
-          </h3>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <h3 className="text-lg font-bold text-gray-800">
+              Patients Under Treatment ({activeAdmissionsUnfiltered.length})
+            </h3>
+            {activeAdmissionsUnfiltered.length > 0 && (
+              <input
+                type="text"
+                value={patientSearchQuery}
+                onChange={(e) => setPatientSearchQuery(e.target.value)}
+                placeholder="Find a patient by name or Employee ID..."
+                className="w-full md:w-72 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-esic-primary/30"
+              />
+            )}
+          </div>
 
-          {activeAdmissions.length === 0 ? (
+          {activeAdmissionsUnfiltered.length === 0 ? (
             <div className="bg-white border border-gray-100 rounded-xl p-8 text-center text-gray-500 shadow-sm">
               <span className="text-4xl block mb-2">🧑‍⚕️</span>
               No patients are currently admitted in the ward.
+            </div>
+          ) : activeAdmissions.length === 0 ? (
+            <div className="bg-white border border-gray-100 rounded-xl p-8 text-center text-gray-500 shadow-sm">
+              <span className="text-4xl block mb-2">🔍</span>
+              No patient matches "{patientSearchQuery}".
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-6">
@@ -1292,7 +1327,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
 
             <div className="p-8 overflow-y-auto print:p-0 print:overflow-visible text-black bg-white">
               <div className="text-center mb-6 border-b-2 border-black pb-4">
-                <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">ESIC MODEL HOSPITAL</h1>
+                <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">{hospitalName}</h1>
                 <h2 className="text-lg font-semibold uppercase mb-1">Inpatient Discharge Card</h2>
                 <p className="text-sm">Ministry of Labour &amp; Employment, Govt. of India</p>
               </div>

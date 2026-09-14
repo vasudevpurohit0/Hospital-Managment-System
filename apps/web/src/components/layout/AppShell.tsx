@@ -30,6 +30,7 @@ import { TherapyConsoleScreen } from '../../screens/therapy/TherapyConsoleScreen
 import { AnalyticsScreen } from '../../screens/analytics/AnalyticsScreen';
 import { ReportsScreen } from '../../screens/reports/ReportsScreen';
 import { RbacManagementScreen } from '../../screens/admin/RbacManagementScreen';
+import { EmployeeDirectoryScreen } from '../../screens/employee/EmployeeDirectoryScreen';
 
 import { useAuth } from '../../hooks/useAuth';
 
@@ -43,13 +44,14 @@ const PAGE_LABELS: Record<PageId, string> = {
   'patient-search': 'Patient Search',
   'patient-records': 'Patient Records',
   registration: 'Registration',
+  'employee-directory': 'Employee Directory',
   'opd-queue': 'OPD Queue',
   consultations: 'Consultations',
   'doctor-schedule': 'Doctor Schedule',
   'ipd-admissions': 'IPD / Admissions',
   'ward-console': 'Ward Console',
   laboratory: 'Laboratory',
-  therapy: 'Therapy & Massage',
+  therapy: 'Therapy / Panchakarma',
   pharmacy: 'Dispensing',
   inventory: 'Inventory',
   'expiry-fefo': 'Expiry & FEFO',
@@ -84,6 +86,7 @@ const PAGE_GROUP: Record<PageId, string> = {
   'patient-search': 'Clinical',
   'patient-records': 'Clinical',
   registration: 'Clinical',
+  'employee-directory': 'Clinical',
   'opd-queue': 'Clinical',
   consultations: 'Clinical',
   'doctor-schedule': 'Clinical',
@@ -214,6 +217,8 @@ export const AppShell: React.FC = () => {
         return <PatientRecordsPage />;
       case 'registration':
         return <EnterpriseReceptionDesk authToken={authToken} initialWorkflow="esic-beneficiary" />;
+      case 'employee-directory':
+        return <EmployeeDirectoryScreen authToken={authToken} />;
       case 'opd-queue':
         return <OpdQueueScreen authToken={authToken} />;
       case 'consultations':
@@ -348,6 +353,12 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
     keywords: ['register', 'new patient', 'employee', 'uid'],
   },
   {
+    id: 'employee-directory',
+    label: 'Employee Directory',
+    group: 'Clinical',
+    keywords: ['employee', 'directory', 'data entry', 'add employee'],
+  },
+  {
     id: 'opd-queue',
     label: 'OPD Queue',
     group: 'Clinical',
@@ -379,9 +390,9 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
   },
   {
     id: 'therapy',
-    label: 'Therapy & Massage',
+    label: 'Therapy / Panchakarma',
     group: 'Clinical',
-    keywords: ['therapy', 'massage', 'ayurveda', 'panchakarma', 'session', 'course'],
+    keywords: ['therapy', 'ayurveda', 'panchakarma', 'session', 'course'],
   },
   {
     id: 'pharmacy',

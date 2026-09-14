@@ -3,6 +3,7 @@ export interface PharmacyQueueRecord {
   visitId: string;
   status: 'DRAFT' | 'SIGNED' | 'PARTIALLY_DISPENSED' | 'CLOSED';
   signedAt: string;
+  createdAt: string;
   visit: {
     id: string;
     employee: {
@@ -25,6 +26,7 @@ export interface PharmacyQueueRecord {
       diagnosisText?: string;
       followUpFlag: boolean;
       admissionRecommended: boolean;
+      createdAt: string;
     }>;
   };
   items: Array<{

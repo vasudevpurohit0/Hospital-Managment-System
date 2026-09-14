@@ -10,6 +10,7 @@ import {
   PatientLedger,
   ExpensePeriod,
 } from '../../api/ledger.api';
+import { searchPatients } from '../../api/patient.api';
 
 const PAYMENT_MODES = ['CASH', 'UPI', 'CARD'] as const;
 
@@ -74,6 +75,37 @@ export const PatientLedgerScreen: React.FC<PatientLedgerScreenProps> = ({ authTo
 
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  /**
+   * Bug fix: this screen used to show nothing but an empty search box until
+   * someone typed an exact Employee ID/UHID — with no way to see who exists
+   * or browse to a patient by name. It now lists every registered patient
+   * up front (reusing the same broad search endpoint Patient Search uses),
+   * so staff can see and open any patient's ledger without knowing their ID
+   * in advance.
+   */
+  const [allPatients, setAllPatients] = useState<
+    { id: string; name: string; hospitalUid: string; employeeId: string; mobile: string; department: string; currentStatus: string }[]
+  >([]);
+  const [allPatientsLoading, setAllPatientsLoading] = useState(false);
+  const [allPatientsError, setAllPatientsError] = useState<string | null>(null);
+
+  const loadAllPatients = useCallback(async () => {
+    setAllPatientsLoading(true);
+    setAllPatientsError(null);
+    try {
+      const res = await searchPatients({ limit: 50 }, authToken);
+      setAllPatients(res?.items || []);
+    } catch (err) {
+      setAllPatientsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAllPatientsLoading(false);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    loadAllPatients();
+  }, [loadAllPatients]);
 
   const handleExportExcel = async () => {
     setExporting(true);
@@ -290,6 +322,58 @@ export const PatientLedgerScreen: React.FC<PatientLedgerScreenProps> = ({ authTo
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
           {error}
+        </div>
+      )}
+
+      {!ledger && (
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+          <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-gray-900">All Patients ({allPatients.length})</h3>
+            <p className="text-xs text-gray-500">Click a patient to open their ledger</p>
+          </div>
+          {allPatientsError && (
+            <div className="p-3 bg-red-50 border-b border-red-200 text-red-700 text-xs">{allPatientsError}</div>
+          )}
+          {allPatientsLoading ? (
+            <p className="px-4 py-8 text-center text-sm text-gray-500">Loading patients…</p>
+          ) : allPatients.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-gray-500">No patients registered yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase tracking-wide">Name</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase tracking-wide">UHID</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase tracking-wide">Employee ID</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase tracking-wide">Department</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase tracking-wide">Mobile</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-gray-600 text-xs uppercase tracking-wide">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allPatients.map((p) => (
+                    <tr
+                      key={p.id}
+                      onClick={() => {
+                        const identifier = p.hospitalUid !== '—' ? p.hospitalUid : p.employeeId;
+                        setQuery(identifier);
+                        search(identifier);
+                      }}
+                      className="hover:bg-primary-50 cursor-pointer"
+                    >
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{p.name}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{p.hospitalUid}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{p.employeeId}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{p.department}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{p.mobile}</td>
+                      <td className="px-4 py-2.5 text-gray-600">{p.currentStatus}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

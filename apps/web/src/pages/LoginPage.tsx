@@ -11,6 +11,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { fetchBranding } from '../api/security.api';
 
 /* ═══════════════════════════════════════════════════════════
    ESIC HMS Login Page — Crystal Clear Official Logos
@@ -25,9 +26,24 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const identifierRef = useRef<HTMLInputElement>(null);
+  const [hospitalName, setHospitalName] = useState('MP Government Hospital Management System');
+  const [hospitalTagline, setHospitalTagline] = useState(
+    'Official Digital Healthcare & Hospital Sign-On Platform',
+  );
 
   useEffect(() => {
     identifierRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    fetchBranding()
+      .then((branding) => {
+        if (branding.hospitalName) setHospitalName(branding.hospitalName);
+        if (branding.tagline) setHospitalTagline(branding.tagline);
+      })
+      .catch(() => {
+        // Keep the default portal name/tagline if branding cannot be loaded (e.g. API unreachable).
+      });
   }, []);
 
   useEffect(() => {
@@ -156,11 +172,9 @@ export const LoginPage: React.FC = () => {
             {/* Hero Heading */}
             <div className="space-y-2 text-left">
               <h1 className="text-3xl lg:text-4xl font-extrabold text-white font-serif leading-tight">
-                MP Government Hospital Management System
+                {hospitalName}
               </h1>
-              <p className="text-sm font-semibold text-amber-300">
-                Official Digital Healthcare & Hospital Sign-On Platform
-              </p>
+              <p className="text-sm font-semibold text-amber-300">{hospitalTagline}</p>
             </div>
 
             {/* Four Equal-Sized Statistics Cards */}

@@ -89,7 +89,7 @@ export class CreatePatientVisitDto {
 
   /**
    * Only meaningful when type is OPD. 'THERAPY' registers a patient who came
-   * specifically for therapy/massage — Registration opens a bare visit with
+   * specifically for a therapy session — Registration opens a bare visit with
    * no OPD token/queue entry and no consultation charge, so the Therapy
    * module can correctly derive this as a DIRECT-source booking rather than
    * an OPD consultation. Defaults to 'OPD_CONSULTATION', the existing

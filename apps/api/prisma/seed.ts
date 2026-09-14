@@ -65,6 +65,11 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
     { roleName: 'Doctor', resource: 'Employee', action: 'read' },
     { roleName: 'Doctor', resource: 'Doctor', action: 'read' },
     { roleName: 'Doctor', resource: 'Visit', action: 'read' },
+    // Lets a doctor start a fresh OPD visit for a patient found by search on
+    // the Consultations screen when that patient has no open visit today —
+    // e.g. an unscheduled follow-up — instead of sending them back to
+    // Reception first just to get a token.
+    { roleName: 'Doctor', resource: 'Visit', action: 'create' },
     { roleName: 'Doctor', resource: 'OPDVisit', action: 'read' },
     { roleName: 'Doctor', resource: 'Diagnosis', action: 'create' },
     { roleName: 'Doctor', resource: 'Diagnosis', action: 'read' },
@@ -116,6 +121,7 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
     { roleName: 'Pharmacist', resource: 'MedicineBatch', action: 'read' },
     { roleName: 'Pharmacist', resource: 'Charge', action: 'read' },
     { roleName: 'Pharmacist', resource: 'Receipt', action: 'read' },
+    { roleName: 'Pharmacist', resource: 'Billing', action: 'read' },
 
     // --- StoreManager ---
     { roleName: 'StoreManager', resource: 'Inventory', action: 'create' },
@@ -129,12 +135,23 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
     { roleName: 'StoreManager', resource: 'MedicineBatch', action: 'update' },
     { roleName: 'StoreManager', resource: 'PurchaseRequisition', action: 'create' },
     { roleName: 'StoreManager', resource: 'PurchaseRequisition', action: 'read' },
+    { roleName: 'StoreManager', resource: 'Approval', action: 'approve' },
+    { roleName: 'StoreManager', resource: 'PurchaseOrder', action: 'create' },
+    { roleName: 'StoreManager', resource: 'PurchaseOrder', action: 'read' },
 
     // --- ProcurementOfficer ---
     { roleName: 'ProcurementOfficer', resource: 'PurchaseRequisition', action: 'read' },
     { roleName: 'ProcurementOfficer', resource: 'Approval', action: 'approve' },
     { roleName: 'ProcurementOfficer', resource: 'PurchaseOrder', action: 'create' },
     { roleName: 'ProcurementOfficer', resource: 'PurchaseOrder', action: 'read' },
+    // The Supply Chain screen is explicitly a shared "Store Manager &
+    // Procurement Officer Workstation" that also does GRN and stock
+    // transfer — without these, the officer's own screen fails to load
+    // (GET /inventory/medicines needs MedicineBatch:read) and neither GRN
+    // nor transfer action is reachable for this role at all.
+    { roleName: 'ProcurementOfficer', resource: 'MedicineBatch', action: 'read' },
+    { roleName: 'ProcurementOfficer', resource: 'MedicineBatch', action: 'create' },
+    { roleName: 'ProcurementOfficer', resource: 'MedicineBatch', action: 'update' },
 
     // --- Administrator (hospital-wide operational & administrative privileges) ---
     { roleName: 'Administrator', resource: 'Employee', action: 'create' },

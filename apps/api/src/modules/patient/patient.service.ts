@@ -310,6 +310,7 @@ export class PatientService {
         { employeeId: { contains: q, mode: 'insensitive' } },
         { name: { contains: q, mode: 'insensitive' } },
         { contactPhone: { contains: q, mode: 'insensitive' } },
+        { contactEmail: { contains: q, mode: 'insensitive' } },
         { hospitalUid: { uidCode: { contains: q, mode: 'insensitive' } } },
         { visits: { some: { opdVisit: { opdNumber: { equals: q, mode: 'insensitive' } } } } },
         { visits: { some: { opdVisit: { tokenNumber: { equals: q, mode: 'insensitive' } } } } },

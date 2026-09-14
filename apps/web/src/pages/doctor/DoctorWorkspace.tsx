@@ -6,7 +6,10 @@ import {
   PrescriptionRecord,
 } from '../../api/prescription.api';
 import { evaluateBenefitRule } from '../../api/benefit.api';
-import { fetchVisitById, VisitDetail } from '../../api/patient-lookup.api';
+import { fetchVisitById, lookupPatientByUid, VisitDetail } from '../../api/patient-lookup.api';
+import { searchPatients, createPatientVisit } from '../../api/patient.api';
+import { fetchDepartments, Department } from '../../api/opd.api';
+import { fetchBranding } from '../../api/security.api';
 import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
 import { fetchLabTests, fetchLabQueue, LabTestSummary, LabOrderRecord } from '../../api/lab.api';
 import { fetchServices, ServiceListItem } from '../../api/catalog.api';
@@ -170,9 +173,15 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
   }, [employmentTypeCode, authToken]);
 
   const handleLoadVisit = useCallback(
-    async (e?: React.FormEvent) => {
-      if (e) e.preventDefault();
-      if (!visitIdInput.trim()) return;
+    async (e?: React.FormEvent | string) => {
+      // Accepts either a form submit event (manual "Load" click) or a plain
+      // visit id string (auto-load from the OPD Queue's "Start Consultation"
+      // link) — either way we resolve one concrete id to fetch.
+      const explicitId = typeof e === 'string' ? e : undefined;
+      if (e && typeof e !== 'string') e.preventDefault();
+
+      const idToLoad = (explicitId ?? visitIdInput).trim();
+      if (!idToLoad) return;
 
       setVisitLoading(true);
       setVisitError(null);
@@ -180,8 +189,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       setActivePrescription(null);
 
       try {
-        const res = await fetchVisitById(visitIdInput.trim(), authToken);
+        const res = await fetchVisitById(idToLoad, authToken);
         setVisit(res);
+        setVisitIdInput(idToLoad);
         await Promise.all([loadExistingLabOrders(res.id), loadExistingTherapy(res.id)]);
       } catch (err: unknown) {
         setVisitError(err instanceof Error ? err.message : 'Failed to load visit');
@@ -191,6 +201,136 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
     },
     [visitIdInput, authToken, loadExistingLabOrders, loadExistingTherapy],
   );
+
+  /* ── Find an existing patient without knowing their Visit ID ──
+   * The Visit ID box above only works if the doctor already has today's
+   * visit id in hand (e.g. from the OPD Queue). This lets them instead
+   * search by name/mobile/UHID/Employee ID, then either jumps straight to
+   * that patient's already-open visit, or — if they have none today —
+   * offers to start one on the spot. */
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
+  const [patientSearching, setPatientSearching] = useState(false);
+  const [patientSearchError, setPatientSearchError] = useState<string | null>(null);
+  const [patientSearchResults, setPatientSearchResults] = useState<
+    { id: string; name: string; hospitalUid: string; employeeId: string; department: string }[]
+  >([]);
+  const [noOpenVisitFor, setNoOpenVisitFor] = useState<{ employeeId: string; name: string } | null>(null);
+  const [startingVisit, setStartingVisit] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [newVisitDepartmentId, setNewVisitDepartmentId] = useState('');
+  const [hospitalName, setHospitalName] = useState('ESIC Model Hospital & ODC');
+
+  useEffect(() => {
+    fetchBranding()
+      .then((b) => b.hospitalName && setHospitalName(b.hospitalName))
+      .catch(() => {
+        // Non-fatal: the printed consultation report falls back to the default hospital name.
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchDepartments(authToken)
+      .then((depts) => {
+        setDepartments(depts);
+        if (depts.length > 0) setNewVisitDepartmentId(depts[0].id);
+      })
+      .catch(() => {
+        // Non-fatal: the Start New Visit button falls back to the hospital's default department.
+      });
+  }, [authToken]);
+
+  const resolveAndLoadPatient = useCallback(
+    async (identifier: string) => {
+      setPatientSearchError(null);
+      setNoOpenVisitFor(null);
+      const found = await lookupPatientByUid(identifier, authToken);
+      if (found.openVisit) {
+        await handleLoadVisit(found.openVisit.id);
+        setPatientSearchResults([]);
+      } else {
+        // Nothing open today — a new consultation needs a new visit first,
+        // rather than silently reopening/editing an old closed one.
+        setNoOpenVisitFor({ employeeId: found.employee.employeeId, name: found.employee.name });
+        setPatientSearchResults([]);
+      }
+    },
+    [authToken, handleLoadVisit],
+  );
+
+  const handlePatientSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patientSearchQuery.trim()) return;
+    setPatientSearching(true);
+    setPatientSearchError(null);
+    setNoOpenVisitFor(null);
+    try {
+      const res = await searchPatients({ query: patientSearchQuery.trim(), limit: 8 }, authToken);
+      const items: any[] = res?.items || [];
+      if (items.length === 0) {
+        setPatientSearchError(`No patient found matching "${patientSearchQuery.trim()}"`);
+        setPatientSearchResults([]);
+      } else if (items.length === 1) {
+        await resolveAndLoadPatient(items[0].hospitalUid !== '—' ? items[0].hospitalUid : items[0].employeeId);
+      } else {
+        setPatientSearchResults(
+          items.map((it) => ({
+            id: it.id,
+            name: it.name,
+            hospitalUid: it.hospitalUid,
+            employeeId: it.employeeId,
+            department: it.department,
+          })),
+        );
+      }
+    } catch (err: unknown) {
+      setPatientSearchError(err instanceof Error ? err.message : 'Patient search failed');
+    } finally {
+      setPatientSearching(false);
+    }
+  };
+
+  const handleStartNewVisitForPatient = async () => {
+    if (!noOpenVisitFor) return;
+    setStartingVisit(true);
+    setPatientSearchError(null);
+    try {
+      const res = await createPatientVisit(
+        {
+          employeeId: noOpenVisitFor.employeeId,
+          type: 'OPD',
+          departmentId: newVisitDepartmentId || undefined,
+        },
+        authToken,
+      );
+      if (res.status === 'CREATED' && res.visit) {
+        setNoOpenVisitFor(null);
+        await handleLoadVisit(res.visit.id);
+      } else if (res.status === 'OPEN_VISIT_WARNING' && res.openVisit) {
+        // Race: a visit was opened for them between our search and this
+        // click (e.g. Reception just issued a token) — load that one.
+        await handleLoadVisit(res.openVisit.id);
+        setNoOpenVisitFor(null);
+      }
+    } catch (err: unknown) {
+      setPatientSearchError(err instanceof Error ? err.message : 'Failed to start a new visit');
+    } finally {
+      setStartingVisit(false);
+    }
+  };
+
+  /** Deep-link support: OPD Queue's "Start Consultation" button navigates to
+   *  /consultations?visitId=<id> — load that patient immediately instead of
+   *  making the doctor copy/paste the Visit ID by hand. */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedVisitId = params.get('visitId');
+    if (linkedVisitId) {
+      handleLoadVisit(linkedVisitId);
+    }
+    // Intentionally run once on mount only — handleLoadVisit's own
+    // dependencies would otherwise re-trigger this on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAddItem = () => {
     setItems([
@@ -255,8 +395,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         duration: duration.trim() || '5 Days',
       }));
 
-    if (validItems.length === 0) {
-      setError('Please select or type at least one prescribed medicine name.');
+    if (validItems.length === 0 && selectedLabTestIds.length === 0 && !admissionRecommended) {
+      setError(
+        'Please add at least one medicine, order a lab test, or tick "Recommend Admission" before saving.',
+      );
       return;
     }
 
@@ -328,7 +470,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         <div className="border-b-2 border-black pb-4 mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold uppercase tracking-wider text-black">
-              ESIC MODEL HOSPITAL & ODC
+              {hospitalName}
             </h1>
             <p className="text-xs text-gray-700 font-semibold">
               Ministry of Labour & Employment, Govt. of India
@@ -530,6 +672,78 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
                   </button>
                 </form>
                 {visitError && <p className="text-xs text-danger-600">{visitError}</p>}
+              </div>
+
+              <div className="space-y-2 pt-1 border-t border-[var(--color-border)]">
+                <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                  Or Find an Existing Patient
+                </label>
+                <form onSubmit={handlePatientSearchSubmit} className="flex gap-1.5">
+                  <input
+                    type="text"
+                    value={patientSearchQuery}
+                    onChange={(e) => setPatientSearchQuery(e.target.value)}
+                    placeholder="Name, mobile, UHID or Employee ID..."
+                    disabled={isSigned}
+                    className="input text-xs py-1.5 flex-1"
+                  />
+                  <button
+                    type="submit"
+                    disabled={patientSearching || isSigned || !patientSearchQuery.trim()}
+                    className="btn btn-secondary btn-sm text-xs"
+                  >
+                    {patientSearching ? '...' : 'Find'}
+                  </button>
+                </form>
+                {patientSearchError && <p className="text-xs text-danger-600">{patientSearchError}</p>}
+
+                {patientSearchResults.length > 0 && (
+                  <div className="border border-[var(--color-border)] rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                    {patientSearchResults.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => resolveAndLoadPatient(r.hospitalUid !== '—' ? r.hospitalUid : r.employeeId)}
+                        className="w-full text-left px-2.5 py-2 text-xs hover:bg-primary-50 dark:hover:bg-primary-900/20 border-b border-[var(--color-border)] last:border-b-0"
+                      >
+                        <span className="font-semibold">{r.name}</span>
+                        <span className="block text-[10px] font-mono text-[var(--color-text-tertiary)]">
+                          {r.hospitalUid} • {r.department}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {noOpenVisitFor && (
+                  <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 space-y-1.5">
+                    <p className="text-[11px] text-amber-900 dark:text-amber-200">
+                      <b>{noOpenVisitFor.name}</b> has no open visit today.
+                    </p>
+                    {departments.length > 0 && (
+                      <select
+                        value={newVisitDepartmentId}
+                        onChange={(e) => setNewVisitDepartmentId(e.target.value)}
+                        className="w-full text-[11px] rounded border border-amber-300 dark:border-amber-700 bg-white dark:bg-transparent px-2 py-1"
+                        title="Department to route this new visit to"
+                      >
+                        {departments.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} ({d.code})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleStartNewVisitForPatient}
+                      disabled={startingVisit}
+                      className="btn btn-secondary btn-sm text-xs w-full border-amber-400 text-amber-900 hover:bg-amber-100"
+                    >
+                      {startingVisit ? 'Starting...' : 'Start New OPD Visit for this Patient'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {visit ? (
@@ -997,7 +1211,8 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             <button
               type="button"
               onClick={handleSignPrescription}
-              disabled={submitting || isSigned}
+              disabled={submitting || isSigned || !activePrescription}
+              title={!activePrescription && !isSigned ? 'Save the prescription draft first' : undefined}
               className="btn btn-primary btn-md gap-2"
             >
               <Lock className="w-4 h-4" />

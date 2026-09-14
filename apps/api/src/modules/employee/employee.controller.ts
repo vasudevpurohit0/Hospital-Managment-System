@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Put, HttpCode, HttpStatus } from '@
 import { EmployeeService } from './employee.service';
 import { EmployeeVerificationService } from './services/employee-verification.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { CreateEmployeeSimpleDto } from './dto/create-employee-simple.dto';
 import { VerifyEmployeeReqDto } from './dto/verify-employee-req.dto';
 import { RegisterEmployeeReqDto } from './dto/register-employee-req.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -43,10 +44,23 @@ export class EmployeeController {
     return this.employeeService.create(createEmployeeDto);
   }
 
+  @Post('simple')
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('Employee', 'create')
+  async createSimple(@Body() dto: CreateEmployeeSimpleDto) {
+    return this.employeeService.createSimple(dto);
+  }
+
   @Get()
   @RequirePermission('Employee', 'read')
   async findAll() {
     return this.employeeService.findAll();
+  }
+
+  @Get('post-grade-options')
+  @RequirePermission('Employee', 'read')
+  async getPostGradeOptions() {
+    return this.employeeService.getPostGradeOptions();
   }
 
   @Get(':id')

@@ -198,7 +198,7 @@ export async function createPatientVisit(
     type: 'OPD' | 'IPD' | 'EMERGENCY';
     departmentId?: string;
     doctorId?: string;
-    /** 'THERAPY' registers a patient who came specifically for therapy/massage — no OPD token, no consultation charge. Defaults to 'OPD_CONSULTATION'. */
+    /** 'THERAPY' registers a patient who came specifically for a therapy session — no OPD token, no consultation charge. Defaults to 'OPD_CONSULTATION'. */
     visitPurpose?: 'OPD_CONSULTATION' | 'THERAPY';
     ignoreOpenVisitWarning?: boolean;
   },

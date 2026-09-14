@@ -306,7 +306,7 @@ describeWithDb('TherapyService (integration)', () => {
     });
   });
 
-  describe('console listing — filters used by the Therapy & Massage Console', () => {
+  describe('console listing — filters used by the Therapy / Panchakarma Console', () => {
     it('lists sessions scoped to one visit only', async () => {
       const visitId = await makeVisit();
       const otherVisitId = await makeVisit();

@@ -724,7 +724,7 @@ export const PatientRecordsPage: React.FC = () => {
                         <span className="font-semibold font-mono">₹{detailData.billingSummary.lab}.00</span>
                       </div>
                       <div className="flex justify-between py-1 border-b border-white/[0.08]">
-                        <span className="text-[var(--color-text-secondary)]">Therapy & Massage</span>
+                        <span className="text-[var(--color-text-secondary)]">Therapy / Panchakarma</span>
                         <span className="font-semibold font-mono">₹{detailData.billingSummary.therapy}.00</span>
                       </div>
                       {Number(detailData.billingSummary.other) > 0 && (

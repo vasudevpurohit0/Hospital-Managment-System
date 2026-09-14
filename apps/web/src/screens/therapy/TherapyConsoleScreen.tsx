@@ -206,7 +206,7 @@ export const TherapyConsoleScreen: React.FC<TherapyConsoleScreenProps> = ({ auth
             <Activity className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Therapy & Massage Console</h1>
+            <h1 className="text-xl font-bold">Therapy / Panchakarma Console</h1>
             <p className="text-xs text-primary-200/80 mt-0.5">
               Panchakarma, Ayurvedic therapy & Yoga — Direct Therapy, OPD-recommended and IPD sessions in one place
             </p>

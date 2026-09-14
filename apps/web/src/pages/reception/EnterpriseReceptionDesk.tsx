@@ -34,7 +34,8 @@ import {
   VerifiedEmployeeData,
   RegistrationResponse,
 } from '../../api/employee.api';
-import { registerPatient, verifyEmployee, getPatientByEmployeeId } from '../../api/patient.api';
+import { registerPatient, verifyEmployee, getPatientByEmployeeId, searchPatients } from '../../api/patient.api';
+import { fetchBranding } from '../../api/security.api';
 import {
   lookupPatientByUid,
   createVisit,
@@ -77,6 +78,16 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
       setActiveWorkflow(initialWorkflow);
     }
   }, [initialWorkflow]);
+
+  const [hospitalName, setHospitalName] = useState('ESIC Model Hospital & ODC');
+
+  useEffect(() => {
+    fetchBranding()
+      .then((b) => b.hospitalName && setHospitalName(b.hospitalName))
+      .catch(() => {
+        // Non-fatal: printed slips/passes fall back to the default hospital name.
+      });
+  }, []);
 
   /* ── Departments, live OPD queue & dashboard metrics ── */
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -297,7 +308,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     if (e) e.preventDefault();
     if (!employeeIdInput.trim() || registering) return;
 
-    // Therapy/Massage selects its therapy or course right here on the
+    // Therapy selects its therapy or course right here on the
     // initial form — validate it up front, before creating anything, the
     // same way the OPD department picker is implicitly required by the
     // browser's native <select required>.
@@ -450,6 +461,17 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [creatingVisit, setCreatingVisit] = useState(false);
   const [openVisitWarning, setOpenVisitWarning] = useState<CreateVisitResponse | null>(null);
   const [visitSuccessMessage, setVisitSuccessMessage] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<
+    { id: string; name: string; hospitalUid: string; employeeId: string; mobile: string; department: string }[]
+  >([]);
+
+  /** Loads the full lookup payload the rest of this workflow expects,
+   *  keyed by whichever identifier the patient actually has. */
+  const loadPatientByIdentifier = async (identifier: string) => {
+    const result = await lookupPatientByUid(identifier, authToken);
+    setPatientData(result);
+    setSearchResults([]);
+  };
 
   const performSearch = async (query: string) => {
     if (!query.trim()) return;
@@ -459,10 +481,43 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
     setOpenVisitWarning(null);
     setVisitSuccessMessage(null);
     setPatientData(null);
+    setSearchResults([]);
 
     try {
-      const result = await lookupPatientByUid(query.trim(), authToken);
-      setPatientData(result);
+      // Broad search first — matches name, mobile, email, Employee ID, UHID,
+      // or any OPD/IPD/lab/receipt number — so reception can find a patient
+      // by whatever detail they were given, not only an exact UHID.
+      const found = await searchPatients({ query: query.trim(), limit: 10 }, authToken);
+      const items: any[] = found?.items || [];
+
+      if (items.length === 0) {
+        setSearchError(`No patient found matching "${query.trim()}"`);
+      } else if (items.length === 1) {
+        await loadPatientByIdentifier(items[0].hospitalUid !== '—' ? items[0].hospitalUid : items[0].employeeId);
+      } else {
+        setSearchResults(
+          items.map((it) => ({
+            id: it.id,
+            name: it.name,
+            hospitalUid: it.hospitalUid,
+            employeeId: it.employeeId,
+            mobile: it.mobile,
+            department: it.department,
+          })),
+        );
+      }
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : 'Patient lookup failed');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handlePickSearchResult = async (identifier: string) => {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      await loadPatientByIdentifier(identifier);
     } catch (err: unknown) {
       setSearchError(err instanceof Error ? err.message : 'Patient lookup failed');
     } finally {
@@ -560,7 +615,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             <div className="hidden print:block registration-slip-print-only">
               <div className="slip-header-container">
                 <div className="slip-header-text">
-                  <h2>ESIC MODEL HOSPITAL</h2>
+                  <h2>{hospitalName}</h2>
                   <p className="slip-subtitle">Ministry of Labour & Employment, Govt. of India</p>
                   <h3>PATIENT REGISTRATION SLIP</h3>
                 </div>
@@ -619,7 +674,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
           {activePrintView === 'pass' && passData && (
             <div className="hidden print:block patient-pass-print-only">
               <div className="text-center border-b-2 border-black pb-2 mb-3">
-                <h2 style={{ fontSize: '15px', fontWeight: 'bold', margin: '0 0 2px 0' }}>ESIC MODEL HOSPITAL</h2>
+                <h2 style={{ fontSize: '15px', fontWeight: 'bold', margin: '0 0 2px 0' }}>{hospitalName}</h2>
                 <p style={{ fontSize: '9px', margin: '0 0 4px 0' }}>Ministry of Labour &amp; Employment, Govt. of India</p>
                 <div style={{ border: '1px solid #000', padding: '3px 10px', fontWeight: 'bold', fontSize: '11px', display: 'inline-block' }}>
                   OFFICIAL PATIENT PASS — VALID {passData.validityLabel.toUpperCase()}
@@ -888,7 +943,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                           {careType === 'IPD'
                             ? '🏥 IPD Emergency Admission'
                             : careType === 'THERAPY'
-                              ? '💆 Therapy / Massage'
+                              ? '💆 Therapy / Panchakarma'
                               : '🩺 OPD Consultation'}
                         </Badge>
                       </div>
@@ -946,7 +1001,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                           >
                             <span className="text-lg">💆</span>
                             <div>
-                              <span className="font-bold block text-emerald-900">Therapy / Massage</span>
+                              <span className="font-bold block text-emerald-900">Therapy / Panchakarma</span>
                               <span className="text-[11px] text-emerald-700/90 block">
                                 Direct therapy visit — no OPD consultation or IPD admission required.
                               </span>
@@ -969,7 +1024,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                             className="input text-xs py-2 w-full"
                             required
                           >
-                            <option value="">-- Select from Therapy &amp; Massage Catalogue --</option>
+                            <option value="">-- Select from Therapy / Panchakarma Catalogue --</option>
                             {therapyServices.map((s) => (
                               <option key={s.id} value={s.id}>
                                 {s.name} {s.currentPrice ? `— ₹${s.currentPrice}` : '(unpriced — administrator must set a rate)'} [{s.unit}]
@@ -1385,8 +1440,8 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                     Patient Search
                   </h2>
                   <p className="text-xs text-[var(--color-text-secondary)]">
-                    Search by UHID or Employee ID to load the patient's record and issue a repeat
-                    visit token
+                    Search by name, mobile number, email, Employee ID or UHID to load the
+                    patient's record and issue a repeat visit token
                   </p>
                 </div>
 
@@ -1399,7 +1454,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                         type="text"
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
-                        placeholder="Enter UHID or Employee ID..."
+                        placeholder="Search by name, mobile, email, Employee ID or UHID..."
                         className="input input-with-icon text-xs py-2.5 font-mono w-full"
                       />
                     </div>
@@ -1552,6 +1607,32 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                 </div>
 
                 {searchError && <div className="alert alert-danger">{searchError}</div>}
+
+                {searchResults.length > 1 && (
+                  <div className="border border-[var(--color-border)] rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 text-xs font-bold bg-[var(--color-surface-secondary)] text-[var(--color-text-secondary)]">
+                      {searchResults.length} matching patients found — select one
+                    </div>
+                    <div className="divide-y divide-[var(--color-border)] max-h-72 overflow-y-auto">
+                      {searchResults.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => handlePickSearchResult(r.hospitalUid !== '—' ? r.hospitalUid : r.employeeId)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors flex items-center justify-between gap-3"
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-[var(--color-text-primary)]">{r.name}</p>
+                            <p className="text-[11px] font-mono text-[var(--color-text-tertiary)]">
+                              UHID: {r.hospitalUid} • Emp ID: {r.employeeId} • {r.department}
+                            </p>
+                          </div>
+                          <span className="text-xs text-[var(--color-text-secondary)]">{r.mobile}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {patientData && (
                   <div className="p-4 rounded-xl border border-primary-200 bg-primary-50/40 space-y-3">
@@ -1744,7 +1825,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                     <div className="slip-header-container border-b pb-3">
                       <div className="slip-header-text">
                         <h3 className="font-bold text-sm text-[var(--color-text-primary)]">
-                          ESIC MODEL HOSPITAL — REGISTRATION SLIP
+                          {hospitalName} — REGISTRATION SLIP
                         </h3>
                         <p className="text-[11px] text-[var(--color-text-secondary)]">
                           Ministry of Labour & Employment, Govt. of India

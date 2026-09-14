@@ -35,6 +35,10 @@ export interface DashboardMetrics {
     count: number;
     recentExceptions: { id: string; action: string; detail: string }[];
   };
+  staff: {
+    totalEmployees: number;
+    employeesAddedToday: number;
+  };
 }
 
 import { apiFetch } from './client';

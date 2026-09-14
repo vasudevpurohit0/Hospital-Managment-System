@@ -37,6 +37,8 @@ export class DashboardService {
       permanentTransactionCount,
       contractualTransactionCount,
       recentAuditLogs,
+      totalEmployees,
+      employeesAddedToday,
     ] = await Promise.all([
       this.prisma.visit.count({ where: { type: 'OPD' } }),
       this.prisma.visit.count({ where: { type: 'OPD', status: 'OPEN' } }),
@@ -89,6 +91,10 @@ export class DashboardService {
         orderBy: { createdAt: 'desc' },
         take: 5,
         select: { id: true, action: true, entityType: true, entityId: true },
+      }),
+      this.prisma.employee.count(),
+      this.prisma.employee.count({
+        where: { registrationDate: { gte: new Date(now.toDateString()) } },
       }),
     ]);
 
@@ -144,6 +150,10 @@ export class DashboardService {
           action: log.action,
           detail: `${log.entityType} ${log.entityId}`,
         })),
+      },
+      staff: {
+        totalEmployees,
+        employeesAddedToday,
       },
     };
   }

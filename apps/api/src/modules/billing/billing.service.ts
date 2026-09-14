@@ -85,6 +85,7 @@ export class BillingService {
     if (!charge) throw new NotFoundException(`Billing transaction not found: ${chargeId}`);
 
     const emp = charge.visit.employee;
+    const branding = await this.prisma.brandingConfig.findUnique({ where: { id: 'singleton' } });
 
     return {
       receiptReference: charge.receipt?.receiptNumber || `RCPT-${charge.id.substring(0, 8).toUpperCase()}`,
@@ -103,7 +104,7 @@ export class BillingService {
       outcome: charge.benefitOutcome,
       amountCharged: Number(charge.netAmount),
       currency: 'INR',
-      issuingHospital: 'ESIC Model Hospital & ODC',
+      issuingHospital: branding?.hospitalName ?? 'ESIC Model Hospital & ODC',
       status: charge.status === 'PAID' ? 'PAID & ISSUED' : charge.status,
     };
   }

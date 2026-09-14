@@ -26,7 +26,15 @@ import {
   Activity,
   Download,
   Lock,
+  Users,
+  Info,
 } from 'lucide-react';
+
+const SINGLE_PURPOSE_ROLES: Record<string, string> = {
+  QueueManager: 'This is your only screen — calling patients is this account’s one job.',
+  LabTechnician: 'This is your only screen — sample collection and result entry are this account’s only tasks.',
+  Pathologist: 'This is your only screen — verifying and releasing lab reports is this account’s only task.',
+};
 
 /* ═══════════════════════════════════════════════════════════
    Sidebar — Collapsible Navigation with Role-Based Menus
@@ -38,6 +46,7 @@ export type PageId =
   | 'patient-search'
   | 'patient-records'
   | 'registration'
+  | 'employee-directory'
   | 'opd-queue'
   | 'consultations'
   | 'doctor-schedule'
@@ -98,6 +107,15 @@ const MENU_GROUPS: MenuGroup[] = [
         roles: ['Reception', 'SuperAdmin', 'Administrator'],
       },
       {
+        id: 'employee-directory',
+        label: 'Employee Directory',
+        icon: Users,
+        // This is the only screen a DataEntryOperator has any use for — it
+        // matches exactly the Employee:create/update scope FR-SEC-13 grants
+        // that role and nothing more.
+        roles: ['DataEntryOperator', 'SuperAdmin', 'Administrator'],
+      },
+      {
         id: 'opd-queue',
         label: 'OPD Queue',
         icon: ClipboardList,
@@ -138,7 +156,7 @@ const MENU_GROUPS: MenuGroup[] = [
       },
       {
         id: 'therapy',
-        label: 'Therapy & Massage',
+        label: 'Therapy / Panchakarma',
         icon: Activity,
         roles: ['Doctor', 'Nurse', 'SuperAdmin', 'Administrator'],
       },
@@ -169,7 +187,7 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'supply-chain',
         label: 'Supply Chain',
         icon: Truck,
-        roles: ['StoreManager', 'SuperAdmin', 'Administrator'],
+        roles: ['StoreManager', 'ProcurementOfficer', 'SuperAdmin', 'Administrator'],
       },
     ],
   },
@@ -310,6 +328,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ── Navigation ── */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 scrollbar-thin">
+        {!collapsed && SINGLE_PURPOSE_ROLES[userRole] && (
+          <div className="mx-4 mb-3 flex items-start gap-2 rounded-lg bg-white/[0.06] border border-white/10 px-3 py-2.5 text-[10.5px] leading-snug text-[var(--sidebar-text)]">
+            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-[1px] text-amber-300" />
+            <span>{SINGLE_PURPOSE_ROLES[userRole]}</span>
+          </div>
+        )}
         {filteredGroups.map((group) => (
           <div key={group.title} className="mb-1">
             {/* Group Header */}

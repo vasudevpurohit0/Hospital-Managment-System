@@ -18,6 +18,7 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
   const [admissions, setAdmissions] = useState<AdmissionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [patientSearchQuery, setPatientSearchQuery] = useState('');
 
   // Allocation Dialog State
   const [selectedAdmission, setSelectedAdmission] = useState<AdmissionRecord | null>(null);
@@ -191,19 +192,46 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
       ) : (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <div className="px-6 py-4 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
               <h3 className="text-lg font-semibold text-gray-900">
                 Pending Allocation Requests ({admissions.length})
               </h3>
+              <input
+                type="text"
+                value={patientSearchQuery}
+                onChange={(e) => setPatientSearchQuery(e.target.value)}
+                placeholder="Find a patient by name or Employee ID..."
+                className="w-full md:w-72 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-esic-primary/30"
+              />
             </div>
 
-            {admissions.length === 0 ? (
-              <div className="p-12 text-center text-gray-500">
-                <p className="text-sm font-medium">No pending admission requests at this time.</p>
-              </div>
-            ) : (
+            {(() => {
+              const q = patientSearchQuery.trim().toLowerCase();
+              const filteredAdmissions = q
+                ? admissions.filter(
+                    (item) =>
+                      item.visit.employee.name.toLowerCase().includes(q) ||
+                      item.visit.employee.employeeId.toLowerCase().includes(q),
+                  )
+                : admissions;
+
+              if (admissions.length === 0) {
+                return (
+                  <div className="p-12 text-center text-gray-500">
+                    <p className="text-sm font-medium">No pending admission requests at this time.</p>
+                  </div>
+                );
+              }
+              if (filteredAdmissions.length === 0) {
+                return (
+                  <div className="p-12 text-center text-gray-500">
+                    <p className="text-sm font-medium">No patient matches "{patientSearchQuery}".</p>
+                  </div>
+                );
+              }
+              return (
               <div className="divide-y divide-gray-100">
-                {admissions.map((item) => (
+                {filteredAdmissions.map((item) => (
                   <div
                     key={item.id}
                     className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors"
@@ -270,7 +298,8 @@ export const AdmissionDeskScreen: React.FC<AdmissionDeskScreenProps> = ({ authTo
                   </div>
                 ))}
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       )}

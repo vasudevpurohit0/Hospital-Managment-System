@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   fetchDepartments,
   fetchOpdQueue,
@@ -15,6 +16,7 @@ interface OpdQueueScreenProps {
 }
 
 export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => {
+  const navigate = useNavigate();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [queue, setQueue] = useState<OPDVisitRecord[]>([]);
@@ -162,7 +164,14 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
               <p className="text-base font-semibold text-primary-100">{currentCalledToken.visit?.employee?.name || 'Patient'}</p>
               <p className="text-xs text-primary-300 font-mono">Visit ID: {currentCalledToken.visitId}</p>
 
-              <div className="pt-3">
+              <div className="pt-3 flex items-center justify-center gap-3">
+                <button
+                  onClick={() => navigate(`/consultations?visitId=${currentCalledToken.visitId}`)}
+                  className="btn btn-md bg-white text-primary-900 hover:bg-primary-50 border-none gap-2 text-xs font-bold px-6"
+                  title="Open this patient directly in the Consultations screen"
+                >
+                  <Stethoscope className="w-4 h-4" /> Start Consultation
+                </button>
                 <button
                   onClick={() => handleCloseVisit(currentCalledToken.id)}
                   className="btn btn-primary btn-md bg-secondary-500 hover:bg-secondary-600 border-none gap-2 text-xs font-bold px-6"
