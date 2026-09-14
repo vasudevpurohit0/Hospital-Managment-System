@@ -102,7 +102,7 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
       <div className="flex items-center gap-3 min-w-0">
         <div className="hidden lg:flex items-center gap-2 pr-3 border-r border-[var(--color-border)]">
           <img src="/mp_govt_logo.svg" alt="MP Government Seal" className="w-6 h-6 object-contain" />
-          <img src="/hms_stethoscope_logo.svg" alt="HMS Stethoscope Logo" className="w-6 h-6 object-contain" />
+          <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-6 h-6 object-contain" />
           <span className="text-[11px] font-bold text-[var(--color-text-primary)]">
             MP Govt <span className="text-amber-500 font-extrabold">Sign-On</span>
           </span>

@@ -18,7 +18,7 @@ const AppContent: React.FC = () => {
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-            Loading ESIC HMS...
+            Loading AYUSH SARATHI...
           </p>
         </div>
       </div>

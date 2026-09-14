@@ -309,15 +309,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         {collapsed ? (
           <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center border border-white/20 shadow-xs">
-            <img src="/hms_stethoscope_logo.svg" alt="HMS Logo" className="w-full h-full object-contain" />
+            <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-full h-full object-contain" />
           </div>
         ) : (
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center flex-shrink-0 border border-white/20 shadow-xs">
-              <img src="/hms_stethoscope_logo.svg" alt="HMS Logo" className="w-full h-full object-contain" />
+              <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-[12px] font-extrabold text-white truncate">MP Govt HMS</h1>
+              <h1 className="text-[12px] font-extrabold text-white truncate">AYUSH SARATHI</h1>
               <p className="text-[10px] text-amber-300 font-medium truncate">
                 Sign-On
               </p>

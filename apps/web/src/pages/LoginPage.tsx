@@ -100,7 +100,7 @@ export const LoginPage: React.FC = () => {
             <div className="w-8 h-8 rounded-lg bg-[#0B2545]/10 p-1 flex items-center justify-center">
               <img
                 src="/hms_stethoscope_logo.svg"
-                alt="Hospital Management System Stethoscope Logo"
+                alt="AYUSH SARATHI Stethoscope Logo"
                 className="w-full h-full object-contain"
               />
             </div>
@@ -159,11 +159,11 @@ export const LoginPage: React.FC = () => {
               <div className="bg-gradient-to-br stroke-white from-white/15 to-white/5 border border-white/20 p-2.5 rounded-2xl shadow-md flex items-center gap-2.5 backdrop-blur-md">
                 <img
                   src="/hms_stethoscope_logo.svg"
-                  alt="HMS Stethoscope Logo"
+                  alt="AYUSH SARATHI Logo"
                   className="h-12 w-auto object-contain"
                 />
                 <div className="text-left pr-1">
-                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-wider">MP HMS</p>
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-wider">AYUSH SARATHI</p>
                   <p className="text-[9px] font-semibold text-slate-200">Sign-On</p>
                 </div>
               </div>
@@ -214,7 +214,7 @@ export const LoginPage: React.FC = () => {
               <div className="flex items-center gap-3">
                 <img
                   src="/hms_stethoscope_logo.svg"
-                  alt="Stethoscope HMS Logo"
+                  alt="AYUSH SARATHI Logo"
                   className="h-10 w-auto object-contain"
                 />
                 <div>

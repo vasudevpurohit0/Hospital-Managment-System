@@ -585,7 +585,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         <div className="mt-8 pt-4 border-t border-black flex justify-between items-end text-xs">
           <div>
             <p><strong>Prescription ID:</strong> {activePrescription?.id || 'DRAFT'}</p>
-            <p>Generated via ESIC HMS Real-Time Clinical Console</p>
+            <p>Generated via AYUSH SARATHI Real-Time Clinical Console</p>
           </div>
           <div className="text-center">
             <div className="w-32 h-10 border-b border-dashed border-black mb-1"></div>

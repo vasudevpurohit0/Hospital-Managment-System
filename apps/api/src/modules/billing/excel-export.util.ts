@@ -94,7 +94,7 @@ export function buildPatientExpenseExcel(report: PatientExpenseReportData): stri
  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
   <Title>Patient Expense Report</Title>
   <Subject>Detailed Patient Expense Breakdown</Subject>
-  <Author>ESIC Hospital Management System</Author>
+  <Author>AYUSH SARATHI</Author>
   <Created>${xmlEscape(report.generatedAt.toISOString())}</Created>
  </DocumentProperties>
  <Styles>
@@ -298,7 +298,7 @@ export function buildPatientExpenseExcel(report: PatientExpenseReportData): stri
 
    <!-- Report Title Header -->
    <Row ss:Height="24">
-    <Cell ss:StyleID="ReportTitle" ss:MergeAcross="5"><Data ss:Type="String">ESIC HOSPITAL MANAGEMENT SYSTEM</Data></Cell>
+    <Cell ss:StyleID="ReportTitle" ss:MergeAcross="5"><Data ss:Type="String">AYUSH SARATHI</Data></Cell>
    </Row>
    <Row ss:Height="18">
     <Cell ss:StyleID="ReportSub" ss:MergeAcross="5"><Data ss:Type="String">Detailed Patient Expense Breakdown Report</Data></Cell>
