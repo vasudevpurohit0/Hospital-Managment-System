@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as bcrypt from 'bcryptjs';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { UpdateHospitalStatusDto } from './dto/update-hospital-status.dto';
@@ -33,6 +34,13 @@ const API_ROOT = path.resolve(__dirname, '..', '..', '..');
 // shell at all, on any platform.
 const PRISMA_CLI_ENTRYPOINT = require.resolve('prisma/build/index.js');
 
+// Defense in depth on top of CreateHospitalDto's own slug regex: this is the
+// exact shape createHospital()/remove() build before running raw DDL, so
+// re-checking it here means a bug anywhere upstream of this service (a
+// changed DTO, a different call site) still can't turn `schemaName` into
+// something other than a safe, generated identifier.
+const SCHEMA_NAME_RE = /^hospital_[a-z0-9_]+$/;
+
 @Injectable()
 export class HospitalsService {
   private readonly logger = new Logger(HospitalsService.name);
@@ -40,6 +48,7 @@ export class HospitalsService {
   constructor(
     private readonly platformPrisma: PlatformPrismaService,
     private readonly tenantClients: TenantClientFactory,
+    private readonly userProvisioning: TenantUserProvisioningService,
   ) {}
 
   async list() {
@@ -66,6 +75,9 @@ export class HospitalsService {
     }
 
     const schemaName = `hospital_${dto.slug.replace(/-/g, '_')}`;
+    if (!SCHEMA_NAME_RE.test(schemaName)) {
+      throw new InternalServerErrorException('Invalid schema name generated -- refusing to run DDL.');
+    }
 
     const hospital = await this.platformPrisma.hospital.create({
       data: {
@@ -83,7 +95,7 @@ export class HospitalsService {
       await this.platformPrisma.$executeRawUnsafe(`CREATE SCHEMA "${schemaName}"`);
       await this.runMigrateDeploy(schemaName);
       await this.runSeed(schemaName);
-      await this.createFirstAdministrator(schemaName, dto.adminIdentifier, dto.adminPassword);
+      await this.userProvisioning.provisionAdministrator(schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
 
       return await this.platformPrisma.hospital.update({
         where: { id: hospital.id },
@@ -123,15 +135,6 @@ export class HospitalsService {
     await execFileAsync(process.execPath, [PRISMA_CLI_ENTRYPOINT, 'db', 'seed'], {
       cwd: API_ROOT,
       env: { ...process.env, DATABASE_URL: this.schemaQualifiedDatabaseUrl(schemaName) },
-    });
-  }
-
-  private async createFirstAdministrator(schemaName: string, identifier: string, password: string): Promise<void> {
-    const client = await this.tenantClients.getClient(schemaName);
-    const adminRole = await client.role.findUniqueOrThrow({ where: { name: 'Administrator' } });
-    const passwordHash = await bcrypt.hash(password, 10);
-    await client.user.create({
-      data: { identifier, passwordHash, roleId: adminRole.id, active: true },
     });
   }
 
@@ -201,7 +204,13 @@ export class HospitalsService {
     if (hospital.status !== 'SUSPENDED') {
       throw new BadRequestException('Suspend a hospital before deleting it, to confirm this is intentional.');
     }
+    if (!SCHEMA_NAME_RE.test(hospital.schemaName)) {
+      throw new InternalServerErrorException('Invalid schema name on record -- refusing to run DDL.');
+    }
     await this.platformPrisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${hospital.schemaName}" CASCADE`);
+    // Free up its staff's identifiers for reuse -- otherwise a deleted
+    // hospital's emails stay permanently unusable on the whole platform.
+    await this.platformPrisma.loginIdentifier.deleteMany({ where: { hospitalId: id } });
     await this.platformPrisma.hospital.delete({ where: { id } });
     return { deleted: true };
   }

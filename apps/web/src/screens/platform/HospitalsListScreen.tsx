@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   listHospitals,
   setHospitalStatus,
@@ -9,16 +9,13 @@ import {
 } from '../../api/platform.api';
 import { useAuth } from '../../hooks/useAuth';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { DataTable, Column } from '../../components/ui/DataTable';
+import { Badge } from '../../components/ui/Badge';
+import { Building2, Plus, RefreshCw, LogIn, Pencil, KeyRound, PauseCircle, PlayCircle, Trash2, X } from 'lucide-react';
 
 interface HospitalsListScreenProps {
   onCreateHospital: () => void;
 }
-
-const STATUS_STYLES: Record<HospitalRecord['status'], string> = {
-  ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  PROVISIONING: 'bg-amber-50 text-amber-700 border-amber-200',
-  SUSPENDED: 'bg-red-50 text-red-700 border-red-200',
-};
 
 type PendingAction =
   | { type: 'suspend' | 'activate'; hospital: HospitalRecord }
@@ -29,7 +26,6 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
   const [hospitals, setHospitals] = useState<HospitalRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
 
   const [editing, setEditing] = useState<HospitalRecord | null>(null);
   const [editName, setEditName] = useState('');
@@ -62,12 +58,6 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
   useEffect(() => {
     load();
   }, []);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return hospitals;
-    return hospitals.filter((h) => h.name.toLowerCase().includes(q) || h.slug.toLowerCase().includes(q));
-  }, [hospitals, search]);
 
   const openEdit = (h: HospitalRecord) => {
     setEditing(h);
@@ -135,177 +125,146 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
     }
   };
 
+  const columns: Column<HospitalRecord>[] = [
+    { key: 'name', header: 'Name', sortable: true },
+    { key: 'slug', header: 'Identifier suffix', render: (h) => <span className="font-mono text-xs">{h.slug}</span> },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      render: (h) => (
+        <Badge variant={h.status === 'ACTIVE' ? 'success' : h.status === 'SUSPENDED' ? 'danger' : 'warning'}>
+          {h.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      sortable: true,
+      render: (h) => new Date(h.createdAt).toLocaleDateString(),
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <span>🏥</span> Hospitals
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Every hospital on this platform. Enter one to view and manage its data directly.
-          </p>
+    <div className="space-y-6 animate-fade-in">
+      <div className="card p-6 flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary-50 border border-primary-100 text-primary-600 dark:bg-primary-950/30 dark:border-primary-900/50 dark:text-primary-400">
+            <Building2 className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Hospitals</h1>
+            <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
+              Every hospital on this platform. Enter one to view and manage its data directly.
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={load}
-            className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-all"
-          >
+          <button onClick={load} className="btn btn-secondary gap-2">
+            <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          <button
-            onClick={onCreateHospital}
-            className="px-3.5 py-2 bg-[#0B2545] hover:bg-[#13315C] text-white rounded-lg text-sm font-semibold transition-all"
-          >
-            + New Hospital
+          <button onClick={onCreateHospital} className="btn btn-primary gap-2">
+            <Plus className="w-4 h-4" />
+            New Hospital
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <span>❌</span> {error}
-        </div>
-      )}
-      {actionError && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <span>❌</span> {actionError}
-        </div>
-      )}
+      {error && <div className="alert-danger">{error}</div>}
+      {actionError && <div className="alert-danger">{actionError}</div>}
 
-      {hospitals.length > 0 && (
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search hospitals by name or code…"
-          className="w-full max-w-sm h-11 px-3.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0B2545]"
-        />
-      )}
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        {loading ? (
-          <div className="p-10 text-center text-sm text-gray-500">Loading hospitals…</div>
-        ) : hospitals.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">
-            No hospitals yet.{' '}
-            <button onClick={onCreateHospital} className="text-[#0B2545] font-semibold underline">
-              Onboard the first one
+      {loading && hospitals.length === 0 ? (
+        <p className="text-center text-sm text-[var(--color-text-tertiary)] py-4">Loading hospitals...</p>
+      ) : (
+      <DataTable
+        title="All Hospitals"
+        data={hospitals}
+        columns={columns}
+        keyExtractor={(h) => h.id}
+        searchableKey="name"
+        searchPlaceholder="Search hospitals by name or identifier..."
+        actions={(h) => (
+          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+            <button
+              onClick={() => enterHospital({ id: h.id, name: h.name })}
+              disabled={h.status !== 'ACTIVE'}
+              className="btn btn-ghost btn-sm gap-1"
+              title="Enter hospital"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              Enter
             </button>
-            .
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">No hospitals match "{search}".</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  <th className="px-6 py-3">Name</th>
-                  <th className="px-6 py-3">Login code</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Created</th>
-                  <th className="px-6 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((h) => (
-                  <tr key={h.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
-                    <td className="px-6 py-4 font-medium text-gray-900">{h.name}</td>
-                    <td className="px-6 py-4 font-mono text-xs text-gray-600">{h.slug}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold border ${STATUS_STYLES[h.status]}`}>
-                        {h.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500 whitespace-nowrap">{new Date(h.createdAt).toLocaleDateString()}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        <button
-                          onClick={() => enterHospital({ id: h.id, name: h.name })}
-                          disabled={h.status !== 'ACTIVE'}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#0B2545]/5 text-[#0B2545] hover:bg-[#0B2545]/10 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                        >
-                          Enter →
-                        </button>
-                        <button
-                          onClick={() => openEdit(h)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => openReset(h)}
-                          disabled={h.status === 'PROVISIONING'}
-                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                        >
-                          Reset Password
-                        </button>
-                        {h.status === 'ACTIVE' && (
-                          <button
-                            onClick={() => setPending({ type: 'suspend', hospital: h })}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all"
-                          >
-                            Suspend
-                          </button>
-                        )}
-                        {h.status === 'SUSPENDED' && (
-                          <>
-                            <button
-                              onClick={() => setPending({ type: 'activate', hospital: h })}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-all"
-                            >
-                              Reactivate
-                            </button>
-                            <button
-                              onClick={() => setPending({ type: 'delete', hospital: h })}
-                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 transition-all"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <button onClick={() => openEdit(h)} className="btn btn-secondary btn-sm gap-1">
+              <Pencil className="w-3.5 h-3.5" />
+              Edit
+            </button>
+            <button
+              onClick={() => openReset(h)}
+              disabled={h.status === 'PROVISIONING'}
+              className="btn btn-secondary btn-sm gap-1"
+              title="Reset a user's password"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              Reset
+            </button>
+            {h.status === 'ACTIVE' && (
+              <button
+                onClick={() => setPending({ type: 'suspend', hospital: h })}
+                className="btn btn-sm gap-1 bg-warning-50 text-warning-700 border-warning-100 hover:bg-warning-100 dark:bg-warning-950/30 dark:text-warning-400 dark:border-warning-900/50"
+              >
+                <PauseCircle className="w-3.5 h-3.5" />
+                Suspend
+              </button>
+            )}
+            {h.status === 'SUSPENDED' && (
+              <>
+                <button
+                  onClick={() => setPending({ type: 'activate', hospital: h })}
+                  className="btn btn-sm gap-1 bg-success-50 text-success-700 border-success-100 hover:bg-success-100 dark:bg-success-950/30 dark:text-success-400 dark:border-success-900/50"
+                >
+                  <PlayCircle className="w-3.5 h-3.5" />
+                  Reactivate
+                </button>
+                <button onClick={() => setPending({ type: 'delete', hospital: h })} className="btn btn-danger btn-sm gap-1">
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete
+                </button>
+              </>
+            )}
           </div>
         )}
-      </div>
+      />
+      )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <form onSubmit={saveEdit} className="w-full max-w-sm bg-white rounded-xl shadow-xl p-6 space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Edit {editing.name}</h2>
-            {editError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold">{editError}</div>}
+        <div className="fixed inset-0 z-50 flex items-center justify-center overlay-backdrop px-4">
+          <form onSubmit={saveEdit} className="w-full max-w-sm card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Edit {editing.name}</h2>
+              <button type="button" onClick={() => setEditing(null)} className="btn btn-ghost btn-icon">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {editError && <div className="alert-danger">{editError}</div>}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-gray-700">Hospital name</label>
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Hospital name</label>
               <input
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 required
                 disabled={editSaving}
-                className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0B2545]"
+                className="input"
               />
             </div>
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setEditing(null)}
-                disabled={editSaving}
-                className="px-4 h-10 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-700"
-              >
+              <button type="button" onClick={() => setEditing(null)} disabled={editSaving} className="btn btn-secondary">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={editSaving}
-                className="px-4 h-10 rounded-lg text-sm font-semibold bg-[#0B2545] hover:bg-[#13315C] text-white disabled:opacity-50"
-              >
-                {editSaving ? 'Saving…' : 'Save'}
+              <button type="submit" disabled={editSaving} className="btn btn-primary">
+                {editSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </form>
@@ -313,13 +272,18 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
       )}
 
       {resetting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <form onSubmit={saveReset} className="w-full max-w-sm bg-white rounded-xl shadow-xl p-6 space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Reset a password in {resetting.name}</h2>
-            {resetError && <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-semibold">{resetError}</div>}
-            {resetSuccess && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-xs font-semibold">{resetSuccess}</div>}
+        <div className="fixed inset-0 z-50 flex items-center justify-center overlay-backdrop px-4">
+          <form onSubmit={saveReset} className="w-full max-w-sm card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Reset a password in {resetting.name}</h2>
+              <button type="button" onClick={() => setResetting(null)} className="btn btn-ghost btn-icon">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {resetError && <div className="alert-danger">{resetError}</div>}
+            {resetSuccess && <div className="alert-success">{resetSuccess}</div>}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-gray-700">User's email / user ID</label>
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Login identifier</label>
               <input
                 type="text"
                 value={resetIdentifier}
@@ -327,11 +291,11 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
                 required
                 disabled={resetSaving}
                 placeholder="administrator@..."
-                className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0B2545]"
+                className="input"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-gray-700">New password</label>
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">New password</label>
               <input
                 type="password"
                 value={resetPassword}
@@ -339,24 +303,15 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
                 required
                 minLength={8}
                 disabled={resetSaving}
-                className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0B2545]"
+                className="input"
               />
             </div>
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setResetting(null)}
-                disabled={resetSaving}
-                className="px-4 h-10 rounded-lg text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-700"
-              >
+              <button type="button" onClick={() => setResetting(null)} disabled={resetSaving} className="btn btn-secondary">
                 Close
               </button>
-              <button
-                type="submit"
-                disabled={resetSaving}
-                className="px-4 h-10 rounded-lg text-sm font-semibold bg-[#0B2545] hover:bg-[#13315C] text-white disabled:opacity-50"
-              >
-                {resetSaving ? 'Resetting…' : 'Reset Password'}
+              <button type="submit" disabled={resetSaving} className="btn btn-primary">
+                {resetSaving ? 'Resetting...' : 'Reset Password'}
               </button>
             </div>
           </form>

@@ -2,6 +2,7 @@ import { BadRequestException, Controller, Post, Get, Body, Query, Param } from '
 import { OpdService } from '../services/opd.service';
 import { CreateOpdVisitDto } from '../dto/create-opd-visit.dto';
 import { RequirePermission } from '../../../common/decorators/permissions.decorator';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 
 @Controller('opd-visits')
 export class OpdController {
@@ -29,8 +30,14 @@ export class OpdController {
 
   @Post(':id/call')
   @RequirePermission('Employee', 'read')
-  async callToken(@Param('id') id: string) {
-    return this.opdService.callToken(id);
+  async callToken(@Param('id') id: string, @CurrentUser('id') doctorId: string) {
+    return this.opdService.callToken(id, doctorId);
+  }
+
+  @Get('my-patients')
+  @RequirePermission('Employee', 'read')
+  async getMyPatients(@CurrentUser('id') doctorId: string) {
+    return this.opdService.getMyPatients(doctorId);
   }
 
   @Post(':id/close')

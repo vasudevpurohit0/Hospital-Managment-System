@@ -34,8 +34,15 @@ export class AdmissionService {
     private ipdFinance: IpdFinanceService,
   ) {}
 
-  async findAll() {
+  /**
+   * `caller` scopes the result to a Doctor's own patients when the caller's
+   * role is Doctor (checked against the existing `Admission.assignedDoctorId`
+   * FK) -- every other role's behavior is byte-for-byte unchanged, since
+   * `caller` being omitted/non-Doctor skips the filter entirely.
+   */
+  async findAll(caller?: { id: string; roleName: string }) {
     return this.prisma.admission.findMany({
+      where: caller?.roleName === 'Doctor' ? { assignedDoctorId: caller.id } : undefined,
       include: {
         visit: {
           include: {
@@ -61,7 +68,7 @@ export class AdmissionService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, caller?: { id: string; roleName: string }) {
     const admission = await this.prisma.admission.findUnique({
       where: { id },
       include: {
@@ -88,6 +95,12 @@ export class AdmissionService {
     });
 
     if (!admission) {
+      throw new NotFoundException(`Admission record with ID ${id} not found`);
+    }
+    // Same-shaped 404 (not 403) for a Doctor viewing another doctor's
+    // admission, deliberately -- it doesn't confirm to them that the record
+    // exists at all, consistent with how a not-yours record should look.
+    if (caller?.roleName === 'Doctor' && admission.assignedDoctorId !== caller.id) {
       throw new NotFoundException(`Admission record with ID ${id} not found`);
     }
     return admission;

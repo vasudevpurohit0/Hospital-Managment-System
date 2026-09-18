@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -28,6 +29,9 @@ describe('AuthService', () => {
   const mockPrismaService = {
     user: {
       findUnique: jest.fn(),
+    },
+    loginActivity: {
+      create: jest.fn().mockResolvedValue({}),
     },
   };
 
@@ -53,6 +57,13 @@ describe('AuthService', () => {
     getClient: jest.fn().mockResolvedValue(mockPrismaService),
   };
 
+  const mockLoginDirectoryService = {
+    checkLock: jest.fn().mockResolvedValue(undefined),
+    resolve: jest.fn().mockResolvedValue({ hospitalId: 'hospital-123' }),
+    recordSuccess: jest.fn().mockResolvedValue(undefined),
+    recordFailure: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     mockUser.passwordHash = await bcrypt.hash('DoctorPass123!', 10);
 
@@ -63,6 +74,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: mockJwtService },
         { provide: PlatformPrismaService, useValue: mockPlatformPrismaService },
         { provide: TenantClientFactory, useValue: mockTenantClientFactory },
+        { provide: LoginDirectoryService, useValue: mockLoginDirectoryService },
       ],
     }).compile();
 
@@ -126,11 +138,12 @@ describe('AuthService', () => {
       const result = await service.login({
         identifier: 'doctor@esic.gov.in',
         password: 'DoctorPass123!',
-        hospitalCode: 'test-hospital',
       });
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
+      expect(result.mode).toBe('hospital');
+      if (result.mode !== 'hospital') throw new Error('expected a hospital-mode login result');
       expect(result.user.role).toBe('Doctor');
     });
   });

@@ -47,6 +47,7 @@ model User {
   employee             Employee?                 @relation(fields: [employeeId], references: [id])
   role                 Role                      @relation(fields: [roleId], references: [id])
   doctorProfile        DoctorProfile?
+  loginActivity        LoginActivity[]
 
   @@map("users")
 }
@@ -61,6 +62,25 @@ model Role {
   users        User[]
 
   @@map("roles")
+}
+
+/// This hospital's own login history -- separate from the platform-level
+/// PlatformLoginActivity, which only covers unresolved identifiers and
+/// PlatformUser attempts. Populated by LoginDirectoryService's tenant-side
+/// write once an identifier has already resolved to this hospital.
+model LoginActivity {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  identifier String
+  success    Boolean
+  reason     String?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([identifier, createdAt])
+  @@map("login_activity")
 }
 
 model Permission {
@@ -221,8 +241,13 @@ model Department {
   id        String     @id @default(uuid()) @db.Uuid
   name      String     @unique
   code      String     @unique
-  createdAt DateTime   @default(now()) @map("created_at")
-  opdVisits OPDVisit[]
+  // Deactivated, never hard-deleted -- a department may already be
+  // referenced by historical OPDVisit rows, which must keep resolving.
+  // Deactivating only removes it from the set offered for NEW visits.
+  active         Boolean          @default(true)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  opdVisits      OPDVisit[]
+  doctorProfiles DoctorProfile[]
 
   @@map("departments")
 }
@@ -967,6 +992,25 @@ model BrandingConfig {
   @@map("branding_configs")
 }
 
+/// Singleton row, one per hospital schema -- same pattern as BrandingConfig
+/// (id fixed to "singleton", defaults live in DEFAULT_HOSPITAL_SETTINGS in
+/// hospital-settings.controller.ts, not on the columns themselves).
+model HospitalSettings {
+  id                String   @id @default("singleton")
+  workingHoursStart String   @map("working_hours_start")
+  workingHoursEnd   String   @map("working_hours_end")
+  workingDays       String[] @map("working_days")
+  currency          String
+  taxPercent        Decimal  @map("tax_percent") @db.Decimal(5, 2)
+  billingPrefix     String   @map("billing_prefix")
+  notifyOnAdmission Boolean  @map("notify_on_admission")
+  notifyOnDischarge Boolean  @map("notify_on_discharge")
+  notifyOnLowStock  Boolean  @map("notify_on_low_stock")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("hospital_settings")
+}
+
 /// Top-level grouping printed as "Service Category" on the OPD bill receipt,
 /// e.g. ROGA NIDAN, Urine Test, Panchakarma.
 model ServiceCategory {
@@ -1247,13 +1291,21 @@ model DocumentSequence {
 }
 
 model DoctorProfile {
-  id         String  @id @default(uuid()) @db.Uuid
-  userId     String  @unique @map("user_id") @db.Uuid
-  specialty  String
-  experience String
-  timing     String
-  available  Boolean @default(true)
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String      @id @default(uuid()) @db.Uuid
+  userId           String      @unique @map("user_id") @db.Uuid
+  specialty        String
+  experience       String
+  available        Boolean     @default(true)
+  departmentId     String?     @map("department_id") @db.Uuid
+  consultationFee  Decimal     @default(0) @map("consultation_fee") @db.Decimal(10, 2)
+  // A 7-entry [{ day, startTime, endTime, available }] structure (see
+  // WeeklyScheduleEntryDto), replacing the old free-text `timing` column --
+  // existing rows predate this and simply have no schedule until an admin
+  // sets one, rather than attempting to parse the old free-text values (this
+  // is still early test data, per the plan this was built from).
+  weeklySchedule   Json?       @map("weekly_schedule")
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department       Department? @relation(fields: [departmentId], references: [id])
 
   @@map("doctor_profiles")
 }

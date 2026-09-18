@@ -11,8 +11,10 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { PlatformJwtPayload } from './strategies/platform-jwt.strategy';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
 import { runWithTenant } from '../../common/tenant/tenant-context';
 
 interface RefreshPayload {
@@ -23,6 +25,20 @@ interface RefreshPayload {
   type: 'refresh';
 }
 
+interface RequestMeta {
+  ip?: string;
+  userAgent?: string;
+}
+
+/**
+ * Single unified login surface for the whole platform: one form, one
+ * endpoint, {identifier, password} only. LoginDirectoryService resolves
+ * which hospital (or the platform) an identifier belongs to before any
+ * tenant schema or the platform-user table is even queried -- see that
+ * service for why a global directory is required. This class used to be
+ * hospital-staff-only, with a separate PlatformAuthService for the Super
+ * Admin; that class's logic now lives here as loginAsPlatformUser().
+ */
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -32,24 +48,8 @@ export class AuthService {
     private jwtService: JwtService,
     private platformPrisma: PlatformPrismaService,
     private tenantClients: TenantClientFactory,
+    private loginDirectory: LoginDirectoryService,
   ) {}
-
-  /**
-   * Resolves a hospital by its login-form slug and gives back an already
-   * `$connect()`-ed tenant client for it. Throws the same generic
-   * "Invalid credentials" message on a bad/suspended hospital as a bad
-   * password would, so a login attempt can't be used to enumerate which
-   * hospital codes exist.
-   */
-  private async resolveHospital(hospitalCode: string) {
-    const hospital = await this.platformPrisma.hospital.findUnique({
-      where: { slug: hospitalCode.trim() },
-    });
-    if (!hospital || hospital.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-    return hospital;
-  }
 
   async validateUser(identifier: string, pass: string) {
     if (!identifier || typeof identifier !== 'string' || !pass || typeof pass !== 'string') {
@@ -103,18 +103,65 @@ export class AuthService {
     return user;
   }
 
-  async login(loginDto: LoginDto) {
-    const hospital = await this.resolveHospital(loginDto.hospitalCode);
-    const client = await this.tenantClients.getClient(hospital.schemaName);
+  async login(loginDto: LoginDto, meta: RequestMeta = {}) {
+    await this.loginDirectory.checkLock(loginDto.identifier);
 
+    const resolved = await this.loginDirectory.resolve(loginDto.identifier);
+    if (!resolved) {
+      await this.platformPrisma.platformLoginActivity
+        .create({
+          data: {
+            identifier: loginDto.identifier,
+            success: false,
+            reason: 'UNKNOWN_IDENTIFIER',
+            ipAddress: meta.ip,
+            userAgent: meta.userAgent,
+          },
+        })
+        .catch(() => undefined);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    return resolved.hospitalId
+      ? this.loginAsHospitalStaff(loginDto, resolved.hospitalId, meta)
+      : this.loginAsPlatformUser(loginDto, meta);
+  }
+
+  private async loginAsHospitalStaff(loginDto: LoginDto, hospitalId: string, meta: RequestMeta) {
+    const hospital = await this.platformPrisma.hospital.findUnique({ where: { id: hospitalId } });
+    if (!hospital || hospital.status !== 'ACTIVE') {
+      // The directory pointed at a real hospital, but it's gone/suspended --
+      // still a generic credentials failure to the caller, and still counts
+      // toward that identifier's lockout like any other failure.
+      await this.loginDirectory.recordFailure(loginDto.identifier);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const client = await this.tenantClients.getClient(hospital.schemaName);
     return runWithTenant(
       { hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client },
-      () => this.loginWithinTenant(loginDto, hospital.id, hospital.schemaName),
+      () => this.loginWithinTenant(loginDto, hospital.id, hospital.schemaName, meta),
     );
   }
 
-  private async loginWithinTenant(loginDto: LoginDto, hospitalId: string, schemaName: string) {
-    const user = await this.validateUser(loginDto.identifier, loginDto.password);
+  private async loginWithinTenant(loginDto: LoginDto, hospitalId: string, schemaName: string, meta: RequestMeta) {
+    let user;
+    try {
+      user = await this.validateUser(loginDto.identifier, loginDto.password);
+    } catch (err: unknown) {
+      const reason = err instanceof UnauthorizedException && err.message === 'User account inactive' ? 'INACTIVE' : 'BAD_PASSWORD';
+      await this.prisma.loginActivity
+        .create({ data: { identifier: loginDto.identifier, success: false, reason, ipAddress: meta.ip, userAgent: meta.userAgent } })
+        .catch(() => undefined);
+      await this.loginDirectory.recordFailure(loginDto.identifier);
+      throw err;
+    }
+
+    await this.prisma.loginActivity
+      .create({ data: { userId: user.id, identifier: loginDto.identifier, success: true, ipAddress: meta.ip, userAgent: meta.userAgent } })
+      .catch(() => undefined);
+    await this.loginDirectory.recordSuccess(loginDto.identifier);
+
     const roleName = user.role?.name || 'Doctor';
 
     const payload: JwtPayload = {
@@ -149,6 +196,7 @@ export class AuthService {
       return {
         accessToken,
         refreshToken,
+        mode: 'hospital' as const,
         user: {
           id: user.id,
           identifier: user.identifier,
@@ -159,6 +207,59 @@ export class AuthService {
       this.logger.error(`JWT signing error during login for "${user.identifier}":`, err);
       throw new InternalServerErrorException('Failed to generate authentication tokens.');
     }
+  }
+
+  private async loginAsPlatformUser(loginDto: LoginDto, meta: RequestMeta) {
+    const user = await this.platformPrisma.platformUser.findUnique({ where: { email: loginDto.identifier.trim() } });
+
+    if (!user || !user.active) {
+      await this.recordPlatformFailure(loginDto.identifier, 'INACTIVE', meta);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isMatch = await bcrypt.compare(loginDto.password, user.passwordHash);
+    if (!isMatch) {
+      await this.recordPlatformFailure(loginDto.identifier, 'BAD_PASSWORD', meta);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    await this.platformPrisma.platformLoginActivity
+      .create({ data: { identifier: loginDto.identifier, success: true, ipAddress: meta.ip, userAgent: meta.userAgent } })
+      .catch(() => undefined);
+    await this.loginDirectory.recordSuccess(loginDto.identifier);
+
+    const payload: PlatformJwtPayload = {
+      sub: user.id,
+      email: user.email,
+      type: 'platform',
+    };
+
+    try {
+      const accessToken = this.jwtService.sign(payload, {
+        secret: process.env.JWT_PLATFORM_SECRET || 'dev_jwt_platform_secret_key_platform',
+        expiresIn: (process.env.JWT_PLATFORM_EXPIRES_IN as any) || '8h',
+      });
+
+      return {
+        accessToken,
+        mode: 'platform' as const,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        },
+      };
+    } catch (err: unknown) {
+      this.logger.error(`JWT signing error during platform login for "${user.email}":`, err);
+      throw new InternalServerErrorException('Failed to generate authentication tokens.');
+    }
+  }
+
+  private async recordPlatformFailure(identifier: string, reason: string, meta: RequestMeta) {
+    await this.platformPrisma.platformLoginActivity
+      .create({ data: { identifier, success: false, reason, ipAddress: meta.ip, userAgent: meta.userAgent } })
+      .catch(() => undefined);
+    await this.loginDirectory.recordFailure(identifier);
   }
 
   async refreshTokens(refreshTokenDto: RefreshTokenDto) {

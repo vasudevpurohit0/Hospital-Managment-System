@@ -30,6 +30,7 @@ import { TherapyConsoleScreen } from '../../screens/therapy/TherapyConsoleScreen
 import { AnalyticsScreen } from '../../screens/analytics/AnalyticsScreen';
 import { ReportsScreen } from '../../screens/reports/ReportsScreen';
 import { RbacManagementScreen } from '../../screens/admin/RbacManagementScreen';
+import { DepartmentManagementScreen } from '../../screens/admin/DepartmentManagementScreen';
 import { EmployeeDirectoryScreen } from '../../screens/employee/EmployeeDirectoryScreen';
 
 import { useAuth } from '../../hooks/useAuth';
@@ -60,6 +61,7 @@ const PAGE_LABELS: Record<PageId, string> = {
   'patient-ledger': 'Patient Ledger',
   'service-pricing': 'Service Pricing',
   'facility-rules': 'Facility Rules',
+  'department-management': 'Departments',
   analytics: 'Analytics',
   reports: 'Reports',
   'rbac-management': 'Roles & Permissions',
@@ -102,6 +104,7 @@ const PAGE_GROUP: Record<PageId, string> = {
   'patient-ledger': 'Finance',
   'service-pricing': 'Administration',
   'facility-rules': 'Administration',
+  'department-management': 'Administration',
   analytics: 'Administration',
   reports: 'Administration',
   'rbac-management': 'Administration',
@@ -250,6 +253,8 @@ export const AppShell: React.FC = () => {
         return <ServicePricingScreen authToken={authToken} />;
       case 'facility-rules':
         return <FacilityRulesScreen authToken={authToken} />;
+      case 'department-management':
+        return <DepartmentManagementScreen authToken={authToken} />;
       case 'analytics':
         return <AnalyticsScreen authToken={authToken} />;
       case 'reports':
@@ -467,6 +472,12 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
     label: 'Facility Rules',
     group: 'Admin',
     keywords: ['rules', 'eligibility', 'facility'],
+  },
+  {
+    id: 'department-management',
+    label: 'Departments',
+    group: 'Admin',
+    keywords: ['department', 'departments', 'clinical', 'opd'],
   },
   {
     id: 'system-config',

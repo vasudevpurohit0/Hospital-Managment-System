@@ -117,9 +117,12 @@ export class OpdService {
   }
 
   /**
-   * Mark token called by attending doctor
+   * Mark token called by attending doctor. Records which doctor called it
+   * (OPDVisit.doctorId existed in the schema but was never written by any
+   * code path before this) -- the precondition row-level scoping elsewhere
+   * (PatientService.searchPatients, OpdService.getMyPatients) depends on.
    */
-  async callToken(id: string) {
+  async callToken(id: string, doctorId: string) {
     const calledAt = new Date();
 
     const targetVisit = await this.prisma.oPDVisit.findUnique({ where: { id } });
@@ -141,8 +144,17 @@ export class OpdService {
 
     return this.prisma.oPDVisit.update({
       where: { id },
-      data: { calledAt },
+      data: { calledAt, doctorId },
       include: { department: true, visit: { include: { employee: true } } },
+    });
+  }
+
+  /** A doctor's own called/seen OPD patients -- the shared queue (getQueue) stays unscoped since Reception/QueueManager need to see everyone waiting. */
+  async getMyPatients(doctorId: string) {
+    return this.prisma.oPDVisit.findMany({
+      where: { doctorId },
+      include: { department: true, visit: { include: { employee: true } } },
+      orderBy: { calledAt: 'desc' },
     });
   }
 

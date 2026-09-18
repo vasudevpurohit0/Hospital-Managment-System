@@ -38,6 +38,15 @@ export interface PlatformAdminRecord {
   createdAt: string;
 }
 
+export interface HospitalAdminRecord {
+  id: string;
+  identifier: string;
+  active: boolean;
+  hospitalId: string;
+  hospitalName: string;
+  hospitalSlug: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   action: string;
@@ -166,6 +175,35 @@ export async function setPlatformAdminActive(id: string, active: boolean): Promi
     body: JSON.stringify({ active }),
   });
   return unwrap(res, 'Failed to update platform admin');
+}
+
+export async function listHospitalAdmins(): Promise<HospitalAdminRecord[]> {
+  const res = await apiFetch('/api/platform/hospital-admins');
+  return unwrap(res, 'Failed to load hospital admins');
+}
+
+export async function createHospitalAdmin(
+  hospitalId: string,
+  identifier: string,
+  password: string,
+): Promise<HospitalAdminRecord> {
+  const res = await apiFetch(`/api/platform/hospitals/${hospitalId}/admins`, {
+    method: 'POST',
+    body: JSON.stringify({ identifier, password }),
+  });
+  return unwrap(res, 'Failed to create hospital admin');
+}
+
+export async function setHospitalAdminActive(
+  hospitalId: string,
+  userId: string,
+  active: boolean,
+): Promise<HospitalAdminRecord> {
+  const res = await apiFetch(`/api/platform/hospitals/${hospitalId}/admins/${userId}/active`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active }),
+  });
+  return unwrap(res, 'Failed to update hospital admin');
 }
 
 export async function listAuditLog(): Promise<AuditLogEntry[]> {

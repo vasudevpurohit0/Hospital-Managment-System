@@ -55,8 +55,8 @@ export class PatientController {
 
   @Get('search')
   @RequirePermission('Employee', 'read')
-  async searchPatients(@Query() queryDto: PatientSearchQueryDto) {
-    return this.patientService.searchPatients(queryDto);
+  async searchPatients(@Query() queryDto: PatientSearchQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.patientService.searchPatients(queryDto, user);
   }
 
   @Post('visit')

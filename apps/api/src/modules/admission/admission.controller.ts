@@ -14,14 +14,14 @@ export class AdmissionController {
 
   @Get()
   @RequirePermission('Admission', 'read')
-  async findAll() {
-    return this.service.findAll();
+  async findAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.service.findAll(user);
   }
 
   @Get(':id')
   @RequirePermission('Admission', 'read')
-  async findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.service.findOne(id, user);
   }
 
   @Post(':id/resolve')

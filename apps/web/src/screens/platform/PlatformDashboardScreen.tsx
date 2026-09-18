@@ -1,17 +1,43 @@
 import React, { useEffect, useState } from 'react';
 import { getDashboardSummary, DashboardSummary } from '../../api/platform.api';
+import { StatCard } from '../../components/ui/StatCard';
+import { Badge } from '../../components/ui/Badge';
+import { DataTable, Column } from '../../components/ui/DataTable';
+import {
+  Building2,
+  Users,
+  Stethoscope,
+  BedDouble,
+  UserCog,
+  IndianRupee,
+  RefreshCw,
+  AlertTriangle,
+  Hourglass,
+  PackageX,
+  ServerCrash,
+} from 'lucide-react';
+import {
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
+
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE: '#0D9488',
+  PROVISIONING: '#F59E0B',
+  SUSPENDED: '#EF4444',
+};
 
 function currency(n: number): string {
   return `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 }
-
-const KpiCard: React.FC<{ label: string; value: string | number; hint?: string }> = ({ label, value, hint }) => (
-  <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
-    <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
-    {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
-  </div>
-);
 
 export const PlatformDashboardScreen: React.FC = () => {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -35,15 +61,11 @@ export const PlatformDashboardScreen: React.FC = () => {
   }, []);
 
   if (loading && !summary) {
-    return <div className="p-10 text-center text-sm text-gray-500">Loading platform dashboard…</div>;
+    return <div className="p-10 text-center text-sm text-[var(--color-text-tertiary)]">Loading platform dashboard...</div>;
   }
 
   if (error) {
-    return (
-      <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-semibold flex items-center gap-2">
-        <span>❌</span> {error}
-      </div>
-    );
+    return <div className="alert-danger">{error}</div>;
   }
 
   if (!summary) return null;
@@ -54,97 +76,182 @@ export const PlatformDashboardScreen: React.FC = () => {
     attentionNeeded.lowStockHospitals.length > 0 ||
     attentionNeeded.failedToLoad.length > 0;
 
+  const statusData = [
+    { name: 'Active', value: hospitalCounts.active, key: 'ACTIVE' },
+    { name: 'Provisioning', value: hospitalCounts.provisioning, key: 'PROVISIONING' },
+    { name: 'Suspended', value: hospitalCounts.suspended, key: 'SUSPENDED' },
+  ].filter((d) => d.value > 0);
+
+  const revenueData = perHospital.map((h) => ({ name: h.hospitalName, revenue: h.revenueCollected }));
+
+  const columns: Column<(typeof perHospital)[number]>[] = [
+    { key: 'hospitalName', header: 'Hospital', sortable: true },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (h) => (
+        <Badge variant={h.status === 'ACTIVE' ? 'success' : h.status === 'SUSPENDED' ? 'danger' : 'warning'}>
+          {h.status}
+        </Badge>
+      ),
+    },
+    { key: 'totalPatients', header: 'Patients', sortable: true },
+    { key: 'todayOpdVisits', header: 'OPD Today', sortable: true },
+    { key: 'activeAdmissions', header: 'Admissions', sortable: true },
+    { key: 'bedOccupancyRate', header: 'Bed Occ.', render: (h) => `${h.bedOccupancyRate}%` },
+    { key: 'staffCount', header: 'Staff', sortable: true },
+    { key: 'revenueCollected', header: 'Revenue', render: (h) => currency(h.revenueCollected) },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <span>📊</span> Platform Dashboard
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Live totals across every active hospital ({hospitalCounts.active} active, {hospitalCounts.suspended}{' '}
-            suspended, {hospitalCounts.provisioning} provisioning).
-          </p>
+    <div className="space-y-6 animate-fade-in">
+      <div className="card p-6 bg-gradient-to-r from-primary-900 via-primary-800 to-primary-900 text-white border-none relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 opacity-10 flex items-center pr-10 pointer-events-none">
+          <Building2 className="w-64 h-64" />
         </div>
-        <button
-          onClick={load}
-          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-all"
-        >
-          Refresh
-        </button>
+        <div className="relative z-10 flex flex-col md:flex-row justify-between md:items-center gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-primary-200 mb-3 border border-white/10">
+              <Building2 className="w-3.5 h-3.5 text-secondary-400" />
+              Platform Console
+            </div>
+            <h1 className="text-2xl font-bold">Every hospital, one view</h1>
+            <p className="text-sm text-primary-200/80 mt-1">
+              {hospitalCounts.active} active, {hospitalCounts.suspended} suspended, {hospitalCounts.provisioning}{' '}
+              provisioning across {hospitalCounts.total} total hospitals.
+            </p>
+          </div>
+          <button onClick={load} className="btn btn-secondary gap-2 self-start md:self-auto">
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <KpiCard label="Hospitals" value={hospitalCounts.total} />
-        <KpiCard label="Total Patients" value={totals.totalPatients.toLocaleString('en-IN')} />
-        <KpiCard label="Today's OPD Visits" value={totals.todayOpdVisits} />
-        <KpiCard label="Active Admissions" value={totals.activeAdmissions} />
-        <KpiCard label="Staff" value={totals.staffCount} />
-        <KpiCard label="Revenue Collected" value={currency(totals.revenueCollected)} />
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        <StatCard title="Hospitals" value={hospitalCounts.total} icon={Building2} variant="primary" />
+        <StatCard title="Total Patients" value={totals.totalPatients.toLocaleString('en-IN')} icon={Users} variant="info" />
+        <StatCard title="OPD Visits Today" value={totals.todayOpdVisits} icon={Stethoscope} variant="secondary" />
+        <StatCard title="Active Admissions" value={totals.activeAdmissions} icon={BedDouble} variant="warning" />
+        <StatCard title="Staff" value={totals.staffCount} icon={UserCog} variant="primary" />
+        <StatCard title="Revenue Collected" value={currency(totals.revenueCollected)} icon={IndianRupee} variant="success" />
       </div>
 
       {hasAttention && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 space-y-2">
-          <h2 className="text-sm font-bold text-amber-900 flex items-center gap-1.5">
-            <span>⚠️</span> Needs attention
-          </h2>
-          {attentionNeeded.stuckProvisioning.map((h) => (
-            <p key={h.id} className="text-xs text-amber-800">
-              <strong>{h.name}</strong> has been stuck in PROVISIONING since{' '}
-              {new Date(h.createdAt).toLocaleString()} — onboarding may have failed partway.
-            </p>
-          ))}
-          {attentionNeeded.lowStockHospitals.map((h) => (
-            <p key={h.id} className="text-xs text-amber-800">
-              <strong>{h.name}</strong> has {h.lowStockAlerts} low-stock inventory alert
-              {h.lowStockAlerts === 1 ? '' : 's'}.
-            </p>
-          ))}
-          {attentionNeeded.failedToLoad.map((h) => (
-            <p key={h.id} className="text-xs text-amber-800">
-              Could not load metrics for <strong>{h.name}</strong>{h.error ? `: ${h.error}` : '.'}
-            </p>
-          ))}
+        <div className="alert-warning">
+          <div className="flex items-center gap-2 font-bold mb-2">
+            <AlertTriangle className="w-4 h-4" />
+            Needs attention
+          </div>
+          <div className="space-y-1.5">
+            {attentionNeeded.stuckProvisioning.map((h) => (
+              <p key={h.id} className="text-xs flex items-start gap-1.5">
+                <Hourglass className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  <strong>{h.name}</strong> has been stuck in PROVISIONING since{' '}
+                  {new Date(h.createdAt).toLocaleString()} — onboarding may have failed partway.
+                </span>
+              </p>
+            ))}
+            {attentionNeeded.lowStockHospitals.map((h) => (
+              <p key={h.id} className="text-xs flex items-start gap-1.5">
+                <PackageX className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  <strong>{h.name}</strong> has {h.lowStockAlerts} low-stock inventory alert
+                  {h.lowStockAlerts === 1 ? '' : 's'}.
+                </span>
+              </p>
+            ))}
+            {attentionNeeded.failedToLoad.map((h) => (
+              <p key={h.id} className="text-xs flex items-start gap-1.5">
+                <ServerCrash className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span>
+                  Could not load metrics for <strong>{h.name}</strong>
+                  {h.error ? `: ${h.error}` : '.'}
+                </span>
+              </p>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">Per-hospital breakdown</h2>
-        </div>
-        {perHospital.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">No active hospitals yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  <th className="px-6 py-3">Hospital</th>
-                  <th className="px-6 py-3">Patients</th>
-                  <th className="px-6 py-3">OPD Today</th>
-                  <th className="px-6 py-3">Admissions</th>
-                  <th className="px-6 py-3">Bed Occ.</th>
-                  <th className="px-6 py-3">Staff</th>
-                  <th className="px-6 py-3">Revenue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {perHospital.map((h) => (
-                  <tr key={h.hospitalId} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
-                    <td className="px-6 py-3.5 font-medium text-gray-900">{h.hospitalName}</td>
-                    <td className="px-6 py-3.5">{h.totalPatients}</td>
-                    <td className="px-6 py-3.5">{h.todayOpdVisits}</td>
-                    <td className="px-6 py-3.5">{h.activeAdmissions}</td>
-                    <td className="px-6 py-3.5">{h.bedOccupancyRate}%</td>
-                    <td className="px-6 py-3.5">{h.staffCount}</td>
-                    <td className="px-6 py-3.5">{currency(h.revenueCollected)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="card p-5 flex flex-col justify-between lg:col-span-1">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h3 className="text-base font-bold text-[var(--color-text-primary)]">Hospital Status</h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">Breakdown across the platform</p>
+            </div>
+            <Badge variant="neutral">Live</Badge>
           </div>
-        )}
+
+          {statusData.length === 0 ? (
+            <p className="text-xs text-[var(--color-text-tertiary)] py-8 text-center">No hospitals yet.</p>
+          ) : (
+            <>
+              <div className="h-52 w-full my-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={statusData} innerRadius={50} outerRadius={75} paddingAngle={4} dataKey="value" nameKey="name">
+                      {statusData.map((item) => (
+                        <Cell key={item.key} fill={STATUS_COLORS[item.key]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-[var(--color-border)]">
+                {statusData.map((item) => (
+                  <div key={item.key} className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[item.key] }} />
+                      {item.name}
+                    </span>
+                    <span className="font-semibold text-[var(--color-text-primary)]">{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="card p-5 lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-base font-bold text-[var(--color-text-primary)]">Revenue by Hospital</h3>
+              <p className="text-xs text-[var(--color-text-secondary)]">Collected, all-time</p>
+            </div>
+            <Badge variant="neutral">Live</Badge>
+          </div>
+
+          {revenueData.length === 0 ? (
+            <p className="text-xs text-[var(--color-text-tertiary)] py-16 text-center">No active hospitals yet.</p>
+          ) : (
+            <div className="h-52 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={revenueData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
+                  <Tooltip formatter={(value: number) => currency(value)} />
+                  <Bar dataKey="revenue" fill="#0F4C81" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
       </div>
+
+      <DataTable
+        title="Per-Hospital Breakdown"
+        subtitle="Live operational metrics for every hospital"
+        data={perHospital}
+        columns={columns}
+        keyExtractor={(h) => h.hospitalId}
+        searchableKey="hospitalName"
+        searchPlaceholder="Search hospitals..."
+      />
     </div>
   );
 };

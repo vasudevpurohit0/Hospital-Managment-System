@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { listAuditLog, AuditLogEntry } from '../../api/platform.api';
+import { DataTable, Column } from '../../components/ui/DataTable';
+import { FileClock, RefreshCw } from 'lucide-react';
 
 export const PlatformAuditLogScreen: React.FC = () => {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
@@ -22,61 +24,60 @@ export const PlatformAuditLogScreen: React.FC = () => {
     load();
   }, []);
 
+  const columns: Column<AuditLogEntry>[] = [
+    {
+      key: 'createdAt',
+      header: 'When',
+      sortable: true,
+      render: (e) => new Date(e.createdAt).toLocaleString(),
+    },
+    { key: 'platformUserEmail', header: 'Admin', sortable: true },
+    { key: 'hospitalName', header: 'Hospital', render: (e) => e.hospitalName || '—' },
+    {
+      key: 'action',
+      header: 'Action',
+      render: (e) => (
+        <span className="font-mono text-xs text-[var(--color-text-secondary)]">
+          {e.method} {e.path}
+        </span>
+      ),
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <span>📜</span> Platform Audit Log
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Every time a Super Admin accessed a specific hospital's data, most recent first.
-          </p>
+    <div className="space-y-6 animate-fade-in">
+      <div className="card p-6 flex flex-col md:flex-row justify-between md:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-info-50 border border-info-100 text-info-500 dark:bg-info-950/30 dark:border-info-900/50 dark:text-info-400">
+            <FileClock className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Platform Audit Log</h1>
+            <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
+              Every time a Super Admin accessed a specific hospital's data, most recent first.
+            </p>
+          </div>
         </div>
-        <button
-          onClick={load}
-          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-all"
-        >
+        <button onClick={load} className="btn btn-secondary gap-2">
+          <RefreshCw className="w-4 h-4" />
           Refresh
         </button>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <span>❌</span> {error}
-        </div>
-      )}
+      {error && <div className="alert-danger">{error}</div>}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        {loading ? (
-          <div className="p-10 text-center text-sm text-gray-500">Loading…</div>
-        ) : entries.length === 0 ? (
-          <div className="p-10 text-center text-sm text-gray-500">No activity recorded yet.</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="px-6 py-3">When</th>
-                <th className="px-6 py-3">Admin</th>
-                <th className="px-6 py-3">Hospital</th>
-                <th className="px-6 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/60">
-                  <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{new Date(e.createdAt).toLocaleString()}</td>
-                  <td className="px-6 py-3 text-gray-900">{e.platformUserEmail}</td>
-                  <td className="px-6 py-3 text-gray-900">{e.hospitalName || '—'}</td>
-                  <td className="px-6 py-3 font-mono text-xs text-gray-600">
-                    {e.method} {e.path}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <DataTable
+        title="Access Events"
+        data={entries}
+        columns={columns}
+        keyExtractor={(e) => e.id}
+        searchableKey="platformUserEmail"
+        searchPlaceholder="Search by admin email..."
+      />
+
+      {loading && entries.length === 0 && (
+        <p className="text-center text-sm text-[var(--color-text-tertiary)]">Loading...</p>
+      )}
     </div>
   );
 };

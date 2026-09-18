@@ -1,78 +1,131 @@
-import React, { useState } from 'react';
-import { LogOut, Building2 } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { PlatformSidebar, PlatformPageId } from './PlatformSidebar';
+import { TopNav } from './TopNav';
+import { BreadcrumbItem } from './Breadcrumb';
 import { PlatformDashboardScreen } from '../../screens/platform/PlatformDashboardScreen';
 import { HospitalsListScreen } from '../../screens/platform/HospitalsListScreen';
 import { CreateHospitalScreen } from '../../screens/platform/CreateHospitalScreen';
 import { PlatformAdminsScreen } from '../../screens/platform/PlatformAdminsScreen';
 import { PlatformAuditLogScreen } from '../../screens/platform/PlatformAuditLogScreen';
 
-type PlatformPage = 'dashboard' | 'hospitals' | 'create-hospital' | 'admins' | 'audit-log';
+const PAGE_LABELS: Record<PlatformPageId, string> = {
+  dashboard: 'Dashboard',
+  hospitals: 'All Hospitals',
+  'create-hospital': 'Onboard Hospital',
+  admins: 'Platform Admins',
+  'audit-log': 'Audit Log',
+};
 
-const TABS: { id: PlatformPage; label: string }[] = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'hospitals', label: 'Hospitals' },
-  { id: 'admins', label: 'Platform Admins' },
-  { id: 'audit-log', label: 'Audit Log' },
-];
+const PAGE_GROUP: Record<PlatformPageId, string> = {
+  dashboard: 'Overview',
+  hospitals: 'Hospitals',
+  'create-hospital': 'Hospitals',
+  admins: 'Hospitals',
+  'audit-log': 'Security',
+};
 
 /**
  * The Super Admin's landing area before entering a specific hospital.
- * Intentionally minimal (no Sidebar/TopNav reuse) -- once a hospital is
+ * Mirrors AppShell.tsx's Sidebar+TopNav composition exactly so the two
+ * shells are visually and structurally identical. Once a hospital is
  * entered, useAuth().activeHospital being set routes AppContent to the
  * existing AppShell instead, so all the real clinical screens are reused
  * unmodified.
  */
 export const PlatformConsole: React.FC = () => {
-  const { user, logout } = useAuth();
-  const [page, setPage] = useState<PlatformPage>('dashboard');
+  const [page, setPage] = useState<PlatformPageId>('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1280) {
+        setSidebarCollapsed(true);
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const width = sidebarCollapsed
+      ? 'var(--sidebar-width-collapsed)'
+      : 'var(--sidebar-width-expanded)';
+    document.documentElement.style.setProperty('--current-sidebar-width', width);
+  }, [sidebarCollapsed]);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => !prev);
+  }, []);
+
+  const handleNavigate = useCallback((next: PlatformPageId) => {
+    setPage(next);
+  }, []);
+
+  const breadcrumbs: BreadcrumbItem[] = useMemo(() => {
+    const group = PAGE_GROUP[page];
+    const label = PAGE_LABELS[page];
+    const items: BreadcrumbItem[] = [];
+    if (group && group !== 'Overview') {
+      items.push({ label: group });
+    }
+    items.push({ label });
+    return items;
+  }, [page]);
+
+  const renderPage = () => {
+    switch (page) {
+      case 'dashboard':
+        return <PlatformDashboardScreen />;
+      case 'hospitals':
+        return <HospitalsListScreen onCreateHospital={() => setPage('create-hospital')} />;
+      case 'create-hospital':
+        return (
+          <CreateHospitalScreen onCreated={() => setPage('hospitals')} onCancel={() => setPage('hospitals')} />
+        );
+      case 'admins':
+        return <PlatformAdminsScreen />;
+      case 'audit-log':
+        return <PlatformAuditLogScreen />;
+      default:
+        return <PlatformDashboardScreen />;
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-[#0B2545] text-white">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <Building2 className="w-5 h-5 text-amber-300" />
-            <div>
-              <p className="text-sm font-bold leading-tight">Platform Console</p>
-              <p className="text-[11px] text-blue-200/80 leading-tight">Super Admin</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-xs text-blue-200/80">{user?.email}</span>
-            <button
-              onClick={logout}
-              className="flex items-center gap-1.5 text-xs font-semibold text-white/90 hover:text-white bg-white/10 hover:bg-white/15 px-3 py-1.5 rounded-lg transition-all"
-            >
-              <LogOut className="w-3.5 h-3.5" /> Sign out
-            </button>
-          </div>
-        </div>
-        <div className="max-w-6xl mx-auto px-6 flex gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setPage(tab.id)}
-              className={`px-4 py-2.5 text-sm font-semibold border-b-2 transition-all ${
-                page === tab.id || (page === 'create-hospital' && tab.id === 'hospitals')
-                  ? 'border-amber-400 text-white'
-                  : 'border-transparent text-blue-200/70 hover:text-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </header>
+    <div className="min-h-screen bg-[var(--color-bg)]">
+      <PlatformSidebar
+        activePage={page}
+        onNavigate={handleNavigate}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+      />
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        {page === 'dashboard' && <PlatformDashboardScreen />}
-        {page === 'hospitals' && <HospitalsListScreen onCreateHospital={() => setPage('create-hospital')} />}
-        {page === 'create-hospital' && (
-          <CreateHospitalScreen onCreated={() => setPage('hospitals')} onCancel={() => setPage('hospitals')} />
-        )}
-        {page === 'admins' && <PlatformAdminsScreen />}
-        {page === 'audit-log' && <PlatformAuditLogScreen />}
+      <TopNav breadcrumbs={breadcrumbs} onOpenCommandPalette={() => {}} variant="platform" />
+
+      <main
+        className="transition-[margin] duration-[400ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+        style={{
+          marginLeft: sidebarCollapsed
+            ? 'var(--sidebar-width-collapsed)'
+            : 'var(--sidebar-width-expanded)',
+          paddingTop: 'var(--topnav-height)',
+        }}
+      >
+        <div className="p-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={page}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {renderPage()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </main>
     </div>
   );

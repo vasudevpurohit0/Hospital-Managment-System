@@ -28,8 +28,8 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (identifier: string, password: string, hospitalCode: string) => Promise<void>;
-  platformLogin: (email: string, password: string) => Promise<void>;
+  /** One unified login for everyone -- the backend resolves hospital vs. platform from the identifier alone. */
+  login: (identifier: string, password: string) => Promise<void>;
   logout: () => void;
   clearError: () => void;
   /** Super Admin "enters" a hospital: every subsequent request carries X-Hospital-Id. */
@@ -59,8 +59,7 @@ function getStoredAuth(): StoredAuth | null {
       return null;
     }
     // Old (pre-multi-hospital) sessions have no `mode` -- treat as expired
-    // rather than guessing, so the user just logs in again with the new
-    // hospitalCode-aware form.
+    // rather than guessing, so the user just logs in again.
     if (!stored.mode) {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       return null;
@@ -100,6 +99,7 @@ const ROLE_DISPLAY_NAMES: Record<string, string> = {
   QueueManager: 'Queue Manager',
   LabTechnician: 'Lab Technician',
   Pathologist: 'Pathologist',
+  Accountant: 'Accountant',
 };
 
 function buildUserFromRole(roleName: string, identifier: string, hospitalId?: string): AuthUser {
@@ -160,12 +160,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   });
 
-  const login = useCallback(async (identifier: string, password: string, hospitalCode: string) => {
+  const login = useCallback(async (identifier: string, password: string) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     let res: Response;
     try {
-      res = await postJson('/api/auth/login', { identifier, password, hospitalCode });
+      res = await postJson('/api/auth/login', { identifier, password });
     } catch {
       setState((prev) => ({
         ...prev,
@@ -195,65 +195,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const data = await res.json();
     const token = data.accessToken;
-    const roleName = data.user?.role || data.role || 'Doctor';
-    const user = buildUserFromRole(roleName, identifier);
+    const mode: AuthMode = data.mode === 'platform' ? 'platform' : 'hospital';
 
-    if (data.user?.name) user.name = data.user.name;
-    if (data.user?.id) user.id = data.user.id;
-    if (data.user?.department) user.department = data.user.department;
+    let user: AuthUser;
+    if (mode === 'platform') {
+      user = {
+        id: data.user?.id || 'platform-user',
+        name: data.user?.name || 'Super Admin',
+        email: data.user?.email || identifier,
+        role: 'SuperAdmin',
+      };
+    } else {
+      const roleName = data.user?.role || 'Doctor';
+      user = buildUserFromRole(roleName, identifier);
+      if (data.user?.name) user.name = data.user.name;
+      if (data.user?.id) user.id = data.user.id;
+      if (data.user?.department) user.department = data.user.department;
+    }
 
-    storeAuth('hospital', token, user, null);
+    storeAuth(mode, token, user, null);
     setState({
       token,
       user,
-      mode: 'hospital',
-      activeHospital: null,
-      isAuthenticated: true,
-      isLoading: false,
-      error: null,
-    });
-  }, []);
-
-  const platformLogin = useCallback(async (email: string, password: string) => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
-    let res: Response;
-    try {
-      res = await postJson('/api/platform/auth/login', { email, password });
-    } catch {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: 'Unable to connect to the server. Please make sure the backend is running.',
-      }));
-      return;
-    }
-
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      const errorMessage = errorData.message || `Authentication failed (${res.status})`;
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: Array.isArray(errorMessage) ? errorMessage.join(', ') : errorMessage,
-      }));
-      return;
-    }
-
-    const data = await res.json();
-    const token = data.accessToken;
-    const user: AuthUser = {
-      id: data.user?.id || 'platform-user',
-      name: data.user?.name || 'Super Admin',
-      email: data.user?.email || email,
-      role: 'SuperAdmin',
-    };
-
-    storeAuth('platform', token, user, null);
-    setState({
-      token,
-      user,
-      mode: 'platform',
+      mode,
       activeHospital: null,
       isAuthenticated: true,
       isLoading: false,
@@ -306,7 +270,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return React.createElement(
     AuthContext.Provider,
-    { value: { ...state, login, platformLogin, logout, clearError, enterHospital, exitHospital } },
+    { value: { ...state, login, logout, clearError, enterHospital, exitHospital } },
     children,
   );
 };

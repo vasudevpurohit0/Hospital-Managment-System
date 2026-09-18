@@ -31,9 +31,47 @@ model Hospital {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  auditLogs PlatformAuditLog[]
+  auditLogs         PlatformAuditLog[]
+  loginIdentifiers  LoginIdentifier[]
 
   @@map("hospitals")
+}
+
+/// The single directory that makes one unified login possible: maps every
+/// login identifier on the whole platform to the hospital it belongs to (or
+/// null for a PlatformUser/Super Admin), so AuthService can figure out which
+/// schema to authenticate against from identifier+password alone, with no
+/// hospital-code field. Also the only place lockout state lives, since it's
+/// the one table reachable before any tenant schema is known.
+model LoginIdentifier {
+  id             String    @id @default(uuid()) @db.Uuid
+  identifier     String    @unique
+  hospitalId     String?   @map("hospital_id") @db.Uuid
+  hospital       Hospital? @relation(fields: [hospitalId], references: [id])
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until")
+  lastAttemptAt  DateTime? @map("last_attempt_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([hospitalId])
+  @@map("login_identifiers")
+}
+
+/// Login attempts that never resolved to any hospital (unknown identifier),
+/// plus every PlatformUser login attempt. A resolved hospital-staff attempt
+/// is logged in that hospital's own LoginActivity table instead.
+model PlatformLoginActivity {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  success    Boolean
+  reason     String?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([identifier, createdAt])
+  @@map("platform_login_activity")
 }
 
 model PlatformUser {

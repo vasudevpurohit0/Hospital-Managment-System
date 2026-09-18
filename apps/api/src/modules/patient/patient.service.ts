@@ -288,13 +288,37 @@ export class PatientService {
 
   /**
    * 5. Patient Search with Filters & Pagination
+   *
+   * `caller` scopes results to a Doctor's own patients (called/seen OPD
+   * visits or assigned admissions) when the caller's role is Doctor -- every
+   * other role is unaffected. Added as a separate top-level `AND` key
+   * (Prisma ANDs every sibling key in a `where` object together), never
+   * merged into `.visits` or `.OR`: both of those are already fully owned by
+   * the status-filter and free-text-search branches above, and folding the
+   * doctor-scoping clause into either would silently clobber that logic
+   * instead of narrowing it.
    */
-  async searchPatients(queryDto: PatientSearchQueryDto) {
+  async searchPatients(queryDto: PatientSearchQueryDto, caller?: { id: string; roleName: string }) {
     const { query, department, employmentType, status, registrationDate, page = 1, limit = 20 } = queryDto;
 
     const whereClause: any = {
       hospitalUid: { isNot: null }
     };
+
+    if (caller?.roleName === 'Doctor') {
+      whereClause.AND = [
+        {
+          visits: {
+            some: {
+              OR: [
+                { opdVisit: { doctorId: caller.id } },
+                { admissions: { some: { assignedDoctorId: caller.id } } },
+              ],
+            },
+          },
+        },
+      ];
+    }
 
     if (query && query.trim()) {
       const q = query.trim();

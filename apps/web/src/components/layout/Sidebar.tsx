@@ -62,6 +62,7 @@ export type PageId =
   | 'patient-ledger'
   | 'facility-rules'
   | 'service-pricing'
+  | 'department-management'
   | 'analytics'
   | 'reports'
   | 'rbac-management'
@@ -83,7 +84,7 @@ interface MenuGroup {
 const MENU_GROUPS: MenuGroup[] = [
   {
     title: 'Overview',
-    items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Reception', 'Doctor', 'AdmissionDesk', 'Nurse', 'Pharmacist', 'StoreManager', 'ProcurementOfficer', 'DataEntryOperator', 'Administrator', 'SuperAdmin'] }],
+    items: [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Reception', 'Doctor', 'AdmissionDesk', 'Nurse', 'Pharmacist', 'StoreManager', 'ProcurementOfficer', 'DataEntryOperator', 'Administrator', 'SuperAdmin', 'Accountant'] }],
   },
   {
     title: 'Clinical',
@@ -198,7 +199,7 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'patient-ledger',
         label: 'Patient Ledger',
         icon: IndianRupee,
-        roles: ['Reception', 'AdmissionDesk', 'SuperAdmin', 'Administrator'],
+        roles: ['Reception', 'AdmissionDesk', 'SuperAdmin', 'Administrator', 'Accountant'],
         description: 'Central multi-department patient accounts and unified billing ledger',
       },
       {
@@ -223,6 +224,12 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'facility-rules',
         label: 'Facility Rules',
         icon: Shield,
+        roles: ['SuperAdmin', 'Administrator'],
+      },
+      {
+        id: 'department-management',
+        label: 'Departments',
+        icon: Building2,
         roles: ['SuperAdmin', 'Administrator'],
       },
       {

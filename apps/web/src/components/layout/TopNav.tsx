@@ -24,9 +24,11 @@ type ThemeMode = 'light' | 'dark' | 'system';
 interface TopNavProps {
   breadcrumbs: BreadcrumbItem[];
   onOpenCommandPalette: () => void;
+  /** 'platform' hides the hospital-specific MP Govt branding block on the left -- everything else (search/theme/notifications/profile) is context-agnostic chrome shared by both. */
+  variant?: 'hospital' | 'platform';
 }
 
-export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalette }) => {
+export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalette, variant = 'hospital' }) => {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -100,13 +102,15 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
     >
       {/* Left — Breadcrumb & MP Govt Logo */}
       <div className="flex items-center gap-3 min-w-0">
-        <div className="hidden lg:flex items-center gap-2 pr-3 border-r border-[var(--color-border)]">
-          <img src="/mp_govt_logo.svg" alt="MP Government Seal" className="w-6 h-6 object-contain" />
-          <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-6 h-6 object-contain" />
-          <span className="text-[11px] font-bold text-[var(--color-text-primary)]">
-            MP Govt <span className="text-amber-500 font-extrabold">Sign-On</span>
-          </span>
-        </div>
+        {variant === 'hospital' && (
+          <div className="hidden lg:flex items-center gap-2 pr-3 border-r border-[var(--color-border)]">
+            <img src="/mp_govt_logo.svg" alt="MP Government Seal" className="w-6 h-6 object-contain" />
+            <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-6 h-6 object-contain" />
+            <span className="text-[11px] font-bold text-[var(--color-text-primary)]">
+              MP Govt <span className="text-amber-500 font-extrabold">Sign-On</span>
+            </span>
+          </div>
+        )}
         <Breadcrumb items={breadcrumbs} />
       </div>
 

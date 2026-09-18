@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createHospital } from '../../api/platform.api';
+import { Building2, PlusCircle } from 'lucide-react';
 
 interface CreateHospitalScreenProps {
   onCreated: () => void;
@@ -44,26 +45,25 @@ export const CreateHospitalScreen: React.FC<CreateHospitalScreenProps> = ({ onCr
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <span>➕</span> Onboard a New Hospital
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Creates the hospital's own database schema, runs its migrations and default seed data, and creates its
-          first Administrator account. This can take a little while.
-        </p>
+    <div className="space-y-6 max-w-2xl animate-fade-in">
+      <div className="card p-6 flex items-center gap-3">
+        <div className="p-2.5 rounded-xl bg-primary-50 border border-primary-100 text-primary-600 dark:bg-primary-950/30 dark:border-primary-900/50 dark:text-primary-400">
+          <PlusCircle className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Onboard a New Hospital</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
+            Creates the hospital's own database schema, runs its migrations and default seed data, and creates its
+            first Administrator account. This can take a little while.
+          </p>
+        </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <span>❌</span> {error}
-        </div>
-      )}
+      {error && <div className="alert-danger">{error}</div>}
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 space-y-5">
+      <form onSubmit={handleSubmit} className="card p-6 space-y-5">
         <div className="space-y-1.5">
-          <label className="block text-xs font-bold text-gray-700">Hospital name</label>
+          <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Hospital name</label>
           <input
             type="text"
             value={name}
@@ -71,12 +71,12 @@ export const CreateHospitalScreen: React.FC<CreateHospitalScreenProps> = ({ onCr
             required
             disabled={saving}
             placeholder="e.g. Apollo Chennai"
-            className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0B2545] focus:border-[#0B2545]"
+            className="input"
           />
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-xs font-bold text-gray-700">Login code (slug)</label>
+          <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Identifier suffix (slug)</label>
           <input
             type="text"
             value={slug}
@@ -88,17 +88,17 @@ export const CreateHospitalScreen: React.FC<CreateHospitalScreenProps> = ({ onCr
             pattern="[a-z0-9]+(-[a-z0-9]+)*"
             disabled={saving}
             placeholder="apollo-chennai"
-            className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm font-mono text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0B2545] focus:border-[#0B2545]"
+            className="input font-mono"
           />
-          <p className="text-[11px] text-gray-400">
-            This is what hospital staff type into the "Hospital code" field on the login screen. Lowercase letters,
-            numbers and hyphens only.
+          <p className="text-[11px] text-[var(--color-text-tertiary)] flex items-center gap-1.5">
+            <Building2 className="w-3 h-3" />
+            Used internally to name this hospital's database schema. Lowercase letters, numbers and hyphens only.
           </p>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-gray-700">First admin's email / user ID</label>
+            <label className="block text-xs font-bold text-[var(--color-text-secondary)]">First admin's login identifier</label>
             <input
               type="text"
               value={adminIdentifier}
@@ -106,11 +106,11 @@ export const CreateHospitalScreen: React.FC<CreateHospitalScreenProps> = ({ onCr
               required
               disabled={saving}
               placeholder="administrator@apollo-chennai.local"
-              className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0B2545] focus:border-[#0B2545]"
+              className="input"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold text-gray-700">First admin's password</label>
+            <label className="block text-xs font-bold text-[var(--color-text-secondary)]">First admin's password</label>
             <input
               type="password"
               value={adminPassword}
@@ -119,7 +119,7 @@ export const CreateHospitalScreen: React.FC<CreateHospitalScreenProps> = ({ onCr
               minLength={8}
               disabled={saving}
               placeholder="Minimum 8 characters"
-              className="w-full h-11 px-3.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#0B2545] focus:border-[#0B2545]"
+              className="input"
             />
           </div>
         </div>
@@ -128,16 +128,11 @@ export const CreateHospitalScreen: React.FC<CreateHospitalScreenProps> = ({ onCr
           <button
             type="submit"
             disabled={saving || !name.trim() || !slug.trim() || !adminIdentifier.trim() || adminPassword.length < 8}
-            className="px-5 h-11 bg-[#0B2545] hover:bg-[#13315C] text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-all"
+            className="btn btn-primary"
           >
-            {saving ? 'Onboarding…' : 'Onboard Hospital'}
+            {saving ? 'Onboarding...' : 'Onboard Hospital'}
           </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={saving}
-            className="px-5 h-11 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-all"
-          >
+          <button type="button" onClick={onCancel} disabled={saving} className="btn btn-secondary">
             Cancel
           </button>
         </div>

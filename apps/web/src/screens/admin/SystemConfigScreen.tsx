@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { fetchBranding, updateBranding } from '../../api/security.api';
+import { fetchHospitalSettings, updateHospitalSettings } from '../../api/hospitalSettings.api';
+import { Clock, IndianRupee, Bell, RefreshCw } from 'lucide-react';
+
+const WEEK_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
+const DAY_LABELS: Record<(typeof WEEK_DAYS)[number], string> = {
+  MON: 'Mon',
+  TUE: 'Tue',
+  WED: 'Wed',
+  THU: 'Thu',
+  FRI: 'Fri',
+  SAT: 'Sat',
+  SUN: 'Sun',
+};
 
 interface SystemConfigScreenProps {
   authToken?: string;
@@ -19,6 +32,21 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
   const [primaryColor, setPrimaryColor] = useState('#005691');
   const [logoUrl, setLogoUrl] = useState('');
 
+  // Hospital settings form state
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
+  const [workingHoursStart, setWorkingHoursStart] = useState('09:00');
+  const [workingHoursEnd, setWorkingHoursEnd] = useState('17:00');
+  const [workingDays, setWorkingDays] = useState<string[]>([]);
+  const [currency, setCurrency] = useState('INR');
+  const [taxPercent, setTaxPercent] = useState('0');
+  const [billingPrefix, setBillingPrefix] = useState('INV');
+  const [notifyOnAdmission, setNotifyOnAdmission] = useState(true);
+  const [notifyOnDischarge, setNotifyOnDischarge] = useState(true);
+  const [notifyOnLowStock, setNotifyOnLowStock] = useState(true);
+
   const loadData = async () => {
     setLoading(true);
     setError(null);
@@ -35,8 +63,31 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
     }
   };
 
+  const loadSettings = async () => {
+    setSettingsLoading(true);
+    setSettingsError(null);
+    try {
+      const data = await fetchHospitalSettings(activeToken);
+      setWorkingHoursStart(data.workingHoursStart);
+      setWorkingHoursEnd(data.workingHoursEnd);
+      setWorkingDays(data.workingDays);
+      setCurrency(data.currency);
+      setTaxPercent(data.taxPercent);
+      setBillingPrefix(data.billingPrefix);
+      setNotifyOnAdmission(data.notifyOnAdmission);
+      setNotifyOnDischarge(data.notifyOnDischarge);
+      setNotifyOnLowStock(data.notifyOnLowStock);
+    } catch (err: unknown) {
+      setSettingsError((err as Error).message || 'Failed to load hospital settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSaveBranding = async (e: React.FormEvent) => {
@@ -52,6 +103,39 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
       setError((err as Error).message || 'Failed to update branding (SuperAdmin required)');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleWorkingDay = (day: string) => {
+    setWorkingDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSettingsSaving(true);
+    setSettingsError(null);
+    setSettingsSuccess(null);
+    try {
+      await updateHospitalSettings(
+        {
+          workingHoursStart,
+          workingHoursEnd,
+          workingDays,
+          currency,
+          taxPercent: Number(taxPercent),
+          billingPrefix,
+          notifyOnAdmission,
+          notifyOnDischarge,
+          notifyOnLowStock,
+        },
+        activeToken,
+      );
+      setSettingsSuccess('Hospital settings updated successfully.');
+      loadSettings();
+    } catch (err: unknown) {
+      setSettingsError((err as Error).message || 'Failed to update hospital settings');
+    } finally {
+      setSettingsSaving(false);
     }
   };
 
@@ -262,6 +346,149 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Hospital Configuration Settings (Phase 9) ── */}
+      <div className="card p-6 bg-gradient-to-r from-primary-900 via-primary-800 to-primary-900 text-white border-none flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-white/10 flex items-center justify-center text-secondary-300">
+            <Clock className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold">Hospital Configuration</h2>
+            <p className="text-xs text-primary-200/80 mt-0.5">
+              Working hours, billing defaults, and notification toggles for this hospital only.
+            </p>
+          </div>
+        </div>
+        <button onClick={loadSettings} className="btn btn-ghost btn-sm text-xs text-primary-200 hover:text-white gap-1.5">
+          <RefreshCw className="w-3.5 h-3.5" /> Refresh
+        </button>
+      </div>
+
+      {settingsError && <div className="alert-danger">{settingsError}</div>}
+      {settingsSuccess && <div className="alert-success">{settingsSuccess}</div>}
+
+      {settingsLoading ? (
+        <p className="text-center text-sm text-[var(--color-text-tertiary)] py-4">Loading hospital settings...</p>
+      ) : (
+        <form onSubmit={handleSaveSettings} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="card p-6 space-y-4">
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
+              <Clock className="w-4 h-4 text-primary-500" />
+              Working Hours
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Opens</label>
+                <input
+                  type="time"
+                  value={workingHoursStart}
+                  onChange={(e) => setWorkingHoursStart(e.target.value)}
+                  className="input"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Closes</label>
+                <input
+                  type="time"
+                  value={workingHoursEnd}
+                  onChange={(e) => setWorkingHoursEnd(e.target.value)}
+                  className="input"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Working Days</label>
+              <div className="flex flex-wrap gap-1.5">
+                {WEEK_DAYS.map((day) => (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleWorkingDay(day)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                      workingDays.includes(day)
+                        ? 'bg-primary-500 text-white border-primary-500'
+                        : 'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border-[var(--color-border)]'
+                    }`}
+                  >
+                    {DAY_LABELS[day]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6 space-y-4">
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
+              <IndianRupee className="w-4 h-4 text-primary-500" />
+              Billing & Tax
+            </h3>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Currency</label>
+              <input type="text" value={currency} onChange={(e) => setCurrency(e.target.value)} className="input" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Tax Percent (%)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                value={taxPercent}
+                onChange={(e) => setTaxPercent(e.target.value)}
+                className="input"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Billing Prefix</label>
+              <input
+                type="text"
+                value={billingPrefix}
+                onChange={(e) => setBillingPrefix(e.target.value)}
+                className="input font-mono"
+                placeholder="INV"
+              />
+            </div>
+          </div>
+
+          <div className="card p-6 space-y-4">
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
+              <Bell className="w-4 h-4 text-primary-500" />
+              Notifications
+            </h3>
+            <label className="flex items-center justify-between text-sm">
+              <span className="text-[var(--color-text-secondary)]">On admission</span>
+              <input
+                type="checkbox"
+                checked={notifyOnAdmission}
+                onChange={(e) => setNotifyOnAdmission(e.target.checked)}
+              />
+            </label>
+            <label className="flex items-center justify-between text-sm">
+              <span className="text-[var(--color-text-secondary)]">On discharge</span>
+              <input
+                type="checkbox"
+                checked={notifyOnDischarge}
+                onChange={(e) => setNotifyOnDischarge(e.target.checked)}
+              />
+            </label>
+            <label className="flex items-center justify-between text-sm">
+              <span className="text-[var(--color-text-secondary)]">On low stock</span>
+              <input
+                type="checkbox"
+                checked={notifyOnLowStock}
+                onChange={(e) => setNotifyOnLowStock(e.target.checked)}
+              />
+            </label>
+          </div>
+
+          <div className="lg:col-span-3 flex justify-end">
+            <button type="submit" disabled={settingsSaving} className="btn btn-primary">
+              {settingsSaving ? 'Saving...' : 'Save Hospital Settings'}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   );

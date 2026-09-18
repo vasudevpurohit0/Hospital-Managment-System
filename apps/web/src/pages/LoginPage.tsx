@@ -3,7 +3,6 @@ import { useAuth } from '../hooks/useAuth';
 import {
   Lock,
   User,
-  Building2,
   Eye,
   EyeOff,
   ShieldCheck,
@@ -14,21 +13,20 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchBranding } from '../api/security.api';
 
-interface LoginPageProps {
-  onPlatformLogin?: () => void;
-}
-
 /* ═══════════════════════════════════════════════════════════
    ESIC HMS Login Page — Crystal Clear Official Logos
    LEFT PANEL (50%): Deep Navy Blue (#0B2545) + White Emblem & ESIC Badge
    RIGHT PANEL (50%): Crisp White (#FFFFFF) + SSO Login Form
+
+   One unified login for everyone -- hospital staff and the platform Super
+   Admin alike -- the backend resolves which from the identifier alone, so
+   this form never needs to ask which kind of account it is.
    ═══════════════════════════════════════════════════════════ */
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onPlatformLogin }) => {
+export const LoginPage: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [hospitalCode, setHospitalCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const identifierRef = useRef<HTMLInputElement>(null);
@@ -61,8 +59,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPlatformLogin }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier.trim() || !password.trim() || !hospitalCode.trim()) return;
-    await login(identifier.trim(), password.trim(), hospitalCode.trim());
+    if (!identifier.trim() || !password.trim()) return;
+    await login(identifier.trim(), password.trim());
   };
 
   return (
@@ -253,28 +251,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPlatformLogin }) => {
 
             {/* Official Login Form */}
             <form onSubmit={handleSubmit} className="space-y-5 w-full">
-              {/* Hospital Code Field */}
-              <div className="space-y-1.5 w-full">
-                <label htmlFor="login-hospital-code" className="block text-xs font-bold text-slate-700">
-                  Hospital Code <span className="text-red-600">*</span>
-                </label>
-                <div className="relative w-full">
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                  <input
-                    id="login-hospital-code"
-                    type="text"
-                    value={hospitalCode}
-                    onChange={(e) => setHospitalCode(e.target.value)}
-                    placeholder="e.g. esic-model"
-                    autoComplete="organization"
-                    required
-                    disabled={isLoading}
-                    className="w-full h-14 pl-11 pr-4 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0B2545] focus:border-[#0B2545] transition-all"
-                  />
-                </div>
-                <p className="text-[10px] text-slate-400">The short code your hospital was given at onboarding.</p>
-              </div>
-
               {/* Username Field */}
               <div className="space-y-1.5 w-full">
                 <label
@@ -351,7 +327,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPlatformLogin }) => {
               {/* Secure Login Button (Height: 54px, Government Navy Blue) */}
               <button
                 type="submit"
-                disabled={isLoading || !identifier.trim() || !password.trim() || !hospitalCode.trim()}
+                disabled={isLoading || !identifier.trim() || !password.trim()}
                 className="w-full h-[54px] bg-[#0B2545] hover:bg-[#13315C] active:bg-[#081C34] text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 border-b-2 border-[#B45309] disabled:opacity-50 mt-2"
               >
                 {isLoading ? (
@@ -367,16 +343,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onPlatformLogin }) => {
                 )}
               </button>
             </form>
-
-            {onPlatformLogin && (
-              <button
-                onClick={onPlatformLogin}
-                type="button"
-                className="block mx-auto text-[11px] font-semibold text-slate-400 hover:text-[#0B2545] transition-colors"
-              >
-                Platform Administrator? Sign in here
-              </button>
-            )}
           </div>
         </div>
       </div>

@@ -183,6 +183,21 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
     reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
   },
   {
+    file: 'modules/platform/hospital-admins.controller.ts',
+    method: 'list',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospital-admins.controller.ts',
+    method: 'create',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospital-admins.controller.ts',
+    method: 'setActive',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
     file: 'modules/platform/platform-admins.controller.ts',
     method: 'list',
     reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
@@ -239,11 +254,6 @@ const ALLOWED_PUBLIC: { file: string; method: string; reason: string }[] = [
     file: 'modules/auth/branding.controller.ts',
     method: 'getBranding',
     reason: 'Hospital name/tagline/colour shown on the public login screen before any auth exists.',
-  },
-  {
-    file: 'modules/auth/platform-auth.controller.ts',
-    method: 'login',
-    reason: 'Platform (global Super Admin) credential exchange — the caller has no token yet by definition.',
   },
 ];
 

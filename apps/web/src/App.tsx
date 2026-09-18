@@ -1,29 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
-import { PlatformLoginPage } from './pages/PlatformLoginPage';
 import { AppShell } from './components/layout/AppShell';
 import { PlatformConsole } from './components/layout/PlatformConsole';
 
 /* ═══════════════════════════════════════════════════════════
    Main App Controller
    Auth Gate:
-     not authenticated            -> LoginPage / PlatformLoginPage (toggle)
+     not authenticated            -> LoginPage (one unified form for everyone)
      platform mode, no hospital   -> PlatformConsole
      otherwise (hospital staff,
        or platform mode with a
        hospital entered)          -> AppShell (unmodified, reused)
    ═══════════════════════════════════════════════════════════ */
-
-const LoginGate: React.FC = () => {
-  const [showPlatformLogin, setShowPlatformLogin] = useState(false);
-  return showPlatformLogin ? (
-    <PlatformLoginPage onBackToHospitalLogin={() => setShowPlatformLogin(false)} />
-  ) : (
-    <LoginPage onPlatformLogin={() => setShowPlatformLogin(true)} />
-  );
-};
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading, mode, activeHospital } = useAuth();
@@ -42,7 +32,7 @@ const AppContent: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return <LoginGate />;
+    return <LoginPage />;
   }
 
   if (mode === 'platform' && !activeHospital) {

@@ -29,6 +29,7 @@ import { PatientModule } from './modules/patient/patient.module';
 import { RbacAdminModule } from './modules/rbac-admin/rbac-admin.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { BrandingController } from './modules/auth/branding.controller';
+import { HospitalSettingsController } from './modules/auth/hospital-settings.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RbacGuard } from './common/guards/rbac.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -66,7 +67,7 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
     RbacAdminModule,
     PlatformModule,
   ],
-  controllers: [BrandingController],
+  controllers: [BrandingController, HospitalSettingsController],
   providers: [
     {
       provide: APP_GUARD,

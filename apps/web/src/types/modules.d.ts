@@ -152,6 +152,17 @@ declare module 'lucide-react' {
   export const PieChart: LucideIcon;
   export const LineChart: LucideIcon;
   export const Wallet: LucideIcon;
+  export const FileClock: LucideIcon;
+  export const PackageX: LucideIcon;
+  export const UserCog: LucideIcon;
+  export const Hourglass: LucideIcon;
+  export const ServerCrash: LucideIcon;
+  export const LogIn: LucideIcon;
+  export const Pencil: LucideIcon;
+  export const PauseCircle: LucideIcon;
+  export const PlayCircle: LucideIcon;
+  export const Ban: LucideIcon;
+  export const Edit2: LucideIcon;
 
   export type { LucideIcon, LucideProps };
 }
