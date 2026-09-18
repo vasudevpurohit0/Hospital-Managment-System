@@ -5,6 +5,8 @@ import { PricingService } from '../catalog/pricing.service';
 import { ChargeService } from '../billing/charge.service';
 import { BenefitRuleService } from '../benefit/benefit-rule.service';
 import { IpdFinanceService } from './ipd-finance.service';
+import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 
 const describeWithDb = process.env.DATABASE_URL ? describe : describe.skip;
 
@@ -88,7 +90,10 @@ describeWithDb('IpdFinanceService (integration)', () => {
     const pricing = new PricingService(prisma);
     const charges = new ChargeService(prisma, pricing);
     const benefitRules = new BenefitRuleService(prisma);
-    ipd = new IpdFinanceService(prisma, charges, benefitRules);
+    // This suite exercises postBedDayCharges() directly, not the cron entry
+    // point, so these two tenant-fan-out dependencies are never invoked --
+    // real-but-idle instances just satisfy the constructor.
+    ipd = new IpdFinanceService(prisma, charges, benefitRules, new PlatformPrismaService(), new TenantClientFactory());
 
     actorUserId = (await prisma.user.findFirstOrThrow({ where: { role: { name: 'AdmissionDesk' } } })).id;
 

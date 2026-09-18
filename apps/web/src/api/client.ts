@@ -16,6 +16,28 @@ export function getStoredToken(): string | null {
   }
 }
 
+/**
+ * When acting as the platform Super Admin who has "entered" a hospital, every
+ * request needs X-Hospital-Id so the backend knows which tenant schema to
+ * route to (a hospital-staff token never needs this -- its own JWT already
+ * embeds its hospital). This is the single choke point that makes every
+ * existing *.api.ts module work unmodified for a Super Admin inside a
+ * hospital.
+ */
+function getActiveHospitalHeader(): string | null {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed.mode === 'platform' && parsed.activeHospital?.id) {
+      return parsed.activeHospital.id as string;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiFetch(
   endpoint: string,
   options: RequestInit = {},
@@ -33,6 +55,11 @@ export async function apiFetch(
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const activeHospitalId = getActiveHospitalHeader();
+  if (activeHospitalId) {
+    headers['X-Hospital-Id'] = activeHospitalId;
   }
 
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

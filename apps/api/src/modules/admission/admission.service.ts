@@ -1,6 +1,5 @@
 import {
   Injectable,
-  OnModuleInit,
   NotFoundException,
   ConflictException,
   ForbiddenException,
@@ -16,8 +15,16 @@ import { AdmissionStatus, BedStatus } from '@prisma/client';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 import { IpdFinanceService } from './ipd-finance.service';
 
+// This used to also implement OnModuleInit, backfilling an admission stub
+// for every existing visit with an admission-recommended diagnosis whenever
+// the admissions table was empty. Removed rather than relocated: it ran at
+// app-process boot against "the" database, which no longer exists now that
+// each hospital has its own schema, and for any tenant schema going forward
+// (onboarded fresh) visits/diagnoses are also empty whenever admissions is
+// empty, making it a guaranteed no-op -- there was never real behavior here
+// to preserve for a genuinely new hospital.
 @Injectable()
-export class AdmissionService implements OnModuleInit {
+export class AdmissionService {
   private readonly logger = new Logger(AdmissionService.name);
 
   constructor(
@@ -26,33 +33,6 @@ export class AdmissionService implements OnModuleInit {
     private sequences: DocumentSequenceService,
     private ipdFinance: IpdFinanceService,
   ) {}
-
-  async onModuleInit() {
-    // Populate initial admission stubs for any visit with an admission-recommended diagnosis
-    const count = await this.prisma.admission.count();
-    if (count === 0) {
-      const visits = await this.prisma.visit.findMany({
-        include: { employee: true },
-      });
-
-      for (const visit of visits) {
-        const dx = await this.prisma.diagnosis.findFirst({
-          where: { visitId: visit.id },
-        });
-
-        if (dx && dx.admissionRecommended) {
-          await this.prisma.admission.create({
-            data: {
-              visitId: visit.id,
-              admissionNumber: await this.sequences.next('IPD_NUMBER'),
-              status: AdmissionStatus.REQUESTED,
-              eligibleCategory: 'C',
-            },
-          });
-        }
-      }
-    }
-  }
 
   async findAll() {
     return this.prisma.admission.findMany({

@@ -2,6 +2,7 @@ import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { TenantModule } from './common/tenant/tenant.module';
 import { SequenceModule } from './common/sequence/sequence.module';
 import { RenderingModule } from './common/rendering/rendering.module';
 import { HealthModule } from './health/health.module';
@@ -26,15 +27,18 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { UserModule } from './modules/user/user.module';
 import { PatientModule } from './modules/patient/patient.module';
 import { RbacAdminModule } from './modules/rbac-admin/rbac-admin.module';
+import { PlatformModule } from './modules/platform/platform.module';
 import { BrandingController } from './modules/auth/branding.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RbacGuard } from './common/guards/rbac.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SecurityMiddleware } from './common/middleware/security.middleware';
+import { TenantResolutionMiddleware } from './common/middleware/tenant-resolution.middleware';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    TenantModule,
     PrismaModule,
     SequenceModule,
     RenderingModule,
@@ -60,6 +64,7 @@ import { SecurityMiddleware } from './common/middleware/security.middleware';
     DashboardModule,
     UserModule,
     RbacAdminModule,
+    PlatformModule,
   ],
   controllers: [BrandingController],
   providers: [
@@ -79,6 +84,9 @@ import { SecurityMiddleware } from './common/middleware/security.middleware';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(SecurityMiddleware).forRoutes('*');
+    // TenantResolutionMiddleware must run before the guard chain (JwtAuthGuard
+    // reloads the user from the tenant DB during Passport validation), so it
+    // is applied first here.
+    consumer.apply(TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
   }
 }

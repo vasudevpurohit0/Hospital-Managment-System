@@ -11,6 +11,17 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { runWithTenant } from '../../common/tenant/tenant-context';
+
+interface RefreshPayload {
+  sub: string;
+  identifier: string;
+  hospitalId: string;
+  schemaName: string;
+  type: 'refresh';
+}
 
 @Injectable()
 export class AuthService {
@@ -19,7 +30,26 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private platformPrisma: PlatformPrismaService,
+    private tenantClients: TenantClientFactory,
   ) {}
+
+  /**
+   * Resolves a hospital by its login-form slug and gives back an already
+   * `$connect()`-ed tenant client for it. Throws the same generic
+   * "Invalid credentials" message on a bad/suspended hospital as a bad
+   * password would, so a login attempt can't be used to enumerate which
+   * hospital codes exist.
+   */
+  private async resolveHospital(hospitalCode: string) {
+    const hospital = await this.platformPrisma.hospital.findUnique({
+      where: { slug: hospitalCode.trim() },
+    });
+    if (!hospital || hospital.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    return hospital;
+  }
 
   async validateUser(identifier: string, pass: string) {
     if (!identifier || typeof identifier !== 'string' || !pass || typeof pass !== 'string') {
@@ -74,6 +104,16 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
+    const hospital = await this.resolveHospital(loginDto.hospitalCode);
+    const client = await this.tenantClients.getClient(hospital.schemaName);
+
+    return runWithTenant(
+      { hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client },
+      () => this.loginWithinTenant(loginDto, hospital.id, hospital.schemaName),
+    );
+  }
+
+  private async loginWithinTenant(loginDto: LoginDto, hospitalId: string, schemaName: string) {
     const user = await this.validateUser(loginDto.identifier, loginDto.password);
     const roleName = user.role?.name || 'Doctor';
 
@@ -82,12 +122,16 @@ export class AuthService {
       identifier: user.identifier,
       roleId: user.roleId,
       roleName,
+      hospitalId,
+      schemaName,
       type: 'access',
     };
 
-    const refreshPayload = {
+    const refreshPayload: RefreshPayload = {
       sub: user.id,
       identifier: user.identifier,
+      hospitalId,
+      schemaName,
       type: 'refresh',
     };
 
@@ -118,15 +162,28 @@ export class AuthService {
   }
 
   async refreshTokens(refreshTokenDto: RefreshTokenDto) {
+    let payload: RefreshPayload;
     try {
-      const payload = this.jwtService.verify(refreshTokenDto.refreshToken, {
+      payload = this.jwtService.verify(refreshTokenDto.refreshToken, {
         secret: process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_key_67890',
       });
 
-      if (payload.type !== 'refresh') {
+      if (payload.type !== 'refresh' || !payload.hospitalId || !payload.schemaName) {
         throw new UnauthorizedException('Invalid refresh token type');
       }
+    } catch {
+      throw new UnauthorizedException('Refresh token invalid or expired');
+    }
 
+    const client = await this.tenantClients.getClient(payload.schemaName);
+    return runWithTenant(
+      { hospitalId: payload.hospitalId, schemaName: payload.schemaName, prismaClient: client },
+      () => this.issueAccessTokenFromRefresh(payload),
+    );
+  }
+
+  private async issueAccessTokenFromRefresh(payload: RefreshPayload) {
+    try {
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
         include: { role: true },
@@ -143,6 +200,8 @@ export class AuthService {
         identifier: user.identifier,
         roleId: user.roleId,
         roleName,
+        hospitalId: payload.hospitalId,
+        schemaName: payload.schemaName,
         type: 'access',
       };
 

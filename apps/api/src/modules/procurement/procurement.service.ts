@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
@@ -12,44 +13,69 @@ import {
   PharmacyLocation,
   StockStatus,
 } from '@prisma/client';
+import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { runWithTenant } from '../../common/tenant/tenant-context';
 
 @Injectable()
-export class ProcurementService implements OnModuleInit {
+export class ProcurementService {
   private readonly logger = new Logger(ProcurementService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private platformPrisma: PlatformPrismaService,
+    private tenantClients: TenantClientFactory,
+  ) {}
 
   /**
-   * Run a startup scan to detect and resolve requisitions for pre-existing low stock items.
+   * Periodic scan to detect and resolve requisitions for existing low-stock
+   * items. Used to run once at app-process boot against "the" database;
+   * converted to a recurring per-tenant job (like IpdFinanceService's nightly
+   * bed-day job) since there is no single database to scan at boot anymore,
+   * and a hospital onboarded after the process started would otherwise never
+   * get this scan at all.
    */
-  async onModuleInit() {
-    this.logger.log('🔍 Running database startup scan for existing low stock inventory...');
-    try {
-      const activeBatches = await this.prisma.medicineBatch.findMany({
-        where: {
-          stockStatus: {
-            notIn: [StockStatus.DISPOSED],
-          },
+  @Cron(CronExpression.EVERY_6_HOURS)
+  async runLowStockScanAllHospitals(): Promise<void> {
+    const hospitals = await this.platformPrisma.hospital.findMany({ where: { status: 'ACTIVE' } });
+    for (const hospital of hospitals) {
+      try {
+        const client = await this.tenantClients.getClient(hospital.schemaName);
+        await runWithTenant(
+          { hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client },
+          () => this.scanLowStock(),
+        );
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Low-stock scan failed for hospital "${hospital.slug}": ${message}`);
+      }
+    }
+  }
+
+  private async scanLowStock() {
+    this.logger.log('🔍 Running low-stock inventory scan...');
+    const activeBatches = await this.prisma.medicineBatch.findMany({
+      where: {
+        stockStatus: {
+          notIn: [StockStatus.DISPOSED],
         },
-      });
+      },
+    });
 
-      let triggeredCount = 0;
-      for (const batch of activeBatches) {
-        if (batch.currentStock < batch.minimumStockLevel) {
-          await this.prisma.$transaction(async (tx) => {
-            await this.checkAndTriggerLowStockRequisition(batch.id, tx);
-          });
-          triggeredCount++;
-        }
+    let triggeredCount = 0;
+    for (const batch of activeBatches) {
+      if (batch.currentStock < batch.minimumStockLevel) {
+        await this.prisma.$transaction(async (tx) => {
+          await this.checkAndTriggerLowStockRequisition(batch.id, tx);
+        });
+        triggeredCount++;
       }
+    }
 
-      if (triggeredCount > 0) {
-        this.logger.log(`🔔 Automatically generated requisitions for ${triggeredCount} existing low-stock batches.`);
-      } else {
-        this.logger.log('✅ All existing inventory levels are healthy or already requested.');
-      }
-    } catch (err) {
-      this.logger.error('Failed to run initial low stock check on startup:', err);
+    if (triggeredCount > 0) {
+      this.logger.log(`🔔 Automatically generated requisitions for ${triggeredCount} low-stock batches.`);
+    } else {
+      this.logger.log('✅ All inventory levels are healthy or already requested.');
     }
   }
 

@@ -1,62 +1,13 @@
-import { Injectable, OnModuleInit, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { BenefitOutcome, EmploymentTypeCode } from '@prisma/client';
 import { CreateBenefitRuleDto } from './dto/create-benefit-rule.dto';
 
 @Injectable()
-export class BenefitRuleService implements OnModuleInit {
+export class BenefitRuleService {
   private readonly logger = new Logger(BenefitRuleService.name);
 
   constructor(private prisma: PrismaService) {}
-
-  async onModuleInit() {
-    // Pre-seed default data rows per spec §7
-    const contractualType = await this.prisma.employmentType.findUnique({
-      where: { code: EmploymentTypeCode.CONTRACTUAL },
-    });
-
-    if (contractualType) {
-      const existing = await this.prisma.benefitRule.findFirst({
-        where: { employmentTypeId: contractualType.id, medicineCategory: null },
-      });
-
-      if (!existing) {
-        await this.prisma.benefitRule.create({
-          data: {
-            employmentTypeId: contractualType.id,
-            medicineCategory: null,
-            outcome: BenefitOutcome.PAID,
-            active: true,
-            version: 1,
-          },
-        });
-        this.logger.log('✅ Seeded default BenefitRule: CONTRACTUAL -> PAID (all categories)');
-      }
-    }
-
-    const permanentType = await this.prisma.employmentType.findUnique({
-      where: { code: EmploymentTypeCode.PERMANENT },
-    });
-
-    if (permanentType) {
-      const existing = await this.prisma.benefitRule.findFirst({
-        where: { employmentTypeId: permanentType.id, medicineCategory: null },
-      });
-
-      if (!existing) {
-        await this.prisma.benefitRule.create({
-          data: {
-            employmentTypeId: permanentType.id,
-            medicineCategory: null,
-            outcome: BenefitOutcome.COVERED,
-            active: true,
-            version: 1,
-          },
-        });
-        this.logger.log('✅ Seeded default BenefitRule: PERMANENT -> COVERED (all categories)');
-      }
-    }
-  }
 
   /**
    * Single Evaluator Engine used across prescription screen and pharmacy dispensing flow (Spec §7 & Module 8)

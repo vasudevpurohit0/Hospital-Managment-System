@@ -7,6 +7,7 @@ import { PERMISSION_KEY } from '../decorators/permissions.decorator';
 interface StubUser {
   roleName: string;
   permissions?: { resource: string; action: string }[];
+  type?: 'hospital' | 'platform';
 }
 
 /**
@@ -37,11 +38,22 @@ describe('RbacGuard', () => {
   const readEmployee = { resource: 'Employee', action: 'read' };
 
   describe('unconditional bypass', () => {
-    it('grants SuperAdmin access without any matching permission', () => {
+    it('grants the platform Super Admin access without any matching permission', () => {
       const guard = guardWith({ permission: readEmployee });
-      const ctx = contextFor({ roleName: 'SuperAdmin', permissions: [] });
+      const ctx = contextFor({ roleName: 'SuperAdmin', permissions: [], type: 'platform' });
 
       expect(guard.canActivate(ctx)).toBe(true);
+    });
+
+    // Regression: the bypass used to be keyed off a role-NAME string, which a
+    // caller could spoof (or which could re-appear after the hospital-local
+    // SuperAdmin role was retired). It must now require the verified
+    // `type: 'platform'` claim from the platform JWT, not the display name.
+    it('does NOT bypass on a "SuperAdmin" role name alone without type: platform', () => {
+      const guard = guardWith({ permission: readEmployee });
+      const ctx = contextFor({ roleName: 'SuperAdmin', permissions: [], type: 'hospital' });
+
+      expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
     });
 
     // Regression: Administrator previously short-circuited the guard alongside

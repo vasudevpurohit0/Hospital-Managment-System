@@ -109,9 +109,10 @@ const PAGE_GROUP: Record<PageId, string> = {
 };
 
 export const AppShell: React.FC = () => {
-  const { token, user } = useAuth();
+  const { token, user, mode, activeHospital, exitHospital } = useAuth();
   const authToken = token || '';
   const userRole = user?.role || '';
+  const isPlatformViewingHospital = mode === 'platform' && !!activeHospital;
 
   // The active page is derived from the URL rather than held in component
   // state, so every screen is linkable, bookmarkable and reachable with the
@@ -299,6 +300,19 @@ export const AppShell: React.FC = () => {
         }}
       >
         <div className="p-6">
+          {isPlatformViewingHospital && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm">
+              <span className="font-medium text-amber-900">
+                Viewing as Super Admin: <strong>{activeHospital!.name}</strong>
+              </span>
+              <button
+                onClick={exitHospital}
+                className="text-xs font-semibold text-amber-800 hover:text-amber-950 underline"
+              >
+                Exit to Platform Console
+              </button>
+            </div>
+          )}
           <AnimatePresence mode="wait">
             <motion.div
               key={activePage}

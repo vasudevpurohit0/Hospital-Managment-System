@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProcurementService } from './procurement.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { BadRequestException } from '@nestjs/common';
 import { ApprovalDecision, RequisitionStatus, POStatus, PharmacyLocation } from '@prisma/client';
 
@@ -45,7 +47,12 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ProcurementService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        ProcurementService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: PlatformPrismaService, useValue: { hospital: { findMany: jest.fn().mockResolvedValue([]) } } },
+        { provide: TenantClientFactory, useValue: { getClient: jest.fn() } },
+      ],
     }).compile();
 
     service = module.get<ProcurementService>(ProcurementService);

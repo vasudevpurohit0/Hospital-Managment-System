@@ -1,0 +1,70 @@
+// Platform (control-plane) Prisma project.
+// Lives in the Postgres `public` schema of the SAME database as every
+// tenant. Independent generator/output from the main tenant schema.prisma
+// so the two generated clients never collide.
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../node_modules/.prisma/platform-client"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("PLATFORM_DATABASE_URL")
+}
+
+enum HospitalStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+}
+
+model Hospital {
+  id           String         @id @default(uuid()) @db.Uuid
+  name         String
+  slug         String         @unique
+  schemaName   String         @unique @map("schema_name")
+  status       HospitalStatus @default(PROVISIONING)
+  contactEmail String?        @map("contact_email")
+  contactPhone String?        @map("contact_phone")
+  address      String?
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  auditLogs PlatformAuditLog[]
+
+  @@map("hospitals")
+}
+
+model PlatformUser {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  auditLogs PlatformAuditLog[]
+
+  @@map("platform_users")
+}
+
+model PlatformAuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  platformUserId String   @map("platform_user_id") @db.Uuid
+  hospitalId     String?  @map("hospital_id") @db.Uuid
+  action         String
+  resource       String?
+  method         String?
+  path           String?
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  platformUser PlatformUser @relation(fields: [platformUserId], references: [id])
+  hospital     Hospital?    @relation(fields: [hospitalId], references: [id])
+
+  @@index([hospitalId])
+  @@index([platformUserId])
+  @@map("platform_audit_log")
+}

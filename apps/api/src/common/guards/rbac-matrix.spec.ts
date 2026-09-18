@@ -136,6 +136,77 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
     method: 'getProfile',
     reason: 'GET /auth/me returns the caller\'s own token claims — any authenticated user, by definition.',
   },
+  {
+    file: 'modules/dashboard/dashboard.controller.ts',
+    method: 'getMetrics',
+    reason:
+      'Hospital-wide aggregate counts only (visits/beds/stock/requisitions/charges), never an individual ' +
+      'record — every role with Dashboard in its sidebar needs this, including roles with no Employee ' +
+      'permission, so JwtAuthGuard alone is the correct bar (see the class-level comment on DashboardController).',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'list',
+    reason:
+      'Platform (Super Admin) only, enforced by the controller-level @UseGuards(PlatformOnlyGuard) rather ' +
+      'than a hospital-local @RequirePermission/@Roles grant, since no hospital role should ever be able to ' +
+      'reach this regardless of permissions — RBAC permission rows are a hospital-local concept.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'getById',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'create',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'update',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'setStatus',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'resetPassword',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
+    method: 'remove',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-admins.controller.ts',
+    method: 'list',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-admins.controller.ts',
+    method: 'create',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-admins.controller.ts',
+    method: 'setActive',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-audit-log.controller.ts',
+    method: 'list',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-dashboard.controller.ts',
+    method: 'getSummary',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
 ];
 
 /**
@@ -168,6 +239,11 @@ const ALLOWED_PUBLIC: { file: string; method: string; reason: string }[] = [
     file: 'modules/auth/branding.controller.ts',
     method: 'getBranding',
     reason: 'Hospital name/tagline/colour shown on the public login screen before any auth exists.',
+  },
+  {
+    file: 'modules/auth/platform-auth.controller.ts',
+    method: 'login',
+    reason: 'Platform (global Super Admin) credential exchange — the caller has no token yet by definition.',
   },
 ];
 
@@ -220,10 +296,15 @@ describe('RBAC permission matrix (P8 static sweep)', () => {
     ).toEqual([]);
   });
 
-  it('SuperAdmin is the only role carrying the universal wildcard grant', () => {
+  // The universal wildcard used to be a seeded 'SuperAdmin' role's permission
+  // row. That role is retired: cross-hospital "sees everything" access is now
+  // exclusively a platform-JWT property (RbacGuard's `type === 'platform'`
+  // bypass), never a row in this table. No hospital-local role should ever
+  // carry resource:'*', action:'*' again.
+  it('no seeded role carries the universal wildcard grant', () => {
     const wildcardRoles = PERMISSION_GRANTS.filter((g) => g.resource === '*' && g.action === '*').map(
       (g) => g.roleName,
     );
-    expect(wildcardRoles).toEqual(['SuperAdmin']);
+    expect(wildcardRoles).toEqual([]);
   });
 });

@@ -1,7 +1,9 @@
-import { PrismaClient, EmploymentTypeCode, FacilityCategory, RoomType, BedStatus } from '@prisma/client';
+import { PrismaClient, EmploymentTypeCode, FacilityCategory, RoomType, BedStatus, BenefitOutcome } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { seedCatalog } from './seeds/catalog.seed';
 import { seedLabCatalog } from './seeds/lab-catalog.seed';
+import { SEED_DEPARTMENTS } from '../src/modules/opd/services/department.service';
+import { DEFAULT_BRANDING } from '../src/modules/auth/branding.controller';
 
 const prisma = new PrismaClient();
 
@@ -15,7 +17,6 @@ export const SYSTEM_ROLES = [
   'ProcurementOfficer',
   'DataEntryOperator',
   'Administrator',
-  'SuperAdmin',
   'QueueManager',
   'LabTechnician',
   'Pathologist',
@@ -207,9 +208,10 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
     { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'create' },
     { roleName: 'Administrator', resource: 'PurchaseOrder', action: 'read' },
     { roleName: 'Administrator', resource: 'Approval', action: 'approve' },
-    // Administrator no longer bypasses the RbacGuard (only SuperAdmin does), so
-    // every endpoint it must reach needs an explicit grant. These two were
-    // previously reachable only through that bypass.
+    // Administrator no longer bypasses the RbacGuard (only the platform Super
+    // Admin does, via type: 'platform' -- see RbacGuard), so every endpoint it
+    // must reach needs an explicit grant. These two were previously reachable
+    // only through that bypass.
     { roleName: 'Administrator', resource: 'Billing', action: 'read' },
     { roleName: 'Administrator', resource: 'BrandingConfig', action: 'update' },
     // Service catalogue and pricing. Setting a rate is an administrative act:
@@ -258,9 +260,6 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
     { roleName: 'Pharmacist', resource: 'Service', action: 'read' },
     { roleName: 'LabTechnician', resource: 'Service', action: 'read' },
     { roleName: 'Pathologist', resource: 'Service', action: 'read' },
-
-    // --- SuperAdmin (Wildcard / all permissions) ---
-    { roleName: 'SuperAdmin', resource: '*', action: '*' },
 
     // --- LabTechnician (accessions samples and enters results) ---
     // Deliberately cannot verify or release: a technician's entry is never the
@@ -364,6 +363,45 @@ export async function main() {
     },
   });
   console.log(`  ✓ Seeded EmploymentTypes: Permanent & Contractual`);
+
+  // 3b. Seed default BenefitRules (spec §7). Moved here from
+  // BenefitRuleService.onModuleInit(): that ran once at app-process boot
+  // against "the" database, which no longer makes sense once each hospital
+  // has its own schema (there's no single database to auto-seed into at
+  // process start anymore). This runs once per tenant schema instead, right
+  // alongside every other per-tenant default this script seeds -- both for
+  // the initial cutover and for every hospital onboarded afterward via
+  // `prisma db seed` against that hospital's schema.
+  const existingContractualRule = await prisma.benefitRule.findFirst({
+    where: { employmentTypeId: contractualType.id, medicineCategory: null },
+  });
+  if (!existingContractualRule) {
+    await prisma.benefitRule.create({
+      data: {
+        employmentTypeId: contractualType.id,
+        medicineCategory: null,
+        outcome: BenefitOutcome.PAID,
+        active: true,
+        version: 1,
+      },
+    });
+  }
+
+  const existingPermanentRule = await prisma.benefitRule.findFirst({
+    where: { employmentTypeId: permanentType.id, medicineCategory: null },
+  });
+  if (!existingPermanentRule) {
+    await prisma.benefitRule.create({
+      data: {
+        employmentTypeId: permanentType.id,
+        medicineCategory: null,
+        outcome: BenefitOutcome.COVERED,
+        active: true,
+        version: 1,
+      },
+    });
+  }
+  console.log(`  ✓ Seeded default BenefitRules: CONTRACTUAL -> PAID, PERMANENT -> COVERED`);
 
   // 4. Seed Posts & Grades
   const seniorOfficerPost = await prisma.post.upsert({
@@ -708,25 +746,11 @@ export async function main() {
   console.log(`  ✓ Seeded FacilityEligibilityRules`);
 
   // 5. Seed Users
-  const superAdminPasswordHash = await bcrypt.hash('SuperAdminSecret123!', 10);
-
-  const superAdminUser = await prisma.user.upsert({
-    where: { identifier: 'superadmin@esic.gov.in' },
-    update: {
-      passwordHash: superAdminPasswordHash,
-      roleId: roleMap['SuperAdmin'],
-      active: true,
-    },
-    create: {
-      identifier: 'superadmin@esic.gov.in',
-      passwordHash: superAdminPasswordHash,
-      roleId: roleMap['SuperAdmin'],
-      active: true,
-    },
-  });
-
-  console.log(`  ✓ Seeded SuperAdmin user: superadmin@esic.gov.in (${superAdminUser.id})`);
-
+  //
+  // No SuperAdmin user is seeded here: the hospital-local SuperAdmin role is
+  // retired now that cross-hospital access is a real platform-level concept
+  // (see PlatformUser / apps/api/prisma/platform/seed.ts, which seeds the
+  // global Super Admin instead).
   const doctorPasswordHash = await bcrypt.hash('DoctorPass123!', 10);
   const doctorUser = await prisma.user.upsert({
     where: { identifier: 'doctor@esic.gov.in' },
@@ -1200,6 +1224,22 @@ export async function main() {
 
   // 14. Seed Laboratory Test Master (Phase 3)
   await seedLabCatalog(prisma);
+
+  // 15. Seed default clinical departments. Moved here from
+  // DepartmentService.onModuleInit() -- see that file for why.
+  for (const d of SEED_DEPARTMENTS) {
+    await prisma.department.upsert({ where: { code: d.code }, update: {}, create: d });
+  }
+  console.log(`  ✓ Seeded default clinical departments`);
+
+  // 16. Seed default branding singleton. Moved here from
+  // BrandingController.onModuleInit() -- see that file for why.
+  await prisma.brandingConfig.upsert({
+    where: { id: 'singleton' },
+    create: { id: 'singleton', ...DEFAULT_BRANDING },
+    update: {},
+  });
+  console.log(`  ✓ Seeded default branding`);
 
   console.log('✅ Seed completed successfully!');
 }

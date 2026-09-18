@@ -31,13 +31,20 @@ export class RbacGuard implements CanActivate {
       throw new ForbiddenException('Access denied: unauthenticated or missing user role');
     }
 
-    // SuperAdmin is the only role that bypasses role and permission checks.
+    // The global Super Admin (a PlatformUser, authenticated via the separate
+    // platform JWT -- see PlatformJwtStrategy) is the only caller that
+    // bypasses role and permission checks. This used to be a hospital-local
+    // 'SuperAdmin' DB role checked by name; that role is retired now that
+    // cross-hospital access is a real platform-level concept, so the bypass
+    // is keyed off the verified token type instead of a role-name string
+    // (which a caller cannot spoof the way a role name on a stub object
+    // could be).
     //
     // Administrator previously bypassed as well, which made it indistinguishable
     // from SuperAdmin and meant permission grants could not be reasoned about
     // for the role most widely handed out. Administrator now carries explicit
     // permission rows (see prisma/seed.ts) and is evaluated like any other role.
-    if (user.roleName === 'SuperAdmin') {
+    if (user.type === 'platform') {
       return true;
     }
 

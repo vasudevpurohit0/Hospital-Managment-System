@@ -9,6 +9,10 @@ export class LoginDto {
   @IsNotEmpty()
   @MinLength(6)
   password!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  hospitalCode!: string; // Hospital slug, selects which tenant schema to authenticate against
 }
 
 export class RefreshTokenDto {

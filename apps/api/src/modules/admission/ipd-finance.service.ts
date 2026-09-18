@@ -5,6 +5,9 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ChargeService } from '../billing/charge.service';
 import { PrismaClientLike } from '../catalog/pricing.service';
 import { BenefitRuleService } from '../benefit/benefit-rule.service';
+import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { runWithTenant } from '../../common/tenant/tenant-context';
 
 /** Ward category → the bed-day Service billed for it (plan §11). */
 const BED_SERVICE_BY_CATEGORY: Record<FacilityCategory, string> = {
@@ -51,11 +54,34 @@ export class IpdFinanceService {
     private readonly prisma: PrismaService,
     private readonly charges: ChargeService,
     private readonly benefitRules: BenefitRuleService,
+    private readonly platformPrisma: PlatformPrismaService,
+    private readonly tenantClients: TenantClientFactory,
   ) {}
 
+  /**
+   * Runs outside any HTTP request, so there is no AsyncLocalStorage tenant
+   * context to inherit -- it must set one explicitly per hospital. Fans out
+   * across every ACTIVE hospital so a missed night for one tenant doesn't
+   * block the rest.
+   */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async runNightlyBedDayJob(): Promise<void> {
-    await this.postBedDayCharges(new Date());
+    const hospitals = await this.platformPrisma.hospital.findMany({
+      where: { status: 'ACTIVE' },
+    });
+    const forDate = new Date();
+    for (const hospital of hospitals) {
+      try {
+        const client = await this.tenantClients.getClient(hospital.schemaName);
+        await runWithTenant(
+          { hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client },
+          () => this.postBedDayCharges(forDate),
+        );
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Nightly bed-day job failed for hospital "${hospital.slug}": ${message}`);
+      }
+    }
   }
 
   /**

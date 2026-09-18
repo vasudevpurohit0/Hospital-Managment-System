@@ -4,6 +4,8 @@ import { UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -34,6 +36,23 @@ describe('AuthService', () => {
     verify: jest.fn(),
   };
 
+  const mockHospital = {
+    id: 'hospital-123',
+    slug: 'test-hospital',
+    schemaName: 'hospital_test_hospital',
+    status: 'ACTIVE',
+  };
+
+  const mockPlatformPrismaService = {
+    hospital: {
+      findUnique: jest.fn().mockResolvedValue(mockHospital),
+    },
+  };
+
+  const mockTenantClientFactory = {
+    getClient: jest.fn().mockResolvedValue(mockPrismaService),
+  };
+
   beforeEach(async () => {
     mockUser.passwordHash = await bcrypt.hash('DoctorPass123!', 10);
 
@@ -42,6 +61,8 @@ describe('AuthService', () => {
         AuthService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: JwtService, useValue: mockJwtService },
+        { provide: PlatformPrismaService, useValue: mockPlatformPrismaService },
+        { provide: TenantClientFactory, useValue: mockTenantClientFactory },
       ],
     }).compile();
 
@@ -105,6 +126,7 @@ describe('AuthService', () => {
       const result = await service.login({
         identifier: 'doctor@esic.gov.in',
         password: 'DoctorPass123!',
+        hospitalCode: 'test-hospital',
       });
 
       expect(result).toHaveProperty('accessToken');

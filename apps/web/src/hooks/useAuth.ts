@@ -6,29 +6,47 @@ export interface AuthUser {
   email: string;
   role: string;
   department?: string;
+  /** Present for a hospital-staff session; absent for a platform session. */
+  hospitalId?: string;
+}
+
+export type AuthMode = 'hospital' | 'platform';
+
+export interface ActiveHospital {
+  id: string;
+  name: string;
 }
 
 interface AuthState {
   token: string | null;
   user: AuthUser | null;
+  mode: AuthMode | null;
+  activeHospital: ActiveHospital | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
 }
 
 interface AuthContextType extends AuthState {
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string, hospitalCode: string) => Promise<void>;
+  platformLogin: (email: string, password: string) => Promise<void>;
   logout: () => void;
   clearError: () => void;
+  /** Super Admin "enters" a hospital: every subsequent request carries X-Hospital-Id. */
+  enterHospital: (hospital: ActiveHospital) => void;
+  /** Returns to the platform console, no hospital selected. */
+  exitHospital: () => void;
 }
 
 const AUTH_STORAGE_KEY = 'esic-hms-auth';
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 interface StoredAuth {
+  mode: AuthMode;
   token: string;
   user: AuthUser;
   expiresAt: number;
+  activeHospital?: ActiveHospital | null;
 }
 
 function getStoredAuth(): StoredAuth | null {
@@ -40,6 +58,13 @@ function getStoredAuth(): StoredAuth | null {
       localStorage.removeItem(AUTH_STORAGE_KEY);
       return null;
     }
+    // Old (pre-multi-hospital) sessions have no `mode` -- treat as expired
+    // rather than guessing, so the user just logs in again with the new
+    // hospitalCode-aware form.
+    if (!stored.mode) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return null;
+    }
     return stored;
   } catch {
     localStorage.removeItem(AUTH_STORAGE_KEY);
@@ -47,11 +72,13 @@ function getStoredAuth(): StoredAuth | null {
   }
 }
 
-function storeAuth(token: string, user: AuthUser): void {
+function storeAuth(mode: AuthMode, token: string, user: AuthUser, activeHospital: ActiveHospital | null = null): void {
   const stored: StoredAuth = {
+    mode,
     token,
     user,
     expiresAt: Date.now() + SESSION_DURATION_MS,
+    activeHospital,
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(stored));
 }
@@ -61,7 +88,6 @@ function clearStoredAuth(): void {
 }
 
 const ROLE_DISPLAY_NAMES: Record<string, string> = {
-  SuperAdmin: 'Super Admin',
   Administrator: 'Administrator',
   Doctor: 'Doctor',
   Pharmacist: 'Pharmacist',
@@ -76,14 +102,35 @@ const ROLE_DISPLAY_NAMES: Record<string, string> = {
   Pathologist: 'Pathologist',
 };
 
-function buildUserFromRole(roleName: string, identifier: string): AuthUser {
+function buildUserFromRole(roleName: string, identifier: string, hospitalId?: string): AuthUser {
   const displayName = ROLE_DISPLAY_NAMES[roleName] || roleName;
   return {
     id: `user-${roleName.toLowerCase()}`,
     name: displayName,
     email: identifier,
     role: roleName,
+    hospitalId,
   };
+}
+
+function baseUrl(): string {
+  return import.meta.env.VITE_API_URL || 'http://localhost:3000';
+}
+
+async function postJson(path: string, body: unknown): Promise<Response> {
+  try {
+    return await fetch(`${baseUrl()}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -95,6 +142,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return {
         token: stored.token,
         user: stored.user,
+        mode: stored.mode,
+        activeHospital: stored.activeHospital || null,
         isAuthenticated: true,
         isLoading: false,
         error: null,
@@ -103,33 +152,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       token: null,
       user: null,
+      mode: null,
+      activeHospital: null,
       isAuthenticated: false,
       isLoading: false,
       error: null,
     };
   });
 
-  const login = useCallback(async (identifier: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string, hospitalCode: string) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     let res: Response;
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
-    const primaryUrl = `${baseUrl}/api/auth/login`;
-
     try {
-      try {
-        res = await fetch(primaryUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier, password }),
-        });
-      } catch {
-        res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier, password }),
-        });
-      }
+      res = await postJson('/api/auth/login', { identifier, password, hospitalCode });
     } catch {
       setState((prev) => ({
         ...prev,
@@ -166,10 +202,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (data.user?.id) user.id = data.user.id;
     if (data.user?.department) user.department = data.user.department;
 
-    storeAuth(token, user);
+    storeAuth('hospital', token, user, null);
     setState({
       token,
       user,
+      mode: 'hospital',
+      activeHospital: null,
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
+  }, []);
+
+  const platformLogin = useCallback(async (email: string, password: string) => {
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    let res: Response;
+    try {
+      res = await postJson('/api/platform/auth/login', { email, password });
+    } catch {
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: 'Unable to connect to the server. Please make sure the backend is running.',
+      }));
+      return;
+    }
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      const errorMessage = errorData.message || `Authentication failed (${res.status})`;
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: Array.isArray(errorMessage) ? errorMessage.join(', ') : errorMessage,
+      }));
+      return;
+    }
+
+    const data = await res.json();
+    const token = data.accessToken;
+    const user: AuthUser = {
+      id: data.user?.id || 'platform-user',
+      name: data.user?.name || 'Super Admin',
+      email: data.user?.email || email,
+      role: 'SuperAdmin',
+    };
+
+    storeAuth('platform', token, user, null);
+    setState({
+      token,
+      user,
+      mode: 'platform',
+      activeHospital: null,
       isAuthenticated: true,
       isLoading: false,
       error: null,
@@ -181,6 +266,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState({
       token: null,
       user: null,
+      mode: null,
+      activeHospital: null,
       isAuthenticated: false,
       isLoading: false,
       error: null,
@@ -189,6 +276,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearError = useCallback(() => {
     setState((prev) => ({ ...prev, error: null }));
+  }, []);
+
+  const enterHospital = useCallback((hospital: ActiveHospital) => {
+    setState((prev) => {
+      if (!prev.token || !prev.user || prev.mode !== 'platform') return prev;
+      storeAuth('platform', prev.token, prev.user, hospital);
+      return { ...prev, activeHospital: hospital };
+    });
+  }, []);
+
+  const exitHospital = useCallback(() => {
+    setState((prev) => {
+      if (!prev.token || !prev.user || prev.mode !== 'platform') return prev;
+      storeAuth('platform', prev.token, prev.user, null);
+      return { ...prev, activeHospital: null };
+    });
   }, []);
 
   useEffect(() => {
@@ -203,7 +306,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return React.createElement(
     AuthContext.Provider,
-    { value: { ...state, login, logout, clearError } },
+    { value: { ...state, login, platformLogin, logout, clearError, enterHospital, exitHospital } },
     children,
   );
 };
