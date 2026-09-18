@@ -49,7 +49,7 @@ export class HospitalsService {
     private readonly platformPrisma: PlatformPrismaService,
     private readonly tenantClients: TenantClientFactory,
     private readonly userProvisioning: TenantUserProvisioningService,
-  ) {}
+  ) { }
 
   async list() {
     return this.platformPrisma.hospital.findMany({ orderBy: { createdAt: 'desc' } });
@@ -71,6 +71,9 @@ export class HospitalsService {
   async createHospital(dto: CreateHospitalDto) {
     const existing = await this.platformPrisma.hospital.findUnique({ where: { slug: dto.slug } });
     if (existing) {
+      if (existing.status === 'PROVISIONING') {
+        return this.resumeProvisioning(existing, dto);
+      }
       throw new ConflictException(`A hospital with slug "${dto.slug}" already exists.`);
     }
 
@@ -113,6 +116,32 @@ export class HospitalsService {
       await this.platformPrisma.hospital.delete({ where: { id: hospital.id } }).catch(() => undefined);
 
       throw new InternalServerErrorException(`Failed to onboard hospital: ${message}`);
+    }
+  }
+
+  private async resumeProvisioning(hospital: {
+    id: string;
+    slug: string;
+    schemaName: string;
+  }, dto: CreateHospitalDto) {
+    if (!SCHEMA_NAME_RE.test(hospital.schemaName)) {
+      throw new InternalServerErrorException('Invalid schema name on provisioning record -- refusing to run DDL.');
+    }
+
+    try {
+      await this.platformPrisma.$executeRawUnsafe(`CREATE SCHEMA IF NOT EXISTS "${hospital.schemaName}"`);
+      await this.runMigrateDeploy(hospital.schemaName);
+      await this.runSeed(hospital.schemaName);
+      await this.userProvisioning.provisionAdministrator(hospital.schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
+
+      return await this.platformPrisma.hospital.update({
+        where: { id: hospital.id },
+        data: { status: 'ACTIVE' },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to resume hospital onboarding for "${hospital.slug}": ${message}`);
+      throw new InternalServerErrorException(`Failed to resume hospital onboarding: ${message}`);
     }
   }
 
