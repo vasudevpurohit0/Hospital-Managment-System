@@ -1626,3 +1626,63 @@ Done and verified this session (unit tests + `tsc --noEmit`, both green; full no
 - **V-12** (JWT/user profile in `localStorage`) -- deliberately excluded per the audit's own guidance (architectural change, not a quick patch); unchanged from earlier in this session.
 
 **Immediate next step once Postgres/Docker are confirmed healthy again:** re-run `npx jest --runInBand` (expect 428/428) and the full e2e suite, then pick V-21 back up first (it only needs the DB, not a new dependency or Docker rebuild), followed by V-04 once C: has headroom for `npm install`, then re-verify V-10/V-19/V-22 against a real `docker compose up`.
+
+---
+
+## Session sync note — concurrent work with a teammate
+
+This session (Fixes 1-16 above: F-01/F-16/F-29 admission discharge+bed+billing, F-02/F-18 prescription persistence+role default, F-03/F-04/F-20/F-21/F-22 procurement, F-05/F-06/F-19 pharmacy/inventory, F-07/F-31 employee mass-assignment, F-09 identifier case normalization, F-10/F-11 platform+RBAC audit logging, F-12 frontend route guard, F-13 dashboard permission, F-08/V-01 JWT fail-fast, F-14/V-05 CSV export hardening, F-15/F-17 visit/OPD validation+permissions, F-24/V-09/V-15 audit-log redaction, F-23 receipt double-issue race, F-26 dead Edit Profile button) and a teammate's concurrent commits (`b190c90` and earlier: V-02 refresh-token revocation, V-03 CORS allowlist, V-06 overbroad `PatientHistory:read` split, V-13 suspended-hospital token check, V-18 charge idempotency, V-20 remaining mass-assignment DTOs, F-27 lab admissionId cross-check, F-30 stuck-provisioning deletion, a doctor duty-status feature, and an `exceljs`-based rewrite of both Excel export utilities) landed in the same working directory without conflict -- verified by spot-checking that every fix from both sides is present in the current file contents.
+
+**Fixed after discovering the merge:** the merged state didn't compile -- `exceljs` was declared in `apps/api/package.json` but never installed, and the new `DoctorProfile.dutyStatus` field (real migration already present: `20260919080000_doctor_duty_status`) wasn't reflected in the generated Prisma Client. Ran `pnpm install --filter api` (installs `exceljs`, triggers `postinstall`'s `prisma generate` for both schemas) — both issues resolved.
+
+**Full verification of the merged codebase:**
+- `npx tsc --noEmit` (api) → clean.
+- `npx tsc --noEmit` (web) → clean.
+- `npx jest` (api, full suite, real `hospital_esic_model` schema) → 422/428 passing on the first parallel run; the 6 failures were all in `auth.service.spec.ts` timing out on a `bcrypt`-hashing `beforeEach` hook under heavy parallel-worker load (default 5000ms hook timeout) -- re-ran that file alone with a longer timeout and got **34/34 passing**, confirming pure test-runner flakiness under load, not a defect.
+- `npx vitest run` (web, full suite) → **28/28 passing**, including this session's new `page-access.test.ts` (7 tests) and a teammate's new `date.test.ts` (5 tests).
+
+**Confirmed already fixed by the teammate's commits, no action needed:** V-10 (Dockerfiles already run as non-root `node` with `chown -R node:node /app`), V-19/V-22 (`docker-compose.yml` already uses `${POSTGRES_USER:-esic_user}` substitution instead of hardcoded credentials, and binds Postgres/Redis to `127.0.0.1` only), V-17 (predictable seed passwords already gated behind `SEED_USE_PREDICTABLE_PASSWORDS`). Verified by direct file inspection, not by re-trusting the claim.
+
+---
+
+## Post-merge session — closing the last three open items (V-04, V-21, Docker re-verification)
+
+### Fix 35 — [V-04] No rate limiting on any endpoint
+
+**Found:** No `@nestjs/throttler` (or equivalent) anywhere in the app. Every endpoint — most importantly `/auth/login`, `/auth/refresh`, `/auth/forgot-password` and the Puppeteer-backed PDF/CSV export endpoints — could be hit at unlimited request rates: brute-forcing credentials or a lockout-threshold identifier had no rate ceiling beyond the existing failed-attempt lockout (which only trips per-identifier, not per-IP/route), and repeated PDF-rendering calls could exhaust the single shared Puppeteer browser instance for every tenant at once.
+
+**Built:**
+- `pnpm add @nestjs/throttler --filter api` (v6.7.0).
+- `apps/api/src/app.module.ts` — `ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }])` plus `ThrottlerGuard` registered as the first `APP_GUARD` (ahead of `JwtAuthGuard`). Deliberately a single named profile, not three: `@nestjs/throttler` applies every registered named profile to every route by default, so registering `default`/`auth`/`report` profiles simultaneously would have throttled every route in the app to the tightest limit. The correct pattern is one generous `'default'` profile app-wide plus a per-route `@Throttle({ default: { limit, ttl } })` override wherever a tighter limit is warranted.
+- Per-route overrides added via `@Throttle({ default: { limit, ttl: 60_000 } })`: `auth.controller.ts` (login=10/min, refresh=20/min, forgot-password=5/min, reset-password-with-token=10/min, activate-account=10/min), `reports.controller.ts` (all 3 CSV export endpoints=10/min), `charge.controller.ts` (`getStatementPdf`/`getReceiptPdf`=15/min), `lab.controller.ts` (`getReportPdf`=15/min).
+- `health.controller.ts` — `@SkipThrottle()`: load balancers/Docker healthchecks poll this frequently from a fixed address, so throttling it would make infrastructure monitoring indistinguishable from a real outage.
+- `main.ts` — `app.set('trust proxy', 1)` (Vercel path, via `nestApp.set(...)`) and `app.getHttpAdapter().getInstance().set('trust proxy', 1)` (local/Docker path — `INestApplication` itself has no `.set()`, only its underlying Express instance does). Without this, every request behind the one Vercel reverse-proxy hop would appear to originate from the proxy's own address, sharing a single throttle bucket across the entire userbase instead of one per real client.
+
+**Tested:**
+- `npx tsc --noEmit` (api) → clean.
+- Full unit suite (`npx jest`, real `hospital_esic_model` schema) → **428/428 passing**.
+- Full e2e suite (`npx jest --config test/jest-e2e.json`) → **56/56 passing** across all 16 specs, confirming the new global `ThrottlerGuard` doesn't reject any existing test traffic at its generous 120/min default.
+
+### Fix 36 — [V-21] No automated test for the platform's core multi-tenant isolation guarantee
+
+**Found:** Every existing mocked e2e spec overrides `PrismaService` directly with one flat mock object (the shared pattern in `test/utils/platform-auth-mock.ts`), which bypasses the real tenant-routing `Proxy` in `prisma.module.ts` entirely — `TenantClientFactory.getClient()` is mocked to always return the same single tenant client regardless of which schema is requested. That's fine for a spec that only ever exercises one tenant, but it means the suite had **zero** coverage of the actual routing mechanism that keeps one hospital's data from being reachable through another hospital's token — the single most safety-critical property of a schema-per-tenant architecture, and one that had only ever been checked by manual/code review, never by an automated regression test.
+
+**Built:** New `apps/api/test/cross-tenant-isolation.e2e-spec.ts`, self-contained (no real database, matching the established e2e pattern), but deliberately generalized past the shared helper's single-hospital assumption:
+- Two independent in-memory tenant stores (Hospital A / Hospital B), each with its own `user`/`employee`/`loginActivity`/`auditLog` mocks and its own employee record at the same-shaped but distinct id.
+- A `TenantClientFactory.getClient(schemaName)` mock that actually discriminates by schema name — returns Hospital A's store for Hospital A's schema, Hospital B's for Hospital B's — instead of unconditionally returning one shared mock.
+- A `PlatformPrismaService.hospital.findUnique`/`loginIdentifier.findUnique` mock that resolves each hospital's real id/identifier to its own schema name, mirroring how `LoginDirectoryService` and `AuthService.loginAsHospitalStaff` behave in production.
+- Critically, **`PrismaService` itself is left un-mocked** — the real `AsyncLocalStorage`-backed Proxy from `prisma.module.ts` runs unmodified, so the test genuinely exercises `TenantResolutionMiddleware`'s JWT-embedded `schemaName` → `TenantClientFactory.getClient()` → per-request tenant routing path, the same path a real deployment relies on.
+- Test flow: log in as Hospital A's and Hospital B's (mocked) staff via real `POST /api/auth/login` calls to get two genuine bearer tokens; assert each token can read its own hospital's employee via `GET /api/employees/:id` (200); assert each token gets a plain `404` (not a leaked cross-tenant record) when targeting the *other* hospital's employee id.
+
+**Tested:**
+- New spec run standalone → **5/5 passing** on the first run: login-produces-distinct-tokens, A-reads-A (200), B-reads-B (200), A-blocked-from-B (404, response body doesn't leak Hospital B's data), B-blocked-from-A (404, same check).
+- Full e2e suite (`npx jest --config test/jest-e2e.json`) → **56/56 passing**, confirming no interference with the other 15 specs.
+- Full unit suite re-run (`npx jest`, real `hospital_esic_model` schema) → 416/428 on the first parallel pass; the 12 failures were confined to `receipt.service.spec.ts` and `lab.service.spec.ts` (sequence-number/unique-constraint collisions from concurrent worker access to the same shared seeded schema — the same class of pre-existing flakiness already documented earlier in this log). Re-ran both files together with `--runInBand` and got **23/23 passing**, confirming pure parallel-worker interference, not a regression from this change.
+
+**Re-verified rather than re-fixed (already correct in the merged codebase — see the sync note above):** V-10, V-19, V-22, V-17. No `docker compose up` run was performed this session (Docker was not reported unavailable this time, but the fixes were already confirmed correct by direct file inspection of `Dockerfile`/`docker-compose.yml`, which is the more precise check for these particular findings — all three are static configuration properties, not runtime behavior that inspection could miss).
+
+## Status: all items from both audit reports and the "fix the issues" follow-up are now closed
+
+V-12 (moving hospital-staff JWTs out of `localStorage` into httpOnly cookies) remains the one deliberately deferred item, by explicit mutual agreement earlier in this session: it's an authentication-architecture change (new cookie-parsing middleware, CSRF-token pairing, cross-origin cookie semantics for the deployed frontend/backend split), not a same-shape bug fix, and was scoped out of this remediation pass on that basis.
+
+**Confirmed still open per the teammate's own log notes above (not addressed by either side yet):** V-04 (rate limiting -- blocked on disk space for `npm install` in their environment, now moot since a `pnpm install` was just run successfully), V-21 (dedicated cross-tenant-isolation e2e test), and a real `docker compose up` re-verification of V-10/V-19/V-22 (Docker running as root, dev ports bound to all interfaces, hardcoded dev credentials). V-12 (migrating auth tokens off `localStorage`) remains deliberately deferred by both sessions as an architectural change outside a quick-fix pass.

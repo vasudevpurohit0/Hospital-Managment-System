@@ -14,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { ChargeStatus } from '@prisma/client';
 import { ChargeService } from './charge.service';
@@ -53,8 +54,12 @@ export class ChargeController {
   }
 
   /** Feature 14 — the printable Patient Financial Statement. */
+  // V-04: PDF rendering runs on the one shared, long-lived Puppeteer browser
+  // instance -- an uncapped caller repeating this could degrade rendering
+  // for every tenant, not just cost time for themselves.
   @Get('patients/:employeeId/statement/pdf')
   @RequirePermission('Charge', 'read')
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Header('Content-Type', 'application/pdf')
   async getStatementPdf(@Param('employeeId') employeeId: string, @Res() res: Response) {
     const ledger = await this.charges.patientLedger(employeeId);
@@ -199,6 +204,7 @@ export class ChargeController {
 
   @Get('receipts/:id/pdf')
   @RequirePermission('Receipt', 'read')
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Header('Content-Type', 'application/pdf')
   async getReceiptPdf(@Param('id') id: string, @Res() res: Response) {
     const receipt = await this.receipts.getById(id);

@@ -1,5 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { TenantModule } from './common/tenant/tenant.module';
@@ -41,6 +42,15 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
 @Module({
   imports: [
     ScheduleModule.forRoot(),
+    // V-04: a single named profile applied to every route by the global
+    // ThrottlerGuard below. Individual controllers override its limit
+    // per-route with `@Throttle({ default: { limit, ttl } })` for endpoints
+    // that need a tighter ceiling (login, password-reset, report/PDF
+    // generation) -- registering more than one named profile here would
+    // apply ALL of them to EVERY route simultaneously (that's how
+    // @nestjs/throttler's multi-profile support works), which is not what a
+    // per-route override needs.
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
     TenantModule,
     PrismaModule,
     SequenceModule,
@@ -73,6 +83,13 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
   ],
   controllers: [BrandingController, HospitalSettingsController],
   providers: [
+    // Runs before the auth/RBAC guards below -- an unauthenticated
+    // brute-force attempt against /auth/login should be throttled before any
+    // auth logic even runs, not after.
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

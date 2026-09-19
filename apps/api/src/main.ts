@@ -23,6 +23,12 @@ async function bootstrapServer() {
       }),
     );
     nestApp.enableCors({ origin: resolveCorsOrigins(), credentials: false });
+    // V-04: this app runs behind exactly one reverse-proxy hop on Vercel --
+    // without this, Express (and therefore the rate-limiter's per-IP
+    // tracking) would see every visitor as the proxy's own address, sharing
+    // one throttle bucket across the whole userbase instead of one per
+    // actual client.
+    nestApp.set('trust proxy', 1);
     await nestApp.init();
     isAppInitialized = true;
   }
@@ -53,6 +59,7 @@ async function bootstrapLocal() {
       }),
     );
     app.enableCors({ origin: resolveCorsOrigins(), credentials: false });
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
     app.enableShutdownHooks();
 
     const port = process.env.API_PORT || 3000;
