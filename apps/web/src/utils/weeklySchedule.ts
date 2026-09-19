@@ -1,4 +1,5 @@
 import { WeeklyScheduleEntry, WeekDay, WEEK_DAYS } from '../api/doctor.api';
+import { formatDateDDMonYYYY } from './date';
 
 export const DAY_LABELS: Record<WeekDay, string> = {
   MON: 'Monday',
@@ -29,5 +30,5 @@ export function scheduleSummary(schedule: WeeklyScheduleEntry[] | null): string 
 
 export function formatDate(iso: string | null): string {
   if (!iso) return 'Never';
-  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatDateDDMonYYYY(iso);
 }

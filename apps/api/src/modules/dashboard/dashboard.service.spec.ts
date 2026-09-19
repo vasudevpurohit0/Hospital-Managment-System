@@ -31,6 +31,7 @@ describe('DashboardService.getMySummary()', () => {
     employee: { count: jest.fn() },
     user: { groupBy: jest.fn(), count: jest.fn() },
     auditLog: { findMany: jest.fn(), count: jest.fn() },
+    $queryRaw: jest.fn(),
   };
 
   const mockOpdService = {
@@ -73,10 +74,7 @@ describe('DashboardService.getMySummary()', () => {
 
   it('Pharmacist: counts the real SIGNED/PARTIALLY_DISPENSED queue and low-stock batches via the reorderLevel comparison', async () => {
     mockPrisma.prescription.count.mockResolvedValue(4);
-    mockPrisma.medicineBatch.findMany.mockResolvedValue([
-      { currentStock: 5, reorderLevel: 100 },
-      { currentStock: 500, reorderLevel: 100 },
-    ]);
+    mockPrisma.$queryRaw.mockResolvedValue([{ count: 1n }]);
 
     const result = await service.getMySummary(user({ roleName: 'Pharmacist' }));
 

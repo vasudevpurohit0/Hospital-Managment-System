@@ -18,6 +18,9 @@ describe('BillingService (Phase 13 → P2 — pharmacy billing screen)', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
     },
+    brandingConfig: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'singleton', hospitalName: 'ESIC Model Hospital & ODC' }),
+    },
   };
 
   beforeEach(async () => {

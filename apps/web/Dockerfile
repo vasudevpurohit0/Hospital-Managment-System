@@ -13,6 +13,10 @@ RUN pnpm install
 # Copy source
 COPY . .
 
+# V-10: run as the image's built-in non-root user rather than root.
+RUN chown -R node:node /app
+USER node
+
 # Expose port
 EXPOSE 5173
 

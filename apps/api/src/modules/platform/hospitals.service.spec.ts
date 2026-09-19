@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { HospitalsService } from './hospitals.service';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
@@ -11,9 +12,11 @@ describe('HospitalsService (regression: platform-level administrative actions we
     hospital: {
       findUnique: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     },
     loginIdentifier: { deleteMany: jest.fn() },
     platformAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    $executeRawUnsafe: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -89,5 +92,77 @@ describe('HospitalsService (regression: platform-level administrative actions we
     const call = mockPlatformPrisma.platformAuditLog.create.mock.calls[0][0];
     expect(JSON.stringify(call)).not.toContain('SuperSecretPlaintext123!');
     expect(call.data.metadata).toEqual({ identifier: 'nurse@hospital-x.example.com' });
+  });
+});
+
+describe('HospitalsService.remove (regression: F-30 — a hospital stuck in PROVISIONING had no recovery path)', () => {
+  let service: HospitalsService;
+
+  const mockPlatformPrisma = {
+    hospital: {
+      findUnique: jest.fn(),
+      delete: jest.fn().mockResolvedValue({}),
+    },
+    loginIdentifier: { deleteMany: jest.fn().mockResolvedValue({}) },
+    platformAuditLog: { create: jest.fn().mockResolvedValue({}) },
+    $executeRawUnsafe: jest.fn().mockResolvedValue(undefined),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        HospitalsService,
+        { provide: PlatformPrismaService, useValue: mockPlatformPrisma },
+        { provide: TenantClientFactory, useValue: { getClient: jest.fn() } },
+        { provide: TenantUserProvisioningService, useValue: {} },
+      ],
+    }).compile();
+
+    service = module.get<HospitalsService>(HospitalsService);
+    jest.clearAllMocks();
+  });
+
+  it('allows deleting a hospital stuck in PROVISIONING, dropping its schema and freeing its identifiers', async () => {
+    mockPlatformPrisma.hospital.findUnique.mockResolvedValue({
+      id: 'h-stuck',
+      status: 'PROVISIONING',
+      schemaName: 'hospital_stuck_one',
+      name: 'Stuck One',
+      slug: 'stuck-one',
+    });
+
+    const result = await service.remove('h-stuck', 'platform-user-1');
+
+    expect(result).toEqual({ deleted: true });
+    expect(mockPlatformPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining('DROP SCHEMA IF EXISTS "hospital_stuck_one"'),
+    );
+    expect(mockPlatformPrisma.hospital.delete).toHaveBeenCalledWith({ where: { id: 'h-stuck' } });
+  });
+
+  it('still refuses to delete an ACTIVE hospital without suspending it first', async () => {
+    mockPlatformPrisma.hospital.findUnique.mockResolvedValue({
+      id: 'h-active',
+      status: 'ACTIVE',
+      schemaName: 'hospital_active_one',
+    });
+
+    await expect(service.remove('h-active', 'platform-user-1')).rejects.toThrow(BadRequestException);
+    expect(mockPlatformPrisma.hospital.delete).not.toHaveBeenCalled();
+  });
+
+  it('still allows deleting an already-SUSPENDED hospital', async () => {
+    mockPlatformPrisma.hospital.findUnique.mockResolvedValue({
+      id: 'h-susp',
+      status: 'SUSPENDED',
+      schemaName: 'hospital_susp_one',
+      name: 'Suspended One',
+      slug: 'susp-one',
+    });
+
+    const result = await service.remove('h-susp', 'platform-user-1');
+
+    expect(result).toEqual({ deleted: true });
+    expect(mockPlatformPrisma.hospital.delete).toHaveBeenCalledWith({ where: { id: 'h-susp' } });
   });
 });

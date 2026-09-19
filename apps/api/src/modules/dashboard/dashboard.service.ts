@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OpdService } from '../opd/services/opd.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { CRITICAL_ALERT_WINDOW_DAYS, EARLY_WARNING_WINDOW_DAYS, daysFromNow } from '../../common/inventory/expiry-window.const';
 
 @Injectable()
 export class DashboardService {
@@ -27,8 +28,8 @@ export class DashboardService {
    */
   async getMetrics(user: AuthenticatedUser) {
     const now = new Date();
-    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const in30Days = daysFromNow(CRITICAL_ALERT_WINDOW_DAYS, now);
+    const in90Days = daysFromNow(EARLY_WARNING_WINDOW_DAYS, now);
 
     const [
       totalOpdVisits,
@@ -338,9 +339,20 @@ export class DashboardService {
     }
   }
 
-  /** Prisma has no field-to-field comparison in a plain `where`, so this is counted in application code rather than reached for `$queryRaw` for one small table. */
+  /**
+   * Prisma's fluent `where` has no field-to-field comparison operator, so
+   * this counts at the database with a raw SQL `COUNT`, not by pulling every
+   * batch's `current_stock`/`reorder_level` pair into Node and filtering
+   * in-process (which used to fetch every row in the table, unbounded, on
+   * every dashboard load, for a comparison the database itself can do in
+   * one pass).
+   */
   private async countLowStockBatches(): Promise<number> {
-    const batches = await this.prisma.medicineBatch.findMany({ select: { currentStock: true, reorderLevel: true } });
-    return batches.filter((b) => b.currentStock <= b.reorderLevel).length;
+    const [{ count }] = await this.prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT COUNT(*)::bigint AS count
+      FROM medicine_batches
+      WHERE current_stock <= reorder_level
+    `;
+    return Number(count);
   }
 }

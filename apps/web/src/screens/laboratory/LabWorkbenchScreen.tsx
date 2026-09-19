@@ -12,6 +12,7 @@ import {
 import { Badge } from '../../components/ui/Badge';
 import { can } from '../../lib/permissions';
 import { Microscope, RefreshCw, Package, Download, CheckCircle2, TestTube } from 'lucide-react';
+import { formatDateTimeIN } from '../../utils/date';
 
 interface LabWorkbenchScreenProps {
   authToken: string;
@@ -349,7 +350,7 @@ export const LabWorkbenchScreen: React.FC<LabWorkbenchScreenProps> = ({ authToke
               {detail.status === 'REPORTED' && (
                 <div className="p-4 rounded-xl bg-success-50 dark:bg-success-950/20 border border-success-200 dark:border-success-900 space-y-3">
                   <p className="text-xs text-success-700 dark:text-success-400 font-semibold">
-                    Report released{detail.report?.verifiedAt ? ` on ${new Date(detail.report.verifiedAt).toLocaleString('en-IN')}` : ''}.
+                    Report released{detail.report?.verifiedAt ? ` on ${formatDateTimeIN(detail.report.verifiedAt)}` : ''}.
                   </p>
                   <button onClick={handleDownloadPdf} disabled={busy} className="btn btn-primary btn-sm gap-2">
                     <Download className="w-4 h-4" /> Download Report PDF

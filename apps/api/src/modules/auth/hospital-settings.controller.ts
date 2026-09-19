@@ -2,6 +2,7 @@ import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { UpdateHospitalSettingsDto } from './dto/update-hospital-settings.dto';
 
 export const DEFAULT_HOSPITAL_SETTINGS = {
   workingHoursStart: '09:00',
@@ -38,7 +39,7 @@ export class HospitalSettingsController {
 
   @Put()
   @RequirePermission('HospitalSettings', 'update')
-  async updateSettings(@Body() body: Partial<typeof DEFAULT_HOSPITAL_SETTINGS>, @Req() req: { user?: { sub?: string; id?: string } }) {
+  async updateSettings(@Body() body: UpdateHospitalSettingsDto, @Req() req: { user?: { sub?: string; id?: string } }) {
     const updated = await this.prisma.hospitalSettings.upsert({
       where: { id: 'singleton' },
       create: {

@@ -7,70 +7,82 @@ import { generateSecurePassword } from '../../common/security/password.util';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 import { AuthService } from '../auth/auth.service';
 import { EmailService } from '../../common/email/email.service';
-import { tempPasswordEmailBody, TEMP_PASSWORD_EMAIL_SUBJECT } from '../../common/email/templates';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
+import { AccountLifecycleService, Actor, TEMP_PASSWORD_TTL_MS } from './account-lifecycle.service';
 
-const TEMP_PASSWORD_TTL_MS = 24 * 60 * 60_000;
+export type { Actor };
 
-export interface Actor {
+type DoctorUser = {
   id: string;
-  roleName: string;
+  identifier: string;
+  active: boolean;
+  mustChangePassword: boolean;
+  passwordChangedAt: Date | null;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  doctorProfile: {
+    id: string;
+    specialty: string;
+    experience: string;
+    available: boolean;
+    verified: boolean;
+    departmentId: string | null;
+    consultationFee: unknown;
+    weeklySchedule: unknown;
+    dutyStatus: string;
+    dutyStatusChangedAt: Date | null;
+    checkedInAt: Date | null;
+    checkedOutAt: Date | null;
+    department: { id: string; name: string; code: string } | null;
+  } | null;
+  employee: { name: string; department: string; consultationRoom: string | null; contactPhone: string | null; employeeId?: string | null } | null;
+};
+
+export interface DoctorDto {
+  id: string;
+  name: string;
+  email: string;
+  active: boolean;
+  mustChangePassword: boolean;
+  passwordChangedAt: Date | null;
+  lastLoginAt: Date | null;
+  dateJoined: Date;
+  department: string;
+  consultationRoom: string | null;
+  contactPhone: string | null;
+  specialty: string;
+  experience: string;
+  available: boolean;
+  verified: boolean;
+  departmentId: string | null;
+  assignedDepartment: { id: string; name: string; code: string } | null;
+  consultationFee: number;
+  weeklySchedule: unknown;
+  dutyStatus: string;
+  dutyStatusChangedAt: Date | null;
+  checkedInAt: Date | null;
+  checkedOutAt: Date | null;
 }
 
 @Injectable()
-export class DoctorService {
+export class DoctorService extends AccountLifecycleService<DoctorDto> {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly loginDirectory: LoginDirectoryService,
+    prisma: PrismaService,
+    loginDirectory: LoginDirectoryService,
     private readonly sequences: DocumentSequenceService,
-    private readonly authService: AuthService,
-    private readonly emailService: EmailService,
-  ) {}
-
-  /** Same reasoning as StaffService's version -- always sends the activation link, optionally also the temp password if the hospital has opted in. Called after the triggering transaction has already committed. */
-  private async sendCredentialEmails(params: {
-    identifier: string;
-    staffName: string;
-    staffId: string | null;
-    hospitalId: string;
-    actorUserId?: string;
-    temporaryPassword?: string;
-  }): Promise<void> {
-    await this.authService
-      .sendActivationEmail({
-        identifier: params.identifier,
-        staffName: params.staffName,
-        staffId: params.staffId,
-        role: 'Doctor',
-        hospitalId: params.hospitalId,
-        actorUserId: params.actorUserId,
-      })
-      .catch(() => undefined);
-
-    if (!params.temporaryPassword) return;
-
-    const settings = await this.prisma.hospitalSettings.findUnique({ where: { id: 'singleton' } }).catch(() => null);
-    if (!settings?.sendTemporaryPasswordByEmail) return;
-
-    const { html, text } = tempPasswordEmailBody({
-      staffName: params.staffName,
-      loginEmail: params.identifier,
-      temporaryPassword: params.temporaryPassword,
-    });
-    await this.emailService
-      .sendMail({
-        to: params.identifier,
-        subject: TEMP_PASSWORD_EMAIL_SUBJECT,
-        html,
-        text,
-        kind: 'TEMP_PASSWORD',
-        sentByUserId: params.actorUserId,
-      })
-      .catch(() => undefined);
+    authService: AuthService,
+    emailService: EmailService,
+  ) {
+    super(prisma, loginDirectory, authService, emailService);
   }
 
-  private readonly doctorListSelect = {
+  protected readonly accountKind = 'doctor';
+  protected roleNameFor(): string {
+    return 'Doctor';
+  }
+
+  protected readonly listSelect = {
     id: true,
     identifier: true,
     active: true,
@@ -100,31 +112,7 @@ export class DoctorService {
     },
   } as const;
 
-  private toDto(u: {
-    id: string;
-    identifier: string;
-    active: boolean;
-    mustChangePassword: boolean;
-    passwordChangedAt: Date | null;
-    lastLoginAt: Date | null;
-    createdAt: Date;
-    doctorProfile: {
-      id: string;
-      specialty: string;
-      experience: string;
-      available: boolean;
-      verified: boolean;
-      departmentId: string | null;
-      consultationFee: unknown;
-      weeklySchedule: unknown;
-      dutyStatus: string;
-      dutyStatusChangedAt: Date | null;
-      checkedInAt: Date | null;
-      checkedOutAt: Date | null;
-      department: { id: string; name: string; code: string } | null;
-    } | null;
-    employee: { name: string; department: string; consultationRoom: string | null; contactPhone: string | null } | null;
-  }) {
+  protected toDto(u: DoctorUser) {
     return {
       id: u.id,
       name: u.employee?.name ?? u.identifier,
@@ -155,7 +143,7 @@ export class DoctorService {
   async findAllDoctors() {
     const doctors = await this.prisma.user.findMany({
       where: { active: true, role: { name: 'Doctor' }, doctorProfile: { isNot: null } },
-      select: this.doctorListSelect,
+      select: this.listSelect,
       orderBy: [{ doctorProfile: { specialty: 'asc' } }, { employee: { name: 'asc' } }],
     });
     return doctors.map((u) => this.toDto(u));
@@ -178,7 +166,7 @@ export class DoctorService {
           OR: [{ departmentId }, { departments: { some: { departmentId } } }],
         },
       },
-      select: this.doctorListSelect,
+      select: this.listSelect,
       orderBy: [{ employee: { name: 'asc' } }],
     });
     return doctors.map((u) => this.toDto(u));
@@ -213,7 +201,7 @@ export class DoctorService {
   async findAllDoctorsForAdmin() {
     const doctors = await this.prisma.user.findMany({
       where: { role: { name: 'Doctor' }, doctorProfile: { isNot: null } },
-      select: this.doctorListSelect,
+      select: this.listSelect,
       orderBy: [{ doctorProfile: { specialty: 'asc' } }, { employee: { name: 'asc' } }],
     });
     const identifiers = doctors.map((d) => d.identifier);
@@ -254,6 +242,7 @@ export class DoctorService {
       identifier: created.email,
       staffName: created.name,
       staffId: created.staffId,
+      role: 'Doctor',
       hospitalId,
       actorUserId: actor?.id,
       temporaryPassword: created.temporaryPassword,
@@ -357,7 +346,7 @@ export class DoctorService {
     });
   }
 
-  private async requireDoctorUser(id: string) {
+  protected async requireAccountUser(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: { doctorProfile: true, employee: true },
@@ -369,7 +358,7 @@ export class DoctorService {
   }
 
   async updateDoctor(id: string, dto: UpdateDoctorDto, actor?: Actor) {
-    const user = await this.requireDoctorUser(id);
+    const user = await this.requireAccountUser(id);
 
     await this.prisma.$transaction(async (tx) => {
       if (dto.name && user.employeeId) {
@@ -431,127 +420,8 @@ export class DoctorService {
       }
     });
 
-    const updated = await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.doctorListSelect });
+    const updated = await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.listSelect });
     return this.toDto(updated);
-  }
-
-  /** Deactivates (never hard-deletes -- heavily FK-referenced by historical visits/admissions). Clinical history, queue records, prescriptions, and audit history are all untouched. */
-  async setActive(id: string, active: boolean, actor?: Actor) {
-    const user = await this.requireDoctorUser(id);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.user.update({
-        where: { id },
-        // Deactivating also kills any already-issued session immediately.
-        data: active ? { active } : { active, tokenVersion: { increment: 1 } },
-        select: this.doctorListSelect,
-      });
-      await tx.auditLog.create({
-        data: {
-          actorUserId: actor?.id ?? null,
-          actorRole: actor?.roleName ?? 'System',
-          action: active ? 'doctor.activated' : 'doctor.deactivated',
-          entityType: 'User',
-          entityId: id,
-          beforeSnapshot: { active: user.active },
-          afterSnapshot: { active },
-        },
-      });
-      return u;
-    });
-    return this.toDto(updated);
-  }
-
-  /** Admin-triggered reset: a fresh one-time password, shown once, same as account creation. Never reveals the existing password (there is no way to -- only its hash is ever stored). */
-  async resetPassword(id: string, actor?: Actor, reason?: string) {
-    const user = await this.requireDoctorUser(id);
-    const temporaryPassword = generateSecurePassword();
-    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id },
-        data: {
-          passwordHash,
-          mustChangePassword: true,
-          passwordChangedAt: null,
-          tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_TTL_MS),
-          tokenVersion: { increment: 1 },
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          actorUserId: actor?.id ?? null,
-          actorRole: actor?.roleName ?? 'System',
-          action: 'doctor.password_reset',
-          entityType: 'User',
-          entityId: id,
-          reason: reason ?? null,
-        },
-      });
-    });
-
-    const { hospitalId } = getTenantContext();
-    await this.sendCredentialEmails({
-      identifier: user.identifier,
-      staffName: user.employee?.name ?? user.identifier,
-      staffId: user.employee?.employeeId ?? null,
-      hospitalId,
-      actorUserId: actor?.id,
-      temporaryPassword,
-    });
-
-    return { id, email: user.identifier, temporaryPassword };
-  }
-
-  /** Lock/unlock is independent of active/inactive -- a locked account still shows up as active, just can't authenticate. Unlock clears both the manual lock and any automatic failed-attempt lockout together. */
-  async setLocked(id: string, locked: boolean, actor?: Actor, reason?: string) {
-    const user = await this.requireDoctorUser(id);
-    if (locked) {
-      await this.loginDirectory.lockManually(user.identifier);
-      // Locking also kills any already-issued session immediately.
-      await this.prisma.user.update({ where: { id }, data: { tokenVersion: { increment: 1 } } });
-    } else {
-      await this.loginDirectory.unlock(user.identifier);
-    }
-    await this.prisma.auditLog.create({
-      data: {
-        actorUserId: actor?.id ?? null,
-        actorRole: actor?.roleName ?? 'System',
-        action: locked ? 'doctor.locked' : 'doctor.unlocked',
-        entityType: 'User',
-        entityId: id,
-        reason: reason ?? null,
-      },
-    });
-    const updated = await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.doctorListSelect });
-    return this.toDto(updated);
-  }
-
-  /** Invalidates any outstanding unused activation token and sends a fresh one. Never resends or reveals an old password. */
-  async resendActivation(id: string, actor?: Actor) {
-    const user = await this.requireDoctorUser(id);
-    const { hospitalId } = getTenantContext();
-
-    await this.authService.sendActivationEmail({
-      identifier: user.identifier,
-      staffName: user.employee?.name ?? user.identifier,
-      staffId: user.employee?.employeeId ?? null,
-      role: 'Doctor',
-      hospitalId,
-      actorUserId: actor?.id,
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        actorUserId: actor?.id ?? null,
-        actorRole: actor?.roleName ?? 'System',
-        action: 'doctor.activation_resent',
-        entityType: 'User',
-        entityId: id,
-      },
-    });
-
-    return { status: 'success', message: 'Activation email resent.' };
   }
 
   /**
@@ -578,7 +448,7 @@ export class DoctorService {
   }
 
   async checkIn(userId: string, actor?: Actor) {
-    const user = await this.requireDoctorUser(userId);
+    const user = await this.requireAccountUser(userId);
     if (user.doctorProfile!.dutyStatus !== 'OFF_DUTY') {
       throw new BadRequestException('You are already checked in.');
     }
@@ -594,7 +464,7 @@ export class DoctorService {
   }
 
   async checkOut(userId: string, actor?: Actor) {
-    const user = await this.requireDoctorUser(userId);
+    const user = await this.requireAccountUser(userId);
     if (user.doctorProfile!.dutyStatus === 'OFF_DUTY') {
       throw new BadRequestException('You are already checked out.');
     }
@@ -611,7 +481,7 @@ export class DoctorService {
   }
 
   async startBreak(userId: string, actor?: Actor) {
-    const user = await this.requireDoctorUser(userId);
+    const user = await this.requireAccountUser(userId);
     if (user.doctorProfile!.dutyStatus === 'OFF_DUTY') {
       throw new BadRequestException('Check in before starting a break.');
     }
@@ -631,7 +501,7 @@ export class DoctorService {
   }
 
   async endBreak(userId: string, actor?: Actor) {
-    const user = await this.requireDoctorUser(userId);
+    const user = await this.requireAccountUser(userId);
     if (user.doctorProfile!.dutyStatus !== 'ON_BREAK') {
       throw new BadRequestException('You are not currently on a break.');
     }

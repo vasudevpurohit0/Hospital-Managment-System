@@ -62,6 +62,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { useAuth } from '../../hooks/useAuth';
+import { formatDateIN } from '../../utils/date';
 
 interface DoctorWorkspaceProps {
   authToken: string;
@@ -735,7 +736,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
           </div>
           <div className="text-right text-xs">
             <p><strong>Visit ID:</strong> {visit?.id || visitIdInput || 'CONSULT-DRAFT'}</p>
-            <p><strong>Date:</strong> {new Date().toLocaleDateString('en-IN')}</p>
+            <p><strong>Date:</strong> {formatDateIN(new Date())}</p>
             <p><strong>Status:</strong> {isSigned ? 'SIGNED & LOCKED' : 'DRAFT'}</p>
           </div>
         </div>

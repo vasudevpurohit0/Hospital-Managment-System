@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { BenefitOutcome, EmploymentTypeCode } from '@prisma/client';
 import { CreateBenefitRuleDto } from './dto/create-benefit-rule.dto';
+import { UpdateBenefitRuleDto } from './dto/update-benefit-rule.dto';
 
 @Injectable()
 export class BenefitRuleService {
@@ -67,7 +68,7 @@ export class BenefitRuleService {
     });
   }
 
-  async update(id: string, dto: Partial<CreateBenefitRuleDto>) {
+  async update(id: string, dto: UpdateBenefitRuleDto) {
     const existing = await this.prisma.benefitRule.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`BenefitRule not found for ID: ${id}`);
 

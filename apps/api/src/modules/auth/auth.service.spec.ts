@@ -360,6 +360,94 @@ describe('AuthService', () => {
     });
   });
 
+  describe('refreshTokens()', () => {
+    const validRefreshPayload = {
+      type: 'refresh',
+      sub: 'user-123',
+      hospitalId: 'hospital-123',
+      schemaName: 'hospital_test_hospital',
+    };
+
+    it('issues a new access token when the hospital is still ACTIVE', async () => {
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      mockPlatformPrismaService.hospital.findUnique.mockResolvedValue(mockHospital);
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+
+      const result = await service.refreshTokens({ refreshToken: 'valid-refresh-token' });
+
+      expect(result).toHaveProperty('accessToken');
+      expect(mockPlatformPrismaService.hospital.findUnique).toHaveBeenCalledWith({
+        where: { id: 'hospital-123' },
+      });
+    });
+
+    it('rejects a refresh token for a SUSPENDED hospital -- V-13, closes the stale-token window', async () => {
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      mockPlatformPrismaService.hospital.findUnique.mockResolvedValueOnce({ ...mockHospital, status: 'SUSPENDED' });
+
+      await expect(service.refreshTokens({ refreshToken: 'valid-refresh-token' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mockPrismaService.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects a refresh token whose hospital no longer exists', async () => {
+      mockJwtService.verify.mockReturnValue(validRefreshPayload);
+      mockPlatformPrismaService.hospital.findUnique.mockResolvedValueOnce(null);
+
+      await expect(service.refreshTokens({ refreshToken: 'valid-refresh-token' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('rejects a refresh token whose tokenVersion is stale -- V-02, revoked by logout/password change', async () => {
+      mockJwtService.verify.mockReturnValue({ ...validRefreshPayload, tokenVersion: 0 });
+      mockPlatformPrismaService.hospital.findUnique.mockResolvedValue(mockHospital);
+      mockPrismaService.user.findUnique.mockResolvedValue({ ...mockUser, tokenVersion: 1 });
+
+      await expect(service.refreshTokens({ refreshToken: 'stale-refresh-token' })).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+
+    it('accepts a refresh token whose tokenVersion matches the live User row', async () => {
+      mockJwtService.verify.mockReturnValue({ ...validRefreshPayload, tokenVersion: 1 });
+      mockPlatformPrismaService.hospital.findUnique.mockResolvedValue(mockHospital);
+      mockPrismaService.user.findUnique.mockResolvedValue({ ...mockUser, tokenVersion: 1 });
+
+      const result = await service.refreshTokens({ refreshToken: 'fresh-refresh-token' });
+      expect(result).toHaveProperty('accessToken');
+    });
+  });
+
+  describe('logout()', () => {
+    const authedDoctor: AuthenticatedUser = {
+      id: 'user-123',
+      identifier: 'doctor@esic.gov.in',
+      roleId: 'role-123',
+      roleName: 'Doctor',
+      permissions: [],
+      type: 'hospital',
+    };
+
+    it('bumps tokenVersion for a hospital-staff caller -- V-02, revokes every outstanding token', async () => {
+      const result = await service.logout(authedDoctor);
+
+      expect(result).toEqual({ status: 'success' });
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-123' },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    });
+
+    it('is a server-side no-op for a platform caller -- no tokenVersion column on PlatformUser today', async () => {
+      const result = await service.logout({ ...authedDoctor, type: 'platform' });
+
+      expect(result).toEqual({ status: 'success' });
+      expect(mockPrismaService.user.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendActivationEmail()', () => {
     it('invalidates any previously-outstanding unused token before issuing a new one', async () => {
       await service.sendActivationEmail({

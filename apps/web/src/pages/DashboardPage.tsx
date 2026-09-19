@@ -25,6 +25,7 @@ import {
   UserCog,
 } from 'lucide-react';
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { formatDateFull } from '../utils/date';
 
 const CATEGORY_COLORS = ['#0F4C81', '#0D9488', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
 
@@ -156,12 +157,7 @@ export const DashboardPage: React.FC = () => {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-primary-200 mb-3 border border-white/10">
             <ShieldCheck className="w-3.5 h-3.5 text-secondary-400" />
             ESIC Hospital Operations Console •{' '}
-            {new Date().toLocaleDateString('en-IN', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
+            {formatDateFull(new Date())}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Welcome back, {user?.name || 'Doctor'}

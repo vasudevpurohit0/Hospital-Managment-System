@@ -33,6 +33,7 @@ import { fetchPatientLedger } from '../../api/ledger.api';
 import { useNavigate } from 'react-router-dom';
 import { fetchBranding } from '../../api/security.api';
 import { TestTube, Pill, Plus, Trash2, IndianRupee, ArrowRight } from 'lucide-react';
+import { formatDateDefault, formatDateIN, formatDateTimeDefault, formatDateTimeIN } from '../../utils/date';
 
 interface WardStaffScreenProps {
   authToken: string;
@@ -756,7 +757,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                       <div>
                         <span className="text-gray-400 block">Admission Date</span>
                         <span className="font-medium text-gray-800">
-                          {adm.allocatedAt ? new Date(adm.allocatedAt).toLocaleDateString() : 'N/A'}
+                          {adm.allocatedAt ? formatDateDefault(adm.allocatedAt) : 'N/A'}
                         </span>
                       </div>
                     </div>
@@ -776,7 +777,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                             >
                               <div className="flex justify-between text-[10px] text-gray-400 mb-1">
                                 <span>By: {note.author.identifier}</span>
-                                <span>{new Date(note.createdAt).toLocaleString()}</span>
+                                <span>{formatDateTimeDefault(note.createdAt)}</span>
                               </div>
                               <p className="text-gray-700 font-medium">{note.note}</p>
                             </div>
@@ -1340,8 +1341,8 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                   <p className="mb-1"><span className="font-bold">Category:</span> {recentlyDischarged.eligibleCategory}</p>
                 </div>
                 <div className="text-right">
-                  <p className="mb-1"><span className="font-bold">Admission Date:</span> {recentlyDischarged.allocatedAt ? new Date(recentlyDischarged.allocatedAt).toLocaleDateString() : 'N/A'}</p>
-                  <p className="mb-1"><span className="font-bold">Discharge Date:</span> {new Date().toLocaleDateString()}</p>
+                  <p className="mb-1"><span className="font-bold">Admission Date:</span> {recentlyDischarged.allocatedAt ? formatDateDefault(recentlyDischarged.allocatedAt) : 'N/A'}</p>
+                  <p className="mb-1"><span className="font-bold">Discharge Date:</span> {formatDateDefault(new Date())}</p>
                   <p className="mb-1"><span className="font-bold">Ward/Bed:</span> Bed {recentlyDischarged.bed?.bedNumber || 'Unassigned'}</p>
                   <p className="mb-1"><span className="font-bold">Attending Doctor:</span> {recentlyDischarged.assignedDoctor?.employee?.name || recentlyDischarged.assignedDoctor?.identifier || 'N/A'}</p>
                 </div>
@@ -1358,7 +1359,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                   <div className="space-y-4">
                     {recentlyDischarged.notes.map((note) => (
                       <div key={note.id} className="text-sm border-l-2 border-gray-300 pl-3 py-1 print:border-black">
-                        <span className="text-xs text-gray-500 font-semibold print:text-black">{new Date(note.createdAt).toLocaleString()} (By {note.author.identifier}):</span>
+                        <span className="text-xs text-gray-500 font-semibold print:text-black">{formatDateTimeDefault(note.createdAt)} (By {note.author.identifier}):</span>
                         <p className="mt-1 text-gray-800 print:text-black">{note.note}</p>
                       </div>
                     ))}
@@ -1462,7 +1463,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                               financeSummary.lineItems.map((li, i) => (
                                 <tr key={i}>
                                   <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                                    {new Date(li.date).toLocaleDateString('en-IN')}
+                                    {formatDateIN(li.date)}
                                   </td>
                                   <td className="px-3 py-2 text-gray-800">{li.description}</td>
                                   <td className="px-3 py-2 text-right font-mono">₹{Number(li.netAmount).toLocaleString('en-IN')}</td>
@@ -1525,7 +1526,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                           <div key={h.id} className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-1">
                             <div className="flex justify-between text-[11px] text-gray-400">
                               <span>By: {h.movedBy.identifier}</span>
-                              <span>{new Date(h.movedAt).toLocaleString('en-IN')}</span>
+                              <span>{formatDateTimeIN(h.movedAt)}</span>
                             </div>
                             <p className="text-gray-800">
                               {h.fromBed ? `${h.fromWard?.name} / Bed ${h.fromBed.bedNumber}` : 'Initial admission'}
@@ -1824,7 +1825,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                           ))}
                         </div>
                         <div className="flex justify-between text-[10px] text-gray-400 pt-0.5">
-                          <span>Ordered: {new Date(ord.createdAt).toLocaleString()}</span>
+                          <span>Ordered: {formatDateTimeDefault(ord.createdAt)}</span>
                           {ord.orderingDoctor && <span>Doctor: {ord.orderingDoctor.employee?.name || ord.orderingDoctor.identifier}</span>}
                         </div>
                       </div>

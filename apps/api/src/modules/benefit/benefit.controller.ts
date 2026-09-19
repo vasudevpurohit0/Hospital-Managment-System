@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { BenefitRuleService } from './benefit-rule.service';
 import { CreateBenefitRuleDto } from './dto/create-benefit-rule.dto';
+import { UpdateBenefitRuleDto } from './dto/update-benefit-rule.dto';
 import { EvaluateBenefitQueryDto } from './dto/evaluate-benefit-query.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,7 +25,7 @@ export class BenefitController {
 
   @Put(':id')
   @RequirePermission('BenefitRule', 'update')
-  async updateRule(@Param('id') id: string, @Body() dto: Partial<CreateBenefitRuleDto>) {
+  async updateRule(@Param('id') id: string, @Body() dto: UpdateBenefitRuleDto) {
     return this.benefitRuleService.update(id, dto);
   }
 

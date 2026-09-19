@@ -172,7 +172,7 @@ export async function fetchTotalPatientExpenses(
 }
 
 /**
- * Downloads a detailed Excel report (.xls) breaking down all patient expenses
+ * Downloads a detailed Excel report (.xlsx) breaking down all patient expenses
  * across the selected period (1 Week, 15 Days, or 1 Month) using existing ledger data.
  */
 export async function exportPatientExpenseReportExcel(
@@ -197,7 +197,7 @@ export async function exportPatientExpenseReportExcel(
 
   const periodSlug = period.toLowerCase().replace(/_/g, '-');
   const dateSlug = now.toISOString().slice(0, 10);
-  const filename = `patient-expense-report-${periodSlug}-${dateSlug}.xls`;
+  const filename = `patient-expense-report-${periodSlug}-${dateSlug}.xlsx`;
 
   const res = await fetch(`/api/charges/export/excel?${qs.toString()}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},

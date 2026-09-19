@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { LabOrderStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
@@ -28,6 +28,7 @@ describeWithDb('LabService (integration)', () => {
   const createdVisitIds: string[] = [];
   const createdEmployeeIds: string[] = [];
   const createdOrderIds: string[] = [];
+  const createdAdmissionIds: string[] = [];
 
   // This suite issues real lab orders and samples, consuming real LAB_NUMBER
   // and SAMPLE_CODE sequence values. Captured and restored so running it
@@ -89,6 +90,7 @@ describeWithDb('LabService (integration)', () => {
       await prisma.labOrderItem.deleteMany({ where: { labOrderId: orderId } });
       await prisma.labOrder.deleteMany({ where: { id: orderId } });
     }
+    await prisma.admission.deleteMany({ where: { id: { in: createdAdmissionIds } } });
     await prisma.visit.deleteMany({ where: { id: { in: createdVisitIds } } });
     await prisma.employee.deleteMany({ where: { id: { in: createdEmployeeIds } } });
 
@@ -110,6 +112,14 @@ describeWithDb('LabService (integration)', () => {
     createdOrderIds.push(order.id);
     await lab.collectSample(order.id, undefined, technicianId);
     return { visitId, order };
+  }
+
+  /** A visit with a real Admission attached, for cross-visit admissionId checks. */
+  async function makeIpdAdmission() {
+    const visitId = await makeVisit();
+    const admission = await prisma.admission.create({ data: { visitId, status: 'UNDER_TREATMENT' } });
+    createdAdmissionIds.push(admission.id);
+    return { visitId, admissionId: admission.id };
   }
 
   describe('workflow order', () => {
@@ -185,6 +195,37 @@ describeWithDb('LabService (integration)', () => {
 
       const report = await prisma.labReport.findUnique({ where: { labOrderId: order.id } });
       expect(report).toBeNull();
+    });
+  });
+
+  describe('admissionId cross-check (F-27)', () => {
+    it('refuses an admissionId that belongs to a different visit', async () => {
+      const { admissionId } = await makeIpdAdmission();
+      const otherVisitId = await makeVisit();
+
+      await expect(
+        lab.orderTests({ visitId: otherVisitId, labTestIds: [cbcTestId], admissionId }, doctorId),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses an admissionId that does not exist', async () => {
+      const visitId = await makeVisit();
+
+      await expect(
+        lab.orderTests(
+          { visitId, labTestIds: [cbcTestId], admissionId: '00000000-0000-0000-0000-000000000000' },
+          doctorId,
+        ),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('accepts an admissionId that genuinely belongs to the same visit', async () => {
+      const { visitId, admissionId } = await makeIpdAdmission();
+
+      const order = await lab.orderTests({ visitId, labTestIds: [cbcTestId], admissionId }, doctorId);
+      createdOrderIds.push(order.id);
+
+      expect(order.admissionId).toBe(admissionId);
     });
   });
 

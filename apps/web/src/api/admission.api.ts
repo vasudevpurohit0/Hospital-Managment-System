@@ -41,14 +41,7 @@ export interface BedRecord {
 export interface AdmissionRecord {
   id: string;
   visitId: string;
-  status:
-    | 'REQUESTED'
-    | 'ELIGIBILITY_CHECKED'
-    | 'AWAITING_BED'
-    | 'ALLOCATED'
-    | 'UNDER_TREATMENT'
-    | 'DISCHARGE_APPROVED'
-    | 'DISCHARGED';
+  status: 'REQUESTED' | 'ELIGIBILITY_CHECKED' | 'ALLOCATED' | 'UNDER_TREATMENT' | 'DISCHARGED';
   eligibleCategory: string;
   requestedAt: string;
   allocatedAt: string | null;

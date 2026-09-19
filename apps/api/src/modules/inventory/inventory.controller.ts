@@ -36,7 +36,7 @@ export class InventoryController {
   @Get('medicines/template')
   @RequirePermission('Medicine', 'create')
   async downloadTemplate(@Res() res: Response) {
-    const buffer = generateMedicineTemplateXlsx();
+    const buffer = await generateMedicineTemplateXlsx();
     res.setHeader(
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -77,7 +77,7 @@ export class InventoryController {
     if (!body?.rejectedItems || !Array.isArray(body.rejectedItems)) {
       throw new BadRequestException('No error items provided.');
     }
-    const buffer = generateMedicineErrorReportXlsx(body.rejectedItems);
+    const buffer = await generateMedicineErrorReportXlsx(body.rejectedItems);
     res.setHeader(
       'Content-Type',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

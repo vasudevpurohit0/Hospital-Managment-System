@@ -28,6 +28,7 @@ describe('InventoryService', () => {
     purchaseRequisition: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    $queryRaw: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -51,24 +52,42 @@ describe('InventoryService', () => {
   });
 
   describe('findAllMedicines', () => {
-    it('returns medicines from database when present', async () => {
+    it('returns medicines from database when present, annotated with whether an active requisition covers them', async () => {
       const mockMeds = [
         { id: 'm-1', genericName: 'Amoxicillin', category: 'Antibiotics', batches: [] },
       ];
       mockPrisma.medicine.findMany.mockResolvedValue(mockMeds);
 
       const result = await service.findAllMedicines();
-      expect(result).toEqual(mockMeds);
+      // hasActiveRequisition: false since the mocked purchaseRequisition.findMany
+      // (an active-requisition lookup added alongside this annotation) returns
+      // no rows here -- see the next test for the true branch.
+      expect(result).toEqual(mockMeds.map((m) => ({ ...m, hasActiveRequisition: false })));
       expect(mockPrisma.medicine.findMany).toHaveBeenCalled();
     });
 
-    it('falls back to demo catalog if database call throws or returns empty', async () => {
-      mockPrisma.medicine.findMany.mockRejectedValue(new Error('DB Error'));
+    it('flags a medicine as hasActiveRequisition when a PENDING requisition covers it', async () => {
+      mockPrisma.medicine.findMany.mockResolvedValue([
+        { id: 'm-1', genericName: 'Amoxicillin', category: 'Antibiotics', batches: [] },
+      ]);
+      mockPrisma.purchaseRequisition.findMany.mockResolvedValue([
+        { id: 'req-1', status: 'PENDING', items: [{ medicineId: 'm-1' }] },
+      ]);
 
       const result = await service.findAllMedicines();
-      expect(result).toBeDefined();
-      expect(result.length).toBeGreaterThan(0);
-      expect(result[0].genericName).toBe('Paracetamol');
+      expect(result[0].hasActiveRequisition).toBe(true);
+    });
+
+    // This service intentionally has no "fall back to demo data on DB error"
+    // path -- consistent with the rest of this codebase (see e.g.
+    // AnalyticsService's own doc comment: "Nothing is a hardcoded placeholder
+    // — an empty database returns real zeros, not sample data dressed up as
+    // a dashboard"). A database failure here should surface as a real error,
+    // not be silently papered over with fake medicines.
+    it('propagates a database error rather than silently substituting fake data', async () => {
+      mockPrisma.medicine.findMany.mockRejectedValue(new Error('DB Error'));
+
+      await expect(service.findAllMedicines()).rejects.toThrow('DB Error');
     });
   });
 
@@ -131,10 +150,22 @@ describe('InventoryService', () => {
   describe('getLowStockAlerts', () => {
     it('returns batches below reorder level', async () => {
       const lowBatches = [{ id: 'b-low', currentStock: 20, reorderLevel: 100 }];
+      mockPrisma.$queryRaw.mockResolvedValue([{ id: 'b-low' }]);
       mockPrisma.medicineBatch.findMany.mockResolvedValue(lowBatches);
 
       const result = await service.getLowStockAlerts();
       expect(result).toEqual(lowBatches);
+      expect(mockPrisma.medicineBatch.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['b-low'] } } }),
+      );
+    });
+
+    it('skips the findMany round-trip entirely when nothing is low on stock', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([]);
+
+      const result = await service.getLowStockAlerts();
+      expect(result).toEqual([]);
+      expect(mockPrisma.medicineBatch.findMany).not.toHaveBeenCalled();
     });
   });
 });

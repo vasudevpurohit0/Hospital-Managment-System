@@ -180,6 +180,7 @@ model Employee {
   user             User?
   visits           Visit[]
 
+  @@index([registrationDate])
   @@map("employees")
 }
 
@@ -1354,6 +1355,7 @@ model ChargeItem {
   @@index([prescriptionItemId])
   @@index([labOrderItemId])
   @@index([therapySessionId])
+  @@index([status, createdAt])
   @@map("charge_items")
 }
 
@@ -1722,10 +1724,8 @@ enum BenefitOutcome {
 enum AdmissionStatus {
   REQUESTED
   ELIGIBILITY_CHECKED
-  AWAITING_BED
   ALLOCATED
   UNDER_TREATMENT
-  DISCHARGE_APPROVED
   DISCHARGED
 }
 

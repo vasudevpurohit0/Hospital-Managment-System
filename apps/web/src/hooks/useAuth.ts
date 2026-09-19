@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { apiFetch } from '../api/client';
 
 export interface AuthUser {
   id: string;
@@ -231,6 +232,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(() => {
+    // V-02: best-effort -- revokes the session server-side (bumps
+    // tokenVersion, invalidating every outstanding access/refresh token for
+    // this user) before dropping local state. Fired without awaiting so a
+    // slow/unreachable backend never blocks the user from logging out
+    // locally; if it fails, the token simply expires on its own later.
+    apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     clearStoredAuth();
     setState({
       token: null,

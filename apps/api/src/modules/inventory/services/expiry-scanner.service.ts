@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { StockStatus } from '@prisma/client';
+import { CRITICAL_ALERT_WINDOW_DAYS, EARLY_WARNING_WINDOW_DAYS, daysFromNow } from '../../../common/inventory/expiry-window.const';
 
 export interface ScanResult {
   quarantinedCount: number;
@@ -17,8 +18,8 @@ export class ExpiryScannerService {
 
   async runDailyScan(): Promise<ScanResult> {
     const now = new Date();
-    const day90 = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-    const day30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const day90 = daysFromNow(EARLY_WARNING_WINDOW_DAYS, now);
+    const day30 = daysFromNow(CRITICAL_ALERT_WINDOW_DAYS, now);
 
     let quarantinedCount = 0;
     let criticalCount = 0;

@@ -28,6 +28,7 @@ import {
   YAxis,
   CartesianGrid,
 } from 'recharts';
+import { formatDateTimeDefault } from '../../utils/date';
 
 const STATUS_COLORS: Record<string, string> = {
   ACTIVE: '#0D9488',
@@ -149,7 +150,7 @@ export const PlatformDashboardScreen: React.FC = () => {
                 <Hourglass className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                 <span>
                   <strong>{h.name}</strong> has been stuck in PROVISIONING since{' '}
-                  {new Date(h.createdAt).toLocaleString()} — onboarding may have failed partway.
+                  {formatDateTimeDefault(h.createdAt)} — onboarding may have failed partway.
                 </span>
               </p>
             ))}

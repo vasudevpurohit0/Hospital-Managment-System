@@ -2,10 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ScrollText, Search, X } from 'lucide-react';
 import { fetchPlatformStaffAuditLog, AuditLogEntry } from '../../api/audit-log.api';
 import { listHospitals, HospitalRecord } from '../../api/platform.api';
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-}
+import { formatDateTimeMedium as formatTimestamp } from '../../utils/date';
 
 /**
  * Cross-hospital staff Activity Log for Super Admin -- distinct from the

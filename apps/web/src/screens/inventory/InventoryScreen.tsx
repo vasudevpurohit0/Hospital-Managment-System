@@ -12,6 +12,7 @@ import {
   MedicineImportValidationResult,
   MedicineImportConfirmResult,
 } from '../../api/inventory.api';
+import { formatDateDDMonYYYY } from '../../utils/date';
 
 interface InventoryScreenProps {
   authToken?: string;
@@ -474,11 +475,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
                             <td className="py-2.5 font-bold text-gray-800">{batch.batchNumber}</td>
                             <td className="py-2.5 text-gray-600">{batch.manufacturer}</td>
                             <td className="py-2.5 text-gray-600 font-medium">
-                              {new Date(batch.expiryDate).toLocaleDateString('en-IN', {
-                                day: '2-digit',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
+                              {formatDateDDMonYYYY(batch.expiryDate)}
                             </td>
                             <td className="py-2.5 font-bold text-gray-900">
                               {batch.currentStock}{' '}

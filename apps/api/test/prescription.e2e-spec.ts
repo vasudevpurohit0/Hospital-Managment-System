@@ -3,7 +3,10 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Digital Prescription & Doctor Immutability (e2e)', () => {
   let app: INestApplication;
@@ -31,6 +34,10 @@ describe('Digital Prescription & Doctor Immutability (e2e)', () => {
     $connect: jest.fn().mockResolvedValue(undefined),
     $disconnect: jest.fn().mockResolvedValue(undefined),
     $transaction: jest.fn().mockImplementation((cb) => cb(mockPrismaService)),
+    $queryRaw: jest.fn().mockResolvedValue([{ last_value: 1 }]),
+    visit: {
+      findUnique: jest.fn().mockImplementation(async ({ where }) => ({ id: where.id, employeeId: 'emp-1', type: 'OPD', status: 'OPEN' })),
+    },
     role: {
       findUnique: jest.fn().mockImplementation(async ({ where }) => {
         return rolesStore.find((r) => r.id === where?.id || r.name === where?.name) || null;
@@ -46,7 +53,9 @@ describe('Digital Prescription & Doctor Immutability (e2e)', () => {
         const perms = permissionsStore.filter((p) => p.roleId === user.roleId);
         return { ...user, role: { ...role, permissions: perms } };
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
     diagnosis: {
       create: jest.fn().mockResolvedValue({ id: 'dx-101', admissionRecommended: true }),
       findFirst: jest.fn().mockResolvedValue({ id: 'dx-101', admissionRecommended: true }),
@@ -106,11 +115,23 @@ describe('Digital Prescription & Doctor Immutability (e2e)', () => {
       active: true,
     });
 
+    const { platformPrismaMock, tenantClientFactoryMock } = createPlatformAuthMocks(
+      [
+        { identifier: 'doctor@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID },
+        { identifier: 'reception@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID },
+      ],
+      mockPrismaService,
+    );
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -190,7 +211,9 @@ describe('Digital Prescription & Doctor Immutability (e2e)', () => {
       await request(app.getHttpServer())
         .put(`/api/prescriptions/${createdRxId}`)
         .set('Authorization', `Bearer ${doctorToken}`)
-        .send({ diagnosisText: 'Attempting illegal edit on signed prescription' })
+        .send({
+          items: [{ medicineName: 'Ibuprofen', dose: '200mg', frequency: '1-1-1', duration: '3 days' }],
+        })
         .expect(403);
     });
   });

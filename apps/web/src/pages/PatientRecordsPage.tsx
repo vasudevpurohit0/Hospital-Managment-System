@@ -10,6 +10,7 @@ import { Badge } from '../components/ui/Badge';
 import { searchPatients, getPatientMasterRecord, updatePatientProfile } from '../api/patient.api';
 import { fetchDepartments, Department } from '../api/opd.api';
 import { downloadStatementPdf } from '../api/ledger.api';
+import { formatDateMedium, formatDateTimeMedium } from '../utils/date';
 
 /* ═══════════════════════════════════════════════════════════
    Patient Master / Central Records Module
@@ -563,7 +564,7 @@ export const PatientRecordsPage: React.FC = () => {
                             <div>
                               <span className="font-semibold block text-[var(--color-text-primary)]">{event.title}</span>
                               <span className="text-[10px] text-[var(--color-text-secondary)] block">{event.description}</span>
-                              <span className="text-[9px] text-[var(--color-text-tertiary)] font-mono">{new Date(event.date).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                              <span className="text-[9px] text-[var(--color-text-tertiary)] font-mono">{formatDateTimeMedium(event.date)}</span>
                             </div>
                           </div>
                         ))}
@@ -585,7 +586,7 @@ export const PatientRecordsPage: React.FC = () => {
                             <div className="flex justify-between items-center">
                               <span className="font-bold text-primary-700">{visit.department}</span>
                               <span className="font-mono text-[9px] text-[var(--color-text-tertiary)]">
-                                {new Date(visit.date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
+                                {formatDateMedium(visit.date)}
                               </span>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-[11px]">
@@ -628,11 +629,11 @@ export const PatientRecordsPage: React.FC = () => {
                             <div className="grid grid-cols-2 gap-2 text-[11px] border-b border-[var(--color-border)] pb-2">
                               <div>
                                 <span className="text-[var(--color-text-secondary)] block">Admission Date:</span>
-                                <span className="font-semibold text-mono">{new Date(adm.admissionDate).toLocaleDateString('en-IN', { dateStyle: 'medium' })}</span>
+                                <span className="font-semibold text-mono">{formatDateMedium(adm.admissionDate)}</span>
                               </div>
                               <div>
                                 <span className="text-[var(--color-text-secondary)] block">Discharge Date:</span>
-                                <span className="font-semibold text-mono">{adm.dischargeDate ? new Date(adm.dischargeDate).toLocaleDateString('en-IN', { dateStyle: 'medium' }) : '—'}</span>
+                                <span className="font-semibold text-mono">{adm.dischargeDate ? formatDateMedium(adm.dischargeDate) : '—'}</span>
                               </div>
                             </div>
                             <div className="grid grid-cols-3 gap-2 text-[11px]">

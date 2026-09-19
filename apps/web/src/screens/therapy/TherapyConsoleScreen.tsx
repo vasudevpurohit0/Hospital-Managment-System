@@ -17,6 +17,7 @@ import { fetchAdmissionById, AdmissionRecord } from '../../api/admission.api';
 import { Badge } from '../../components/ui/Badge';
 import { can } from '../../lib/permissions';
 import { Activity, RefreshCw, CheckCircle2, XCircle, User, Search, Calendar } from 'lucide-react';
+import { formatDateIN, formatDateTimeMedium } from '../../utils/date';
 
 interface TherapyConsoleScreenProps {
   authToken: string;
@@ -349,7 +350,7 @@ export const TherapyConsoleScreen: React.FC<TherapyConsoleScreenProps> = ({ auth
                   )}
                   <p className="text-[var(--color-text-secondary)]">
                     {s.course ? `Course session #${s.sessionNumber} of ${s.course.plannedSessions}` : 'Standalone sitting'} ·{' '}
-                    {new Date(s.scheduledAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                    {formatDateTimeMedium(s.scheduledAt)}
                   </p>
                   {s.createdBy && (
                     <p className="text-[10px] text-[var(--color-text-tertiary)]">Booked by {s.createdBy.identifier}</p>
@@ -434,7 +435,7 @@ export const TherapyConsoleScreen: React.FC<TherapyConsoleScreenProps> = ({ auth
                   <span className="text-[10px] text-[var(--color-text-tertiary)] hidden sm:inline">by {s.performedBy.identifier}</span>
                 )}
                 <span className="text-[var(--color-text-tertiary)] font-mono">
-                  {s.performedAt ? new Date(s.performedAt).toLocaleDateString('en-IN') : '—'}
+                  {s.performedAt ? formatDateIN(s.performedAt) : '—'}
                 </span>
                 <Badge variant={sessionStatusVariant(s.status)} className="text-[10px] px-1.5 py-0.5">
                   {s.status}

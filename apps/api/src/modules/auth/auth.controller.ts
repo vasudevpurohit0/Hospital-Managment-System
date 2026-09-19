@@ -33,6 +33,13 @@ export class AuthController {
     };
   }
 
+  /** V-02: revokes every outstanding access/refresh token for this user by bumping tokenVersion, closing the "logout does nothing server-side" gap. */
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.logout(user);
+  }
+
   /** In the RbacGuard mustChangePassword allowlist -- reachable even before the forced first-login change completes. */
   @Post('change-password')
   @HttpCode(HttpStatus.OK)

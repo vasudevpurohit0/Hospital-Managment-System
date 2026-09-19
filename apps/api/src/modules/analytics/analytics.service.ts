@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ChargeStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CRITICAL_ALERT_WINDOW_DAYS, EARLY_WARNING_WINDOW_DAYS, daysFromNow } from '../../common/inventory/expiry-window.const';
 
 export interface DateRange {
   from?: Date;
@@ -179,8 +180,8 @@ export class AnalyticsService {
 
   async inventory() {
     const now = new Date();
-    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const in30Days = daysFromNow(CRITICAL_ALERT_WINDOW_DAYS, now);
+    const in90Days = daysFromNow(EARLY_WARNING_WINDOW_DAYS, now);
 
     const [lowStock, outOfStock, expiring30, expiring90, expired, pendingRequisitions, openPOs] =
       await Promise.all([

@@ -13,6 +13,7 @@ import {
   SupplierRecord,
 } from '../../api/procurement.api';
 import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
+import { formatDateDefault } from '../../utils/date';
 
 interface ProcurementScreenProps {
   authToken?: string;
@@ -391,7 +392,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
                         req.approvals.map((a) => (
                           <div key={a.id}>
                             Decision: <strong>{a.decision}</strong> (
-                            {new Date(a.decidedAt).toLocaleDateString()})
+                            {formatDateDefault(a.decidedAt)})
                           </div>
                         ))
                       ) : (

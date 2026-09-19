@@ -9,6 +9,7 @@ import {
 import { Pill, Clock, User, Stethoscope, ShieldCheck } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 import { fetchBranding } from '../../api/security.api';
+import { formatDateDefault, formatDateIN } from '../../utils/date';
 
 interface PharmacyWorkspaceProps {
   authToken: string;
@@ -123,7 +124,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
       setLastDispensedRx({
         rx: selectedRx,
         timings: timingMap,
-        issueDate: new Date().toLocaleDateString('en-IN'),
+        issueDate: formatDateIN(new Date()),
       });
       loadQueue();
     } catch (err: unknown) {
@@ -386,7 +387,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                               options.map((b) => (
                                 <option key={b.id} value={b.id}>
                                   Batch #{b.batchNumber} (Stock: {b.currentStock} | Exp:{' '}
-                                  {new Date(b.expiryDate).toLocaleDateString()})
+                                  {formatDateDefault(b.expiryDate)})
                                 </option>
                               ))
                             )}

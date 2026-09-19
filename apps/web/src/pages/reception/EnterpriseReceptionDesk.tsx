@@ -54,6 +54,7 @@ import { fetchEligibleDoctors, fetchLeastBusyEligibleDoctor, DoctorProfile } fro
 import { fetchServices, ServiceListItem } from '../../api/catalog.api';
 import { openTherapyCourse, scheduleTherapySession } from '../../api/therapy.api';
 import { PatientWorkspace } from '../PatientWorkspace';
+import { formatDateDDMonYYYY, formatDateIN, formatDateTimeMedium } from '../../utils/date';
 
 /* ═══════════════════════════════════════════════════════════
    Reception Workspace — Employee-ID verification/registration,
@@ -329,8 +330,8 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
     return {
       passId: 'PASS-' + Math.floor(100000 + Math.random() * 900000),
-      issueDate: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-      expiryDate: exp.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      issueDate: formatDateDDMonYYYY(now),
+      expiryDate: formatDateDDMonYYYY(exp),
       validityLabel,
       patientName: pName,
       uidCode: uid,
@@ -694,7 +695,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                   </tr>
                   <tr>
                     <td><strong>Reg Date & Time:</strong></td>
-                    <td>{new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</td>
+                    <td>{formatDateTimeMedium(new Date())}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1438,13 +1439,13 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
                             {/* Live Preview */}
                             <div className="p-2 bg-indigo-100/70 dark:bg-indigo-900/40 rounded text-[11px] text-indigo-900 dark:text-indigo-200 flex flex-wrap justify-between items-center font-mono gap-2">
-                              <span>Issue Date: <strong>{new Date().toLocaleDateString('en-IN')}</strong></span>
+                              <span>Issue Date: <strong>{formatDateIN(new Date())}</strong></span>
                               <span>
                                 Expiry Date:{' '}
                                 <strong className="text-amber-800 dark:text-amber-300 font-bold">
                                   {passExpiryMode === 'date' && passExpiryDate
-                                    ? new Date(passExpiryDate).toLocaleDateString('en-IN')
-                                    : new Date(Date.now() + Math.max(1, parseInt(passExpiryDays, 10) || 30) * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')
+                                    ? formatDateIN(passExpiryDate)
+                                    : formatDateIN(new Date(Date.now() + Math.max(1, parseInt(passExpiryDays, 10) || 30) * 24 * 60 * 60 * 1000))
                                   }{' '}
                                   ({passExpiryMode === 'date' && passExpiryDate
                                     ? `${Math.max(1, Math.round((new Date(passExpiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} Days`

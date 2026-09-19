@@ -15,11 +15,16 @@ services:
     container_name: esic-hms-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: esic_user
-      POSTGRES_PASSWORD: esic_password
-      POSTGRES_DB: esic_hms
+      POSTGRES_USER: ${POSTGRES_USER:-esic_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-esic_password}
+      POSTGRES_DB: ${POSTGRES_DB:-esic_hms}
     ports:
-      - '5433:5432'
+      # V-19/22: bound to loopback only -- api/web already reach this by
+      # service name over the internal esic-network, so exposing it on every
+      # host interface was never actually needed for local dev, only a
+      # bigger attack surface. Still reachable at localhost:5433 for a host
+      # tool (psql, a GUI client) the same as before.
+      - '127.0.0.1:5433:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,7 +45,8 @@ services:
     container_name: esic-hms-redis
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      # V-19/22: loopback-only, same reasoning as postgres above.
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
@@ -63,11 +69,15 @@ services:
     container_name: esic-hms-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://esic_user:esic_password@postgres:5432/esic_hms
-      PLATFORM_DATABASE_URL: postgresql://esic_user:esic_password@postgres:5432/esic_hms?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-esic_user}:${POSTGRES_PASSWORD:-esic_password}@postgres:5432/${POSTGRES_DB:-esic_hms}
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_USER:-esic_user}:${POSTGRES_PASSWORD:-esic_password}@postgres:5432/${POSTGRES_DB:-esic_hms}?schema=public
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
       API_PORT: 3000
+      # V-03: the browser-facing origin CORS requests are allowed from --
+      # matches the web service's host port mapping below, not its
+      # in-network address.
+      FRONTEND_URL: http://localhost:5173
       # Dev-only values, randomly generated for this compose file -- the app
       # now refuses to start if these are unset (see
       # apps/api/src/common/config/jwt-secrets.ts) rather than silently
@@ -77,6 +87,11 @@ services:
       JWT_ACCESS_SECRET: e2ac5bbe5fef93852791ffffedbfa6dde941d11f72b14ceddcb3ae28482226d0
       JWT_REFRESH_SECRET: f88136cb93b3d2af6f808f8d0c8e05a7e4503b4d71ffd892a356eabfb39242d9
       JWT_PLATFORM_SECRET: 35d5b5e9549f2985416b8a6108727aaddaf9526a3d293bcc9d1658941f0ba732
+      # Dev-only: keeps the documented DoctorPass123!/AdminPass123!/etc. demo
+      # logins working for every locally-onboarded hospital. Without this,
+      # prisma/seed.ts generates and logs a fresh random password per tenant
+      # per seed run instead (the production-safe default -- see V-17).
+      SEED_USE_PREDICTABLE_PASSWORDS: 'true'
     ports:
       - '3000:3000'
     volumes:

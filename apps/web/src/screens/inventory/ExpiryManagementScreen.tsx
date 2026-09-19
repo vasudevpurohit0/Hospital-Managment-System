@@ -6,6 +6,7 @@ import {
   disposeBatch,
   MedicineBatchRecord,
 } from '../../api/inventory.api';
+import { formatDateDDMonYYYY } from '../../utils/date';
 
 interface ExpiryManagementScreenProps {
   authToken?: string;
@@ -247,11 +248,7 @@ export const ExpiryManagementScreen: React.FC<ExpiryManagementScreenProps> = ({
                       </td>
                       <td className="p-3.5 text-gray-600">{batch.manufacturer}</td>
                       <td className="p-3.5 font-semibold text-gray-800">
-                        {expiryDateObj.toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
+                        {formatDateDDMonYYYY(expiryDateObj)}
                       </td>
                       <td className="p-3.5 font-bold">
                         {diffDays <= 0 ? (

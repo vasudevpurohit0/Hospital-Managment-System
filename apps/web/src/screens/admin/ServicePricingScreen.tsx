@@ -9,6 +9,7 @@ import {
   PriceHistory,
   ServiceType,
 } from '../../api/catalog.api';
+import { formatDateDDMonYYYY } from '../../utils/date';
 
 interface ServicePricingScreenProps {
   authToken: string;
@@ -36,8 +37,7 @@ const UNIT_LABELS: Record<string, string> = {
 const rupees = (amount: string | null): string =>
   amount === null ? '—' : `₹${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
-const shortDate = (iso: string | null): string =>
-  iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+const shortDate = (iso: string | null): string => (iso ? formatDateDDMonYYYY(iso) : '—');
 
 export const ServicePricingScreen: React.FC<ServicePricingScreenProps> = ({ authToken }) => {
   const [categories, setCategories] = useState<ServiceCategoryRecord[]>([]);

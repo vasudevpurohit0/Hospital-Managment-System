@@ -269,14 +269,18 @@ export class HospitalsService {
 
   /**
    * Permanently deprovisions a hospital: drops its Postgres schema (all data
-   * gone, irreversibly) and removes its platform-DB row. Only allowed on an
-   * already-SUSPENDED hospital -- a deliberate two-step "suspend, confirm
-   * it's really the one you meant, then delete" flow, since this cannot be
-   * undone.
+   * gone, irreversibly) and removes its platform-DB row. Allowed on an
+   * already-SUSPENDED hospital (a deliberate two-step "suspend, confirm it's
+   * really the one you meant, then delete" flow for a hospital that may hold
+   * real data) or on one still stuck in PROVISIONING (no confirmation step
+   * needed there -- a failed/incomplete onboarding attempt never has live
+   * tenant data to protect, and prior to this it had no recovery path at all:
+   * resumeProvisioning() can keep failing indefinitely with nothing able to
+   * clear the record so the operator can retry, e.g. under a fresh slug).
    */
   async remove(id: string, platformUserId: string) {
     const hospital = await this.requireHospital(id);
-    if (hospital.status !== 'SUSPENDED') {
+    if (hospital.status !== 'SUSPENDED' && hospital.status !== 'PROVISIONING') {
       throw new BadRequestException('Suspend a hospital before deleting it, to confirm this is intentional.');
     }
     if (!SCHEMA_NAME_RE.test(hospital.schemaName)) {

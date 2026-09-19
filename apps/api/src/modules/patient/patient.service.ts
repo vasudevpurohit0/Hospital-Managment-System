@@ -21,10 +21,81 @@ import {
   PatientSearchQueryDto,
   UpdatePatientProfileDto,
 } from './dto/patient-register.dto';
-import { EmploymentTypeCode, VisitType, VisitStatus, Prisma } from '@prisma/client';
+import { EmploymentTypeCode, VisitType, VisitStatus, AdmissionStatus, Prisma, PrescriptionItemStatus } from '@prisma/client';
 
 /** Kept identical to OpdService's — one consultation charge, wherever an OPD visit is created. */
 const OPD_CONSULTATION_SERVICE_CODE = 'CONSULT-GEN';
+
+export interface MedicineListEntry {
+  id: string;
+  name: string;
+  brandName: string;
+  prescribedQty: number;
+  dispensedQty: number;
+  status: PrescriptionItemStatus;
+}
+
+/**
+ * The fields `formatPatientProfileResponse` actually reads -- deliberately
+ * narrower than any one of its three call sites' full query `include` shape
+ * (they each fetch different additional relations `formatPatientProfileResponse`
+ * itself never touches), so every call site's real, richer Prisma-inferred
+ * result satisfies this structurally without a cast.
+ */
+interface PatientProfileResponseEmployee {
+  id: string;
+  employeeId: string;
+  name: string;
+  department: string;
+  contactPhone: string | null;
+  contactEmail: string | null;
+  registrationDate: Date;
+  post: { title: string } | null;
+  grade: { payLevel: string } | null;
+  employmentType: { code: EmploymentTypeCode; name: string } | null;
+  patientProfile: {
+    photoUrl: string | null;
+    dob: Date | null;
+    gender: string | null;
+    address: string | null;
+    eligibilityCategory: string;
+    allergies: string | null;
+    chronicDiseases: string | null;
+    bloodGroup: string | null;
+    notes: string | null;
+  } | null;
+  visits: Array<{
+    id: string;
+    createdAt: Date;
+    type: VisitType;
+    status: VisitStatus;
+    admissions: Array<{ id: string; status: AdmissionStatus }>;
+  }>;
+}
+
+interface PatientProfileResponseHospitalUid {
+  uidCode: string;
+  qrPayload: string;
+}
+
+export interface TimelineEvent {
+  title: string;
+  description: string;
+  date: Date;
+  type:
+    | 'registration'
+    | 'opd-visit'
+    | 'consultation'
+    | 'prescription'
+    | 'dispensation'
+    | 'lab-order'
+    | 'lab-report'
+    | 'therapy-course'
+    | 'therapy-session'
+    | 'admission'
+    | 'discharge'
+    | 'payment';
+}
 
 @Injectable()
 export class PatientService {
@@ -301,7 +372,7 @@ export class PatientService {
   async searchPatients(queryDto: PatientSearchQueryDto, caller?: { id: string; roleName: string }) {
     const { query, department, employmentType, status, registrationDate, page = 1, limit = 20 } = queryDto;
 
-    const whereClause: any = {
+    const whereClause: Prisma.EmployeeWhereInput = {
       hospitalUid: { isNot: null }
     };
 
@@ -429,7 +500,7 @@ export class PatientService {
     ]);
 
     const items = employees.map((emp) => {
-      const profile = (emp.patientProfile || {}) as any;
+      const profile = emp.patientProfile;
       const visits = emp.visits || [];
       const lastVisit = visits[0] || null;
       
@@ -462,7 +533,7 @@ export class PatientService {
 
       // Calculate Age
       let ageStr = '—';
-      if (profile.dob) {
+      if (profile?.dob) {
         const birthDate = new Date(profile.dob);
         const today = new Date();
         let ageVal = today.getFullYear() - birthDate.getFullYear();
@@ -479,7 +550,7 @@ export class PatientService {
         name: emp.name,
         employeeId: emp.employeeId,
         age: ageStr,
-        gender: profile.gender || '—',
+        gender: profile?.gender || '—',
         mobile: emp.contactPhone || '—',
         department: emp.department || '—',
         currentStatus,
@@ -511,7 +582,7 @@ export class PatientService {
   async createVisit(dto: CreatePatientVisitDto, actorUserId?: string) {
     const trimmedId = dto.employeeId.trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedId);
-    const orConditions: any[] = [
+    const orConditions: Prisma.EmployeeWhereInput[] = [
       { employeeId: { equals: trimmedId, mode: 'insensitive' } },
       { hospitalUid: { uidCode: { equals: trimmedId, mode: 'insensitive' } } },
     ];
@@ -562,7 +633,7 @@ export class PatientService {
         },
       });
 
-      let opdVisitRecord: any = null;
+      let opdVisitRecord: Prisma.OPDVisitGetPayload<{ include: { department: true } }> | null = null;
       let tokenNumber: string | null = null;
       const isDirectTherapyVisit = dto.type === VisitType.OPD && dto.visitPurpose === 'THERAPY';
 
@@ -664,7 +735,7 @@ export class PatientService {
   async getPatientMedicalHistory(identifier: string) {
     const trimmed = identifier.trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-    const orConditions: any[] = [
+    const orConditions: Prisma.EmployeeWhereInput[] = [
       { employeeId: { equals: trimmed, mode: 'insensitive' } },
       { hospitalUid: { uidCode: { equals: trimmed, mode: 'insensitive' } } },
     ];
@@ -817,7 +888,7 @@ export class PatientService {
   ) {
     const trimmed = idOrEmployeeId.trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-    const orConditions: any[] = [
+    const orConditions: Prisma.EmployeeWhereInput[] = [
       { employeeId: { equals: trimmed, mode: 'insensitive' } },
       { hospitalUid: { uidCode: { equals: trimmed, mode: 'insensitive' } } },
     ];
@@ -898,7 +969,7 @@ export class PatientService {
 
   async getPatientMasterRecord(id: string) {
     // 1. Fetch employee details with full relations
-    const employee = (await this.prisma.employee.findUnique({
+    const employee = await this.prisma.employee.findUnique({
       where: { id },
       include: {
         post: true,
@@ -907,7 +978,7 @@ export class PatientService {
         patientProfile: true,
         hospitalUid: true,
       },
-    })) as any;
+    });
     if (!employee) {
       throw new NotFoundException(`Patient not found`);
     }
@@ -915,7 +986,7 @@ export class PatientService {
     // 2. Fetch all visits — includes every clinical module (Feature 5), so the
     // timeline built below in buildTimelineEvents() is real and complete, not
     // reconstructed from a narrower query.
-    const visits = (await this.prisma.visit.findMany({
+    const visits = await this.prisma.visit.findMany({
       where: { employeeId: id },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -937,10 +1008,10 @@ export class PatientService {
           },
         },
       },
-    })) as any[];
+    });
 
     // 3. Fetch admissions
-    const admissions = (await this.prisma.admission.findMany({
+    const admissions = await this.prisma.admission.findMany({
       where: { visit: { employeeId: id } },
       orderBy: { requestedAt: 'desc' },
       include: {
@@ -950,7 +1021,7 @@ export class PatientService {
         dischargeSummary: true,
         assignedDoctor: { include: { employee: true } },
       },
-    })) as any[];
+    });
 
     // 4. Fetch all users to map doctor names
     const users = await this.prisma.user.findMany({
@@ -959,8 +1030,8 @@ export class PatientService {
     const userMap = new Map(users.map(u => [u.id, u.employee?.name || u.identifier.split('@')[0]]));
 
     // 5. Build Personal Info
-    const profile = (employee.patientProfile || {}) as any;
-    const dob = profile.dob;
+    const profile = employee.patientProfile;
+    const dob = profile?.dob;
     let age = null;
     if (dob) {
       const birthDate = new Date(dob);
@@ -977,19 +1048,19 @@ export class PatientService {
       employeeId: employee.employeeId,
       name: employee.name,
       age: age !== null ? `${age} Yrs` : '—',
-      gender: profile.gender || '—',
+      gender: profile?.gender || '—',
       dob: dob ? new Date(dob).toISOString().split('T')[0] : '—',
       mobile: employee.contactPhone || '—',
-      address: profile.address || '—',
+      address: profile?.address || '—',
       employmentType: employee.employmentType?.name || '—',
       relation: 'Self',
-      photoUrl: profile.photoUrl || null,
+      photoUrl: profile?.photoUrl || null,
     };
 
     // 6. Build Visit History (OPD Visits)
     const visitHistory = visits
-      .filter((v: any) => v.type === 'OPD')
-      .map((v: any) => {
+      .filter((v) => v.type === 'OPD')
+      .map((v) => {
         const dx = v.diagnoses[0];
         const rx = v.prescriptions[0];
         const doctorName = dx ? userMap.get(dx.doctorId) : (rx ? userMap.get(rx.doctorId) : 'Attending Doctor');
@@ -1004,12 +1075,12 @@ export class PatientService {
       });
 
     // 7. Build Admission History
-    const admissionHistory = admissions.map((a: any) => {
+    const admissionHistory = admissions.map((a) => {
       const duration = a.dischargedAt && a.allocatedAt
         ? Math.ceil((new Date(a.dischargedAt).getTime() - new Date(a.allocatedAt).getTime()) / (1000 * 60 * 60 * 24))
         : null;
 
-      const visitRecord = visits.find((v: any) => v.id === a.visitId);
+      const visitRecord = visits.find((v) => v.id === a.visitId);
       const departmentName = visitRecord?.opdVisit?.department?.name || 'Inpatient Department (IPD)';
 
       return {
@@ -1027,10 +1098,10 @@ export class PatientService {
     });
 
     // 8. Build Medicines
-    const medicinesList: any[] = [];
-    visits.forEach((v: any) => {
-      v.prescriptions.forEach((p: any) => {
-        p.items.forEach((item: any) => {
+    const medicinesList: MedicineListEntry[] = [];
+    visits.forEach((v) => {
+      v.prescriptions.forEach((p) => {
+        p.items.forEach((item) => {
           const dispensedQty = item.dispensedQuantity || 0;
 
           medicinesList.push({
@@ -1080,7 +1151,7 @@ export class PatientService {
     const pendingAmount = billingSummary.pending;
 
     // 10. Build Medical Timeline (chronological events)
-    const timelineEvents: any[] = [];
+    const timelineEvents: TimelineEvent[] = [];
     
     timelineEvents.push({
       title: 'Patient Registered',
@@ -1089,7 +1160,7 @@ export class PatientService {
       type: 'registration',
     });
 
-    visits.forEach((v: any) => {
+    visits.forEach((v) => {
       timelineEvents.push({
         title: `Visited OPD - ${v.opdVisit?.department?.name || 'General Medicine'}`,
         description: `Issued Daily Token: ${v.opdVisit?.tokenNumber || '—'}`,
@@ -1097,7 +1168,7 @@ export class PatientService {
         type: 'opd-visit',
       });
 
-      v.diagnoses.forEach((d: any) => {
+      v.diagnoses.forEach((d) => {
         timelineEvents.push({
           title: 'OPD Clinical Consultation',
           description: `Diagnosed: ${d.diagnosisText}`,
@@ -1106,7 +1177,7 @@ export class PatientService {
         });
       });
 
-      v.prescriptions.forEach((p: any) => {
+      v.prescriptions.forEach((p) => {
         timelineEvents.push({
           title: 'Medicine Prescribed',
           description: `Prescription signed by attending physician (${p.items.length} items)`,
@@ -1118,7 +1189,7 @@ export class PatientService {
         // charge ledger drives it via PharmacyService) — BillingTransaction
         // stopped being written to after P2 and would always read false here.
         const hasDispensed = p.items.some(
-          (item: any) => item.dispenseStatus === 'DISPENSED' || item.dispenseStatus === 'PARTIALLY_DISPENSED',
+          (item) => item.dispenseStatus === 'DISPENSED' || item.dispenseStatus === 'PARTIALLY_DISPENSED',
         );
         if (hasDispensed) {
           timelineEvents.push({
@@ -1131,8 +1202,8 @@ export class PatientService {
       });
 
       // Laboratory (Feature 6) — real orders and report releases, not a count.
-      v.labOrders.forEach((lo: any) => {
-        const testNames = lo.items.map((i: any) => i.labTest.name).join(', ') || 'Investigation';
+      v.labOrders.forEach((lo) => {
+        const testNames = lo.items.map((i) => i.labTest.name).join(', ') || 'Investigation';
         timelineEvents.push({
           title: `Lab Order ${lo.labNumber ?? ''}`.trim(),
           description: `${testNames} — ${lo.status.replace(/_/g, ' ')}`,
@@ -1151,7 +1222,7 @@ export class PatientService {
 
       // Therapy (Feature 1/7) — courses and individual sessions, tagged with
       // which of the three entry points opened them (Direct/OPD/IPD).
-      v.therapyCourses.forEach((c: any) => {
+      v.therapyCourses.forEach((c) => {
         timelineEvents.push({
           title: `Therapy Course Opened — ${c.service.name}`,
           description: `${c.plannedSessions} session(s) planned, status ${c.status} · source: ${c.source}`,
@@ -1159,7 +1230,7 @@ export class PatientService {
           type: 'therapy-course',
         });
       });
-      v.therapySessions.forEach((s: any) => {
+      v.therapySessions.forEach((s) => {
         if (s.status === 'SCHEDULED') return; // only report what actually happened
         timelineEvents.push({
           title: `Therapy Session — ${s.service.name}`,
@@ -1170,7 +1241,7 @@ export class PatientService {
       });
     });
 
-    admissions.forEach((a: any) => {
+    admissions.forEach((a) => {
       timelineEvents.push({
         title: 'Patient Admitted (IPD)',
         description: `Allocated to Ward: ${a.ward?.name || 'General Ward'}, Bed: ${a.bed?.bedNumber || '—'}`,
@@ -1208,8 +1279,8 @@ export class PatientService {
 
     timelineEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const lastConsultationDate = visits.flatMap((v: any) => v.diagnoses).map((d: any) => d.createdAt).sort((a, b) => b.getTime() - a.getTime())[0] || null;
-    const currentAdmission = admissions.find((a: any) => a.status !== 'DISCHARGED') || null;
+    const lastConsultationDate = visits.flatMap((v) => v.diagnoses).map((d) => d.createdAt).sort((a, b) => b.getTime() - a.getTime())[0] || null;
+    const currentAdmission = admissions.find((a) => a.status !== 'DISCHARGED') || null;
 
     const stats = {
       totalVisits: visits.length,
@@ -1233,15 +1304,17 @@ export class PatientService {
   /**
    * Private Helper: Format complete patient profile response
    */
-  private formatPatientProfileResponse(employee: any, hospitalUid?: any) {
-    const profile = employee.patientProfile || {};
-    const visits = employee.visits || [];
-    const openVisit = visits.find((v: any) => v.status === VisitStatus.OPEN) || null;
+  private formatPatientProfileResponse(
+    employee: PatientProfileResponseEmployee,
+    hospitalUid?: PatientProfileResponseHospitalUid | null,
+  ) {
+    const profile = employee.patientProfile;
+    const visits = employee.visits;
+    const openVisit = visits.find((v) => v.status === VisitStatus.OPEN) || null;
     const lastVisit = visits[0] || null;
 
     const activeAdmission =
-      visits.flatMap((v: any) => v.admissions || []).find((a: any) => a.status !== 'DISCHARGED') ||
-      null;
+      visits.flatMap((v) => v.admissions).find((a) => a.status !== AdmissionStatus.DISCHARGED) || null;
 
     return {
       id: employee.id,
@@ -1249,7 +1322,7 @@ export class PatientService {
       hospitalUid: hospitalUid?.uidCode || null,
       qrDataUrl: hospitalUid?.qrPayload || null,
       name: employee.name,
-      photoUrl: profile.photoUrl || null,
+      photoUrl: profile?.photoUrl || null,
       department: employee.department,
       post: employee.post?.title || 'Officer',
       grade: employee.grade?.payLevel || 'Pay Level 4',
@@ -1261,16 +1334,16 @@ export class PatientService {
 
       // Personal & Medical Profile
       personal: {
-        dob: profile.dob || null,
-        gender: profile.gender || null,
-        address: profile.address || null,
+        dob: profile?.dob || null,
+        gender: profile?.gender || null,
+        address: profile?.address || null,
       },
       medical: {
-        eligibilityCategory: profile.eligibilityCategory || 'C',
-        allergies: profile.allergies || null,
-        chronicDiseases: profile.chronicDiseases || null,
-        bloodGroup: profile.bloodGroup || null,
-        notes: profile.notes || null,
+        eligibilityCategory: profile?.eligibilityCategory || 'C',
+        allergies: profile?.allergies || null,
+        chronicDiseases: profile?.chronicDiseases || null,
+        bloodGroup: profile?.bloodGroup || null,
+        notes: profile?.notes || null,
       },
 
       // Statistics

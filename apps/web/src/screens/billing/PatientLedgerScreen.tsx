@@ -11,6 +11,7 @@ import {
   ExpensePeriod,
 } from '../../api/ledger.api';
 import { searchPatients } from '../../api/patient.api';
+import { formatDateDDMonYYYY } from '../../utils/date';
 
 const PAYMENT_MODES = ['CASH', 'UPI', 'CARD'] as const;
 
@@ -515,7 +516,7 @@ export const PatientLedgerScreen: React.FC<PatientLedgerScreenProps> = ({ authTo
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
-                          {new Date(t.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          {formatDateDDMonYYYY(t.date)}
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-900">{t.service}</td>
                         <td className="px-4 py-3 text-gray-600">{t.category}</td>

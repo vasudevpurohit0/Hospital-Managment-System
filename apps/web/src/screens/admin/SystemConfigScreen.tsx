@@ -301,13 +301,13 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
 
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-blue-900">CSRF Token Protection (FR-SEC-08)</div>
+                  <div className="font-bold text-blue-900">CSRF Protection (FR-SEC-08)</div>
                   <div className="text-blue-700 text-[11px] mt-0.5">
-                    X-CSRF-Token headers validated on all state-changing routes
+                    Not applicable — auth is Bearer-token based, not cookie-based, so cross-site requests can never carry a valid session automatically
                   </div>
                 </div>
                 <span className="px-2.5 py-1 bg-blue-600 text-white rounded font-bold">
-                  ENFORCED
+                  N/A
                 </span>
               </div>
 

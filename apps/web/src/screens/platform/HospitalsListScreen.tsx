@@ -12,6 +12,7 @@ import { ConfirmModal } from '../../components/ConfirmModal';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { Building2, Plus, RefreshCw, LogIn, Pencil, KeyRound, PauseCircle, PlayCircle, Trash2, X } from 'lucide-react';
+import { formatDateDefault } from '../../utils/date';
 
 interface HospitalsListScreenProps {
   onCreateHospital: () => void;
@@ -142,7 +143,7 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
       key: 'createdAt',
       header: 'Created',
       sortable: true,
-      render: (h) => new Date(h.createdAt).toLocaleDateString(),
+      render: (h) => formatDateDefault(h.createdAt),
     },
   ];
 
@@ -232,6 +233,16 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
                   Delete
                 </button>
               </>
+            )}
+            {h.status === 'PROVISIONING' && (
+              <button
+                onClick={() => setPending({ type: 'delete', hospital: h })}
+                className="btn btn-danger btn-sm gap-1"
+                title="Abandon this stuck onboarding attempt so its slug can be retried"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Discard
+              </button>
             )}
           </div>
         )}
@@ -336,9 +347,17 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
 
       {pending && pending.type === 'delete' && (
         <ConfirmModal
-          title={`Permanently delete ${pending.hospital.name}?`}
-          message="This drops its entire database schema. All of its patients, visits, billing and inventory data is gone forever. This cannot be undone."
-          confirmLabel="Delete Forever"
+          title={
+            pending.hospital.status === 'PROVISIONING'
+              ? `Discard stuck onboarding attempt for ${pending.hospital.name}?`
+              : `Permanently delete ${pending.hospital.name}?`
+          }
+          message={
+            pending.hospital.status === 'PROVISIONING'
+              ? `Onboarding for "${pending.hospital.slug}" never completed. This drops whatever partial schema was created and frees the identifier so it can be retried. There is no live patient data to lose here.`
+              : 'This drops its entire database schema. All of its patients, visits, billing and inventory data is gone forever. This cannot be undone.'
+          }
+          confirmLabel={pending.hospital.status === 'PROVISIONING' ? 'Discard' : 'Delete Forever'}
           danger
           busy={actionBusy}
           onConfirm={runPendingAction}

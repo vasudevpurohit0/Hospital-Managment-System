@@ -3,8 +3,11 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import { AdmissionStatus, BedStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Admission Bed Allocation Concurrency (e2e)', () => {
   jest.setTimeout(60000);
@@ -80,7 +83,9 @@ describe('Admission Bed Allocation Concurrency (e2e)', () => {
         const perms = permissionsStore.filter((p) => p.roleId === user.roleId);
         return { ...user, role: { ...role, permissions: perms } };
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
     admission: {
       findUnique: jest.fn().mockResolvedValue(mockAdmission),
       findMany: jest.fn().mockResolvedValue([mockAdmission]),
@@ -99,8 +104,19 @@ describe('Admission Bed Allocation Concurrency (e2e)', () => {
           currentAdmissionId: bedOccupied ? 'other-adm' : null,
         };
       }),
-      // Mock transactional updateMany with optimistic locking logic
-      updateMany: jest.fn().mockImplementation(async () => {
+      // Mock transactional updateMany with optimistic locking logic. The real
+      // service (admission.service.ts allocateBed()) issues TWO updateMany
+      // calls per request: step 1a releases any *other* bed already held by
+      // this admission (a no-op here, since none is), and step 2 is the real
+      // optimistic-lock allocation of `mockBed` itself -- only the latter
+      // should ever flip `bedOccupied`, or the race this test exists to
+      // exercise never actually happens (step 1a would "win" the race for
+      // both concurrent requests before step 2 is ever reached).
+      updateMany: jest.fn().mockImplementation(async ({ where }) => {
+        const isAllocationStep = where?.id === mockBed.id;
+        if (!isAllocationStep) {
+          return { count: 0 };
+        }
         if (bedOccupied) {
           return { count: 0 };
         }
@@ -125,11 +141,20 @@ describe('Admission Bed Allocation Concurrency (e2e)', () => {
       active: true,
     });
 
+    const { platformPrismaMock, tenantClientFactoryMock } = createPlatformAuthMocks(
+      [{ identifier: 'admission@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID }],
+      mockPrismaService,
+    );
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
       .compile();
 
     app = moduleFixture.createNestApplication();

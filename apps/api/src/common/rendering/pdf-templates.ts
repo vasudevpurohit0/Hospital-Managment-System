@@ -3,7 +3,21 @@ import { ReceiptDetailForPdf, LabReportForPdf, HospitalBranding } from './pdf-te
 const escapeHtml = (s: unknown): string =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
+const SAFE_HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+/**
+ * V-16: interpolated raw into a <style> block, so escapeHtml() (an HTML-text
+ * escaper) isn't the right defense here -- a value never falls through to
+ * the DOM as text, it's CSS source. `UpdateBrandingDto` now validates this
+ * shape at write time, but this render site (a single, shared, long-lived
+ * Puppeteer instance backing every tenant's receipts/reports) still
+ * verifies it independently rather than trusting that every row already in
+ * the database was written after that validation existed.
+ */
+const safeColor = (color: unknown, fallback: string): string =>
+  typeof color === 'string' && SAFE_HEX_COLOR.test(color) ? color : fallback;
+
 function shell(branding: HospitalBranding, title: string, body: string): string {
+  const primaryColor = safeColor(branding.primaryColor, '#005691');
   return `<!doctype html>
 <html>
 <head>
@@ -12,8 +26,8 @@ function shell(branding: HospitalBranding, title: string, body: string): string 
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 12px; margin: 0; }
-  .masthead { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid ${branding.primaryColor}; padding-bottom: 10px; margin-bottom: 14px; }
-  .masthead h1 { font-size: 18px; margin: 0; color: ${branding.primaryColor}; }
+  .masthead { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid ${primaryColor}; padding-bottom: 10px; margin-bottom: 14px; }
+  .masthead h1 { font-size: 18px; margin: 0; color: ${primaryColor}; }
   .masthead .tagline { font-size: 11px; color: #555; }
   .masthead .doc-title { text-align: right; font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
   table { width: 100%; border-collapse: collapse; }

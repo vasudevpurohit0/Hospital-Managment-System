@@ -3,7 +3,10 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Repeat Visit Lookup & History (e2e)', () => {
   let app: INestApplication;
@@ -62,7 +65,9 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
         const perms = permissionsStore.filter((p) => p.roleId === user.roleId);
         return { ...user, role: { ...role, permissions: perms } };
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
     employee: {
       findFirst: jest.fn().mockImplementation(async ({ where }) => {
         const uidCode =
@@ -162,11 +167,20 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
       active: true,
     });
 
+    const { platformPrismaMock, tenantClientFactoryMock } = createPlatformAuthMocks(
+      [{ identifier: 'reception@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID }],
+      mockPrismaService,
+    );
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
       .compile();
 
     app = moduleFixture.createNestApplication();

@@ -2,15 +2,96 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
+import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Expiry & FEFO Automation (e2e)', () => {
   let app: INestApplication;
   let jwtToken: string;
 
+  const rolesStore: any[] = [{ id: 'r-admin', name: 'SuperAdmin', isSystemRole: true }];
+  const permissionsStore: any[] = [
+    { id: 'p1', roleId: 'r-admin', resource: 'MedicineBatch', action: 'read' },
+    { id: 'p2', roleId: 'r-admin', resource: 'MedicineBatch', action: 'update' },
+  ];
+  const usersStore: any[] = [];
+
+  const batchesStore: any[] = [
+    {
+      id: 'batch-p-500-01',
+      medicineId: 'med-1',
+      batchNumber: 'P500-01',
+      currentStock: 40,
+      minimumStockLevel: 0,
+      reorderLevel: 10,
+      expiryDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+      stockStatus: 'CRITICAL_ALERT',
+    },
+  ];
+
+  const mockPrismaService = {
+    $connect: jest.fn().mockResolvedValue(undefined),
+    $disconnect: jest.fn().mockResolvedValue(undefined),
+    $transaction: jest.fn().mockImplementation((cb) => cb(mockPrismaService)),
+    role: {
+      findUnique: jest.fn().mockImplementation(async ({ where }) => rolesStore.find((r) => r.id === where?.id || r.name === where?.name) || null),
+    },
+    user: {
+      findUnique: jest.fn().mockImplementation(async ({ where }) => {
+        const user = usersStore.find((u) => u.id === where?.id || u.identifier === where?.identifier);
+        if (!user) return null;
+        const role = rolesStore.find((r) => r.id === user.roleId);
+        const perms = permissionsStore.filter((p) => p.roleId === user.roleId);
+        return { ...user, role: { ...role, permissions: perms } };
+      }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
+    auditLog: { create: jest.fn().mockResolvedValue({}) },
+    medicineBatch: {
+      // Backs both ExpiryScannerService.runDailyScan()'s three category
+      // scans and InventoryService.getExpiringBatches() -- this suite only
+      // asserts on response shape, not exact per-category counts, so one
+      // fixed set for every findMany call is enough.
+      findMany: jest.fn().mockResolvedValue(batchesStore),
+      findUnique: jest.fn().mockImplementation(async ({ where }) => batchesStore.find((b) => b.id === where?.id) || null),
+      update: jest.fn().mockImplementation(async ({ where, data }) => {
+        const b = batchesStore.find((item) => item.id === where?.id);
+        if (b) Object.assign(b, data);
+        return b;
+      }),
+    },
+    stockTransaction: { create: jest.fn().mockResolvedValue({}) },
+  };
+
   beforeAll(async () => {
+    const passwordHash = await bcrypt.hash('SuperAdminSecret123!', 10);
+    usersStore.push({
+      id: '00000000-0000-0000-0000-000000000010',
+      identifier: 'superadmin@esic.gov.in',
+      passwordHash,
+      roleId: 'r-admin',
+      active: true,
+    });
+
+    const { platformPrismaMock, tenantClientFactoryMock } = createPlatformAuthMocks(
+      [{ identifier: 'superadmin@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID }],
+      mockPrismaService,
+    );
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PrismaService)
+      .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');

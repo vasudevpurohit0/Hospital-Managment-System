@@ -4,6 +4,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { hasTenantContext } from '../../common/tenant/tenant-context';
+import { UpdateBrandingDto } from './dto/update-branding.dto';
 
 export const DEFAULT_BRANDING = {
   hospitalName: 'ESIC Model Hospital & ODC',
@@ -38,7 +39,7 @@ export class BrandingController {
   @Put()
   @UseGuards(JwtAuthGuard)
   @RequirePermission('BrandingConfig', 'update')
-  async updateBranding(@Body() body: any, @Req() req: any) {
+  async updateBranding(@Body() body: UpdateBrandingDto, @Req() req: any) {
     const updated = await this.prisma.brandingConfig.upsert({
       where: { id: 'singleton' },
       create: {

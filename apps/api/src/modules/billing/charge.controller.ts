@@ -11,7 +11,9 @@ import {
   Query,
   Res,
   UnauthorizedException,
+  UseInterceptors,
 } from '@nestjs/common';
+import { IdempotencyInterceptor } from '../../common/idempotency/idempotency.interceptor';
 import type { Response } from 'express';
 import { ChargeStatus } from '@prisma/client';
 import { ChargeService } from './charge.service';
@@ -108,15 +110,15 @@ export class ChargeController {
     else if (period === '1_MONTH') periodLabel = '1 Month';
 
     const reportData = await this.charges.getDetailedPatientExpenses(fromDate, toDate, periodLabel);
-    const xml = buildPatientExpenseExcel(reportData);
+    const buffer = await buildPatientExpenseExcel(reportData);
 
     const periodSlug = (period || 'all').toLowerCase().replace(/_/g, '-');
     const dateSlug = new Date().toISOString().slice(0, 10);
-    const filename = `patient-expense-report-${periodSlug}-${dateSlug}.xls`;
+    const filename = `patient-expense-report-${periodSlug}-${dateSlug}.xlsx`;
 
-    res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(xml);
+    res.send(buffer);
   }
 
   @Get('charges')
@@ -139,6 +141,7 @@ export class ChargeController {
   @Post('charges/service')
   @HttpCode(HttpStatus.CREATED)
   @RequirePermission('Charge', 'create')
+  @UseInterceptors(IdempotencyInterceptor)
   async postServiceCharge(
     @Body() dto: PostServiceChargeDto,
     @CurrentUser() user?: AuthenticatedUser,

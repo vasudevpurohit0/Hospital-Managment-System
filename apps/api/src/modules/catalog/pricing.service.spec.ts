@@ -53,9 +53,11 @@ describeWithDb('PricingService (integration)', () => {
   afterAll(async () => {
     await prisma.servicePrice.deleteMany({ where: { serviceId: { in: createdServiceIds } } });
     await prisma.service.deleteMany({ where: { id: { in: createdServiceIds } } });
-    await prisma.auditLog.deleteMany({
-      where: { action: 'service_price.change', actorRole: 'ZZTest' },
-    });
+    // audit_logs is append-only (a real Postgres trigger rejects DELETE,
+    // deliberately, so no one -- including test cleanup -- can quietly erase
+    // audit history) -- the 'service_price.change'/'ZZTest' rows this suite
+    // writes are left in place rather than attempting a delete that always
+    // fails and would abort the rest of this cleanup along with it.
     await prisma.serviceCategory.deleteMany({ where: { code: 'ZZTESTCAT' } });
     await prisma.$disconnect();
   });

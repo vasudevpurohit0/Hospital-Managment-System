@@ -17,6 +17,14 @@ COPY . .
 # Generate Prisma client
 RUN pnpm prisma generate
 
+# V-10: run as the image's built-in non-root user rather than root, so an
+# RCE in the app or a dependency doesn't get root inside the container.
+# `node` (uid 1000) ships in every official Node image; chown after all the
+# root-owned install/generate steps above so the app can still read/write
+# its own files under it.
+RUN chown -R node:node /app
+USER node
+
 # Expose port
 EXPOSE 3000
 

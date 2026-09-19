@@ -1,4 +1,13 @@
+import ExcelJS from 'exceljs';
 import { Prisma, ChargeStatus } from '@prisma/client';
+
+/**
+ * F-25/audit finding: this used to be a hand-written SpreadsheetML (Excel
+ * XML 2003) string builder, a second, independent way of producing Excel
+ * output from the ground-up ZIP/OOXML writer in the inventory module
+ * (`apps/api/src/modules/inventory/excel/medicine-excel.util.ts`). Both now
+ * go through `exceljs`, so this codebase has one Excel implementation.
+ */
 
 export interface PatientExpenseDetail {
   patient: {
@@ -31,16 +40,6 @@ export interface PatientExpenseReportData {
   patients: PatientExpenseDetail[];
 }
 
-function xmlEscape(val: unknown): string {
-  if (val === null || val === undefined) return '';
-  return String(val)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
-
 function formatDateTime(date?: Date): string {
   if (!date) return '—';
   const d = new Date(date);
@@ -63,391 +62,190 @@ function formatDateOnly(date?: Date): string {
   return `${day} ${month} ${year}`;
 }
 
+const FILL = (argb: string): ExcelJS.Fill => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+const THIN_BORDER = (color: string): Partial<ExcelJS.Borders> => ({
+  top: { style: 'thin', color: { argb: color } },
+  bottom: { style: 'thin', color: { argb: color } },
+  left: { style: 'thin', color: { argb: color } },
+  right: { style: 'thin', color: { argb: color } },
+});
+const CURRENCY_FORMAT = '#,##0.00';
+
 /**
- * Builds a professional, multi-worksheet Excel workbook in SpreadsheetML (XML Spreadsheet 2003).
- *
- * Sheet 1: "Detailed Expense Ledger"
- * - Report Title & Header Metadata
- * - Total Patient Expenses Executive Summary Card
- * - Detailed Patient-wise Sections (Name, Employee ID, UHID, Department, Total Expense)
- * - Complete Line-item Ledger (Date, Service, Category, Quantity, Rate, Total)
- * - Patient-wise Subtotals
- * - Overall Grand Total across ALL patients
- *
- * Sheet 2: "Patient Summary"
- * - Compact tabular summary of each patient's total expenses and charge counts
- * - Overall Total
+ * Builds a two-worksheet Excel workbook: a detailed per-patient ledger and a
+ * compact patient summary, both carried over from the previous SpreadsheetML
+ * version's layout and styling.
  */
-export function buildPatientExpenseExcel(report: PatientExpenseReportData): string {
+export async function buildPatientExpenseExcel(report: PatientExpenseReportData): Promise<Buffer> {
   const fromStr = report.from ? formatDateOnly(report.from) : 'Beginning';
   const toStr = report.to ? formatDateOnly(report.to) : 'Present';
   const genStr = formatDateTime(report.generatedAt);
-  const grandTotalFormatted = report.grandTotal.toFixed(2);
+  const grandTotal = report.grandTotal.toNumber();
 
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
-  <Title>Patient Expense Report</Title>
-  <Subject>Detailed Patient Expense Breakdown</Subject>
-  <Author>AYUSH SARATHI</Author>
-  <Created>${xmlEscape(report.generatedAt.toISOString())}</Created>
- </DocumentProperties>
- <Styles>
-  <Style ss:ID="Default" ss:Name="Normal">
-   <Alignment ss:Vertical="Center"/>
-   <Borders/>
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#1F2937"/>
-   <Interior/>
-   <NumberFormat/>
-   <Protection/>
-  </Style>
-  <Style ss:ID="ReportTitle">
-   <Font ss:FontName="Calibri" ss:Size="16" ss:Bold="1" ss:Color="#1E3A8A"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ReportSub">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#374151"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="ReportMeta">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#4B5563" ss:Italic="1"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-  </Style>
-  <Style ss:ID="SummaryCardLabel">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1E3A8A"/>
-   <Interior ss:Color="#DBEAFE" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="SummaryCardValue">
-   <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#1E3A8A"/>
-   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="PatientBanner">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
-   <Interior ss:Color="#1E40AF" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#1E3A8A"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="InfoKey">
-   <Font ss:FontName="Calibri" ss:Size="9" ss:Bold="1" ss:Color="#4B5563"/>
-   <Interior ss:Color="#F3F4F6" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="InfoVal">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#111827"/>
-   <Interior ss:Color="#FFFFFF" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="InfoValAmount">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1E40AF"/>
-   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="TableHeader">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1F2937"/>
-   <Interior ss:Color="#E5E7EB" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9CA3AF"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#4B5563"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D1D5DB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="CellDate">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#374151"/>
-   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="CellText">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#111827"/>
-   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="CellQty">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#111827"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.##"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="CellCurrency">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#111827"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-   <Borders>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E5E7EB"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="SubtotalLabel">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1E3A8A"/>
-   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#2563EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="SubtotalAmount">
-   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#1E3A8A"/>
-   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#93C5FD"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#2563EB"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="GrandTotalLabel">
-   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#065F46"/>
-   <Interior ss:Color="#D1FAE5" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#10B981"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#047857"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6EE7B7"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6EE7B7"/>
-   </Borders>
-  </Style>
-  <Style ss:ID="GrandTotalAmount">
-   <Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1" ss:Color="#065F46"/>
-   <Interior ss:Color="#D1FAE5" ss:Pattern="Solid"/>
-   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
-   <NumberFormat ss:Format="#,##0.00"/>
-   <Borders>
-    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#10B981"/>
-    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#047857"/>
-    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6EE7B7"/>
-    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#6EE7B7"/>
-   </Borders>
-  </Style>
- </Styles>
-`;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'AYUSH SARATHI';
+  workbook.created = report.generatedAt;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // WORKSHEET 1: Detailed Expense Ledger
-  // ──────────────────────────────────────────────────────────────────────────
-  xml += ` <Worksheet ss:Name="Detailed Expense Ledger">
-  <Table>
-   <Column ss:Width="115"/>
-   <Column ss:Width="230"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="70"/>
-   <Column ss:Width="95"/>
-   <Column ss:Width="110"/>
+  // ── Worksheet 1: Detailed Expense Ledger ──────────────────────────────
+  const ledger = workbook.addWorksheet('Detailed Expense Ledger');
+  ledger.columns = [{ width: 18 }, { width: 34 }, { width: 20 }, { width: 12 }, { width: 14 }, { width: 16 }];
 
-   <!-- Report Title Header -->
-   <Row ss:Height="24">
-    <Cell ss:StyleID="ReportTitle" ss:MergeAcross="5"><Data ss:Type="String">AYUSH SARATHI</Data></Cell>
-   </Row>
-   <Row ss:Height="18">
-    <Cell ss:StyleID="ReportSub" ss:MergeAcross="5"><Data ss:Type="String">Detailed Patient Expense Breakdown Report</Data></Cell>
-   </Row>
-   <Row ss:Height="16">
-    <Cell ss:StyleID="ReportMeta" ss:MergeAcross="5"><Data ss:Type="String">Selected Period: ${xmlEscape(report.periodLabel)} (${xmlEscape(fromStr)} to ${xmlEscape(toStr)})  |  Generated: ${xmlEscape(genStr)}</Data></Cell>
-   </Row>
-   <Row ss:Height="10"/>
+  ledger.addRow(['AYUSH SARATHI']).getCell(1).font = { size: 16, bold: true, color: { argb: 'FF1E3A8A' } };
+  ledger.addRow(['Detailed Patient Expense Breakdown Report']).getCell(1).font = { size: 11, bold: true, color: { argb: 'FF374151' } };
+  ledger.addRow([
+    `Selected Period: ${report.periodLabel} (${fromStr} to ${toStr})  |  Generated: ${genStr}`,
+  ]).getCell(1).font = { size: 10, italic: true, color: { argb: 'FF4B5563' } };
+  ledger.addRow([]);
 
-   <!-- Total Patient Expenses Summary Card -->
-   <Row ss:Height="22">
-    <Cell ss:StyleID="SummaryCardLabel" ss:MergeAcross="3"><Data ss:Type="String">Total Patient Expenses (Selected Period):</Data></Cell>
-    <Cell ss:StyleID="SummaryCardValue" ss:MergeAcross="1"><Data ss:Type="Number">${grandTotalFormatted}</Data></Cell>
-   </Row>
-   <Row ss:Height="16">
-    <Cell ss:StyleID="ReportMeta" ss:MergeAcross="5"><Data ss:Type="String">Summary: ${report.totalPatients} Billed Patients  |  ${report.totalTransactions} Billable Activities (OPD, IPD/Bed, Lab, Therapy, Pharmacy)</Data></Cell>
-   </Row>
-   <Row ss:Height="14"/>
-`;
+  const summaryRow = ledger.addRow(['Total Patient Expenses (Selected Period):', grandTotal]);
+  summaryRow.getCell(1).font = { size: 10, bold: true, color: { argb: 'FF1E3A8A' } };
+  summaryRow.getCell(1).fill = FILL('FFDBEAFE');
+  summaryRow.getCell(2).font = { size: 12, bold: true, color: { argb: 'FF1E3A8A' } };
+  summaryRow.getCell(2).fill = FILL('FFEFF6FF');
+  summaryRow.getCell(2).numFmt = CURRENCY_FORMAT;
+  summaryRow.getCell(2).alignment = { horizontal: 'right' };
+
+  ledger.addRow([
+    `Summary: ${report.totalPatients} Billed Patients  |  ${report.totalTransactions} Billable Activities (OPD, IPD/Bed, Lab, Therapy, Pharmacy)`,
+  ]).getCell(1).font = { size: 10, italic: true, color: { argb: 'FF4B5563' } };
+  ledger.addRow([]);
 
   if (report.patients.length === 0) {
-    xml += `   <Row ss:Height="20">
-    <Cell ss:StyleID="CellText" ss:MergeAcross="5"><Data ss:Type="String">No billable patient activities recorded for the selected period.</Data></Cell>
-   </Row>
-`;
+    ledger.addRow(['No billable patient activities recorded for the selected period.']);
   } else {
     for (const p of report.patients) {
-      const patientTotal = p.totalExpense.toFixed(2);
+      const patientTotal = p.totalExpense.toNumber();
 
-      xml += `   <!-- Patient Header Banner -->
-   <Row ss:Height="20">
-    <Cell ss:StyleID="PatientBanner" ss:MergeAcross="5"><Data ss:Type="String">Patient: ${xmlEscape(p.patient.name)}  |  Employee ID: ${xmlEscape(p.patient.employeeId)}  |  UHID: ${xmlEscape(p.patient.uhid)}</Data></Cell>
-   </Row>
+      const banner = ledger.addRow([
+        `Patient: ${p.patient.name}  |  Employee ID: ${p.patient.employeeId}  |  UHID: ${p.patient.uhid}`,
+      ]);
+      banner.getCell(1).font = { size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      banner.getCell(1).fill = FILL('FF1E40AF');
+      ledger.mergeCells(banner.number, 1, banner.number, 6);
 
-   <!-- Patient Summary Info -->
-   <Row ss:Height="18">
-    <Cell ss:StyleID="InfoKey"><Data ss:Type="String">Patient Name</Data></Cell>
-    <Cell ss:StyleID="InfoVal"><Data ss:Type="String">${xmlEscape(p.patient.name)}</Data></Cell>
-    <Cell ss:StyleID="InfoKey"><Data ss:Type="String">Employee ID</Data></Cell>
-    <Cell ss:StyleID="InfoVal"><Data ss:Type="String">${xmlEscape(p.patient.employeeId)}</Data></Cell>
-    <Cell ss:StyleID="InfoKey"><Data ss:Type="String">Hospital UHID</Data></Cell>
-    <Cell ss:StyleID="InfoVal"><Data ss:Type="String">${xmlEscape(p.patient.uhid)}</Data></Cell>
-   </Row>
-   <Row ss:Height="18">
-    <Cell ss:StyleID="InfoKey"><Data ss:Type="String">Department</Data></Cell>
-    <Cell ss:StyleID="InfoVal" ss:MergeAcross="2"><Data ss:Type="String">${xmlEscape(p.patient.department || 'General')}</Data></Cell>
-    <Cell ss:StyleID="InfoKey"><Data ss:Type="String">Total Patient Expense</Data></Cell>
-    <Cell ss:StyleID="InfoValAmount"><Data ss:Type="Number">${patientTotal}</Data></Cell>
-   </Row>
+      const infoRow1 = ledger.addRow([
+        'Patient Name',
+        p.patient.name,
+        'Employee ID',
+        p.patient.employeeId,
+        'Hospital UHID',
+        p.patient.uhid,
+      ]);
+      [1, 3, 5].forEach((c) => {
+        infoRow1.getCell(c).font = { size: 9, bold: true, color: { argb: 'FF4B5563' } };
+        infoRow1.getCell(c).fill = FILL('FFF3F4F6');
+      });
 
-   <!-- Column Headers -->
-   <Row ss:Height="18">
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Date</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Service</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Category</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Quantity</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Rate (₹)</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Total (₹)</Data></Cell>
-   </Row>
-`;
+      const infoRow2 = ledger.addRow(['Department', p.patient.department || 'General', 'Total Patient Expense', patientTotal]);
+      infoRow2.getCell(1).font = { size: 9, bold: true, color: { argb: 'FF4B5563' } };
+      infoRow2.getCell(1).fill = FILL('FFF3F4F6');
+      infoRow2.getCell(3).font = { size: 9, bold: true, color: { argb: 'FF4B5563' } };
+      infoRow2.getCell(3).fill = FILL('FFF3F4F6');
+      infoRow2.getCell(4).font = { size: 10, bold: true, color: { argb: 'FF1E40AF' } };
+      infoRow2.getCell(4).fill = FILL('FFEFF6FF');
+      infoRow2.getCell(4).numFmt = CURRENCY_FORMAT;
+
+      const header = ledger.addRow(['Date', 'Service', 'Category', 'Quantity', 'Rate (₹)', 'Total (₹)']);
+      header.eachCell((cell) => {
+        cell.font = { size: 10, bold: true, color: { argb: 'FF1F2937' } };
+        cell.fill = FILL('FFE5E7EB');
+        cell.alignment = { horizontal: 'center' };
+      });
 
       for (const t of p.transactions) {
-        xml += `   <Row ss:Height="16">
-    <Cell ss:StyleID="CellDate"><Data ss:Type="String">${xmlEscape(formatDateTime(t.date))}</Data></Cell>
-    <Cell ss:StyleID="CellText"><Data ss:Type="String">${xmlEscape(t.service)}</Data></Cell>
-    <Cell ss:StyleID="CellText"><Data ss:Type="String">${xmlEscape(t.category)}</Data></Cell>
-    <Cell ss:StyleID="CellQty"><Data ss:Type="Number">${t.quantity.toNumber()}</Data></Cell>
-    <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${t.rate.toFixed(2)}</Data></Cell>
-    <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${t.total.toFixed(2)}</Data></Cell>
-   </Row>
-`;
+        const row = ledger.addRow([
+          formatDateTime(t.date),
+          t.service,
+          t.category,
+          t.quantity.toNumber(),
+          t.rate.toNumber(),
+          t.total.toNumber(),
+        ]);
+        row.getCell(5).numFmt = CURRENCY_FORMAT;
+        row.getCell(6).numFmt = CURRENCY_FORMAT;
+        row.eachCell((cell) => (cell.border = THIN_BORDER('FFE5E7EB')));
       }
 
-      // Patient-wise Subtotal Row
-      xml += `   <Row ss:Height="18">
-    <Cell ss:StyleID="SubtotalLabel" ss:MergeAcross="4"><Data ss:Type="String">Patient Total Expense (${xmlEscape(p.patient.name)}):</Data></Cell>
-    <Cell ss:StyleID="SubtotalAmount"><Data ss:Type="Number">${patientTotal}</Data></Cell>
-   </Row>
-   <Row ss:Height="12"/>
-`;
+      const subtotal = ledger.addRow(['', '', '', '', `Patient Total Expense (${p.patient.name}):`, patientTotal]);
+      subtotal.getCell(5).font = { size: 10, bold: true, color: { argb: 'FF1E3A8A' } };
+      subtotal.getCell(5).fill = FILL('FFEFF6FF');
+      subtotal.getCell(5).alignment = { horizontal: 'right' };
+      subtotal.getCell(6).font = { size: 10, bold: true, color: { argb: 'FF1E3A8A' } };
+      subtotal.getCell(6).fill = FILL('FFEFF6FF');
+      subtotal.getCell(6).numFmt = CURRENCY_FORMAT;
+      ledger.addRow([]);
     }
   }
 
-  // Report Overall Grand Total
-  xml += `   <!-- Overall Total -->
-   <Row ss:Height="22">
-    <Cell ss:StyleID="GrandTotalLabel" ss:MergeAcross="4"><Data ss:Type="String">OVERALL TOTAL EXPENSES OF ALL PATIENTS (${xmlEscape(report.periodLabel).toUpperCase()}):</Data></Cell>
-    <Cell ss:StyleID="GrandTotalAmount"><Data ss:Type="Number">${grandTotalFormatted}</Data></Cell>
-   </Row>
-  </Table>
- </Worksheet>
-`;
+  const grandRow = ledger.addRow([
+    '',
+    '',
+    '',
+    '',
+    `OVERALL TOTAL EXPENSES OF ALL PATIENTS (${report.periodLabel.toUpperCase()}):`,
+    grandTotal,
+  ]);
+  grandRow.getCell(5).font = { size: 11, bold: true, color: { argb: 'FF065F46' } };
+  grandRow.getCell(5).fill = FILL('FFD1FAE5');
+  grandRow.getCell(5).alignment = { horizontal: 'right' };
+  grandRow.getCell(6).font = { size: 12, bold: true, color: { argb: 'FF065F46' } };
+  grandRow.getCell(6).fill = FILL('FFD1FAE5');
+  grandRow.getCell(6).numFmt = CURRENCY_FORMAT;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // WORKSHEET 2: Patient Summary
-  // ──────────────────────────────────────────────────────────────────────────
-  xml += ` <Worksheet ss:Name="Patient Summary">
-  <Table>
-   <Column ss:Width="160"/>
-   <Column ss:Width="110"/>
-   <Column ss:Width="130"/>
-   <Column ss:Width="140"/>
-   <Column ss:Width="90"/>
-   <Column ss:Width="120"/>
+  // ── Worksheet 2: Patient Summary ──────────────────────────────────────
+  const summary = workbook.addWorksheet('Patient Summary');
+  summary.columns = [{ width: 24 }, { width: 16 }, { width: 20 }, { width: 20 }, { width: 12 }, { width: 18 }];
 
-   <Row ss:Height="24">
-    <Cell ss:StyleID="ReportTitle" ss:MergeAcross="5"><Data ss:Type="String">ESIC HOSPITAL — PATIENT EXPENSE SUMMARY</Data></Cell>
-   </Row>
-   <Row ss:Height="16">
-    <Cell ss:StyleID="ReportMeta" ss:MergeAcross="5"><Data ss:Type="String">Period: ${xmlEscape(report.periodLabel)} (${xmlEscape(fromStr)} to ${xmlEscape(toStr)})  |  Generated: ${xmlEscape(genStr)}</Data></Cell>
-   </Row>
-   <Row ss:Height="10"/>
+  summary.addRow(['ESIC HOSPITAL — PATIENT EXPENSE SUMMARY']).getCell(1).font = {
+    size: 16,
+    bold: true,
+    color: { argb: 'FF1E3A8A' },
+  };
+  summary.addRow([`Period: ${report.periodLabel} (${fromStr} to ${toStr})  |  Generated: ${genStr}`]).getCell(1).font = {
+    size: 10,
+    italic: true,
+    color: { argb: 'FF4B5563' },
+  };
+  summary.addRow([]);
 
-   <Row ss:Height="18">
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Patient Name</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Employee ID</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Hospital UHID</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Department</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Activities</Data></Cell>
-    <Cell ss:StyleID="TableHeader"><Data ss:Type="String">Total Expense (₹)</Data></Cell>
-   </Row>
-`;
+  const summaryHeader = summary.addRow([
+    'Patient Name',
+    'Employee ID',
+    'Hospital UHID',
+    'Department',
+    'Activities',
+    'Total Expense (₹)',
+  ]);
+  summaryHeader.eachCell((cell) => {
+    cell.font = { size: 10, bold: true, color: { argb: 'FF1F2937' } };
+    cell.fill = FILL('FFE5E7EB');
+    cell.alignment = { horizontal: 'center' };
+  });
 
   if (report.patients.length === 0) {
-    xml += `   <Row ss:Height="18">
-    <Cell ss:StyleID="CellText" ss:MergeAcross="5"><Data ss:Type="String">No billable patient activities recorded for the selected period.</Data></Cell>
-   </Row>
-`;
+    summary.addRow(['No billable patient activities recorded for the selected period.']);
   } else {
     for (const p of report.patients) {
-      xml += `   <Row ss:Height="18">
-    <Cell ss:StyleID="CellText"><Data ss:Type="String">${xmlEscape(p.patient.name)}</Data></Cell>
-    <Cell ss:StyleID="CellDate"><Data ss:Type="String">${xmlEscape(p.patient.employeeId)}</Data></Cell>
-    <Cell ss:StyleID="CellDate"><Data ss:Type="String">${xmlEscape(p.patient.uhid)}</Data></Cell>
-    <Cell ss:StyleID="CellText"><Data ss:Type="String">${xmlEscape(p.patient.department || 'General')}</Data></Cell>
-    <Cell ss:StyleID="CellQty"><Data ss:Type="Number">${p.transactions.length}</Data></Cell>
-    <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${p.totalExpense.toFixed(2)}</Data></Cell>
-   </Row>
-`;
+      const row = summary.addRow([
+        p.patient.name,
+        p.patient.employeeId,
+        p.patient.uhid,
+        p.patient.department || 'General',
+        p.transactions.length,
+        p.totalExpense.toNumber(),
+      ]);
+      row.getCell(6).numFmt = CURRENCY_FORMAT;
     }
   }
 
-  xml += `   <Row ss:Height="22">
-    <Cell ss:StyleID="GrandTotalLabel" ss:MergeAcross="4"><Data ss:Type="String">OVERALL TOTAL EXPENSES (${xmlEscape(report.periodLabel).toUpperCase()}):</Data></Cell>
-    <Cell ss:StyleID="GrandTotalAmount"><Data ss:Type="Number">${grandTotalFormatted}</Data></Cell>
-   </Row>
-  </Table>
- </Worksheet>
-</Workbook>`;
+  const summaryGrand = summary.addRow(['', '', '', '', `OVERALL TOTAL EXPENSES (${report.periodLabel.toUpperCase()}):`, grandTotal]);
+  summaryGrand.getCell(5).font = { size: 11, bold: true, color: { argb: 'FF065F46' } };
+  summaryGrand.getCell(5).fill = FILL('FFD1FAE5');
+  summaryGrand.getCell(5).alignment = { horizontal: 'right' };
+  summaryGrand.getCell(6).font = { size: 12, bold: true, color: { argb: 'FF065F46' } };
+  summaryGrand.getCell(6).fill = FILL('FFD1FAE5');
+  summaryGrand.getCell(6).numFmt = CURRENCY_FORMAT;
 
-  return xml;
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(arrayBuffer);
 }

@@ -7,16 +7,50 @@ import { getTenantContext } from '../../common/tenant/tenant-context';
 import { generateSecurePassword } from '../../common/security/password.util';
 import { AuthService } from '../auth/auth.service';
 import { EmailService } from '../../common/email/email.service';
-import { tempPasswordEmailBody, TEMP_PASSWORD_EMAIL_SUBJECT } from '../../common/email/templates';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { STAFF_ROLE_NAMES, STAFF_ROLE_PREFIXES, StaffRoleName } from './dto/staff-role.const';
+import { AccountLifecycleService, Actor, TEMP_PASSWORD_TTL_MS } from './account-lifecycle.service';
 
-const TEMP_PASSWORD_TTL_MS = 24 * 60 * 60_000;
+export type { Actor };
 
-export interface Actor {
+type StaffUser = {
   id: string;
-  roleName: string;
+  identifier: string;
+  active: boolean;
+  mustChangePassword: boolean;
+  passwordChangedAt: Date | null;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+  role: { name: string };
+  employee: {
+    employeeId: string;
+    name: string;
+    department: string;
+    designation: string | null;
+    contactPhone: string | null;
+    contactEmail: string | null;
+  } | null;
+  staffShifts: { dayOfWeek: string; startTime: string; endTime: string; active: boolean }[];
+  departmentAssignments: { isPrimary: boolean; department: { id: string; name: string; code: string } }[];
+};
+
+export interface StaffDto {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  staffId: string | null;
+  department: string;
+  designation: string | null;
+  contactPhone: string | null;
+  active: boolean;
+  mustChangePassword: boolean;
+  passwordChangedAt: Date | null;
+  lastLoginAt: Date | null;
+  dateJoined: Date;
+  weeklySchedule: { day: string; startTime: string; endTime: string; available: boolean }[];
+  departments: { id: string; name: string; code: string; isPrimary: boolean }[];
 }
 
 export interface StaffFilters {
@@ -33,67 +67,23 @@ const DEFAULT_STAFF_PAGE_LIMIT = 25;
 const MAX_STAFF_PAGE_LIMIT = 100;
 
 @Injectable()
-export class StaffService {
+export class StaffService extends AccountLifecycleService<StaffDto> {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly loginDirectory: LoginDirectoryService,
+    prisma: PrismaService,
+    loginDirectory: LoginDirectoryService,
     private readonly sequences: DocumentSequenceService,
-    private readonly authService: AuthService,
-    private readonly emailService: EmailService,
-  ) {}
-
-  /**
-   * Always sends the activation link (the account-created spec's default,
-   * always-on path). If the hospital has opted into
-   * `sendTemporaryPasswordByEmail`, also emails the temp password directly,
-   * separately. Called after the triggering transaction has already
-   * committed -- an email failure must never roll back or fail the staff
-   * action that triggered it (AuthService/EmailService already swallow
-   * their own errors; this stays fire-and-forget on top of that).
-   */
-  private async sendCredentialEmails(params: {
-    identifier: string;
-    staffName: string;
-    staffId: string | null;
-    role: string;
-    hospitalId: string;
-    actorUserId?: string;
-    temporaryPassword?: string;
-  }): Promise<void> {
-    await this.authService
-      .sendActivationEmail({
-        identifier: params.identifier,
-        staffName: params.staffName,
-        staffId: params.staffId,
-        role: params.role,
-        hospitalId: params.hospitalId,
-        actorUserId: params.actorUserId,
-      })
-      .catch(() => undefined);
-
-    if (!params.temporaryPassword) return;
-
-    const settings = await this.prisma.hospitalSettings.findUnique({ where: { id: 'singleton' } }).catch(() => null);
-    if (!settings?.sendTemporaryPasswordByEmail) return;
-
-    const { html, text } = tempPasswordEmailBody({
-      staffName: params.staffName,
-      loginEmail: params.identifier,
-      temporaryPassword: params.temporaryPassword,
-    });
-    await this.emailService
-      .sendMail({
-        to: params.identifier,
-        subject: TEMP_PASSWORD_EMAIL_SUBJECT,
-        html,
-        text,
-        kind: 'TEMP_PASSWORD',
-        sentByUserId: params.actorUserId,
-      })
-      .catch(() => undefined);
+    authService: AuthService,
+    emailService: EmailService,
+  ) {
+    super(prisma, loginDirectory, authService, emailService);
   }
 
-  private readonly staffListSelect = {
+  protected readonly accountKind = 'staff';
+  protected roleNameFor(user: StaffUser): string {
+    return user.role.name;
+  }
+
+  protected readonly listSelect = {
     id: true,
     identifier: true,
     active: true,
@@ -118,26 +108,7 @@ export class StaffService {
     },
   } as const;
 
-  private toDto(u: {
-    id: string;
-    identifier: string;
-    active: boolean;
-    mustChangePassword: boolean;
-    passwordChangedAt: Date | null;
-    lastLoginAt: Date | null;
-    createdAt: Date;
-    role: { name: string };
-    employee: {
-      employeeId: string;
-      name: string;
-      department: string;
-      designation: string | null;
-      contactPhone: string | null;
-      contactEmail: string | null;
-    } | null;
-    staffShifts: { dayOfWeek: string; startTime: string; endTime: string; active: boolean }[];
-    departmentAssignments: { isPrimary: boolean; department: { id: string; name: string; code: string } }[];
-  }) {
+  protected toDto(u: StaffUser) {
     return {
       id: u.id,
       name: u.employee?.name ?? u.identifier,
@@ -185,7 +156,7 @@ export class StaffService {
             }
           : {}),
       },
-      select: this.staffListSelect,
+      select: this.listSelect,
       orderBy: [{ role: { name: 'asc' } }, { employee: { name: 'asc' } }],
     });
 
@@ -219,11 +190,11 @@ export class StaffService {
   }
 
   async findOne(id: string) {
-    const user = await this.requireStaffUser(id);
-    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: this.staffListSelect }));
+    const user = await this.requireAccountUser(id);
+    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: this.listSelect }));
   }
 
-  private async requireStaffUser(id: string) {
+  protected async requireAccountUser(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: { employee: true, role: true },
@@ -359,7 +330,7 @@ export class StaffService {
   }
 
   async updateStaff(id: string, dto: UpdateStaffDto, actor?: Actor) {
-    const user = await this.requireStaffUser(id);
+    const user = await this.requireAccountUser(id);
 
     await this.prisma.$transaction(async (tx) => {
       const employeeUpdates: Record<string, unknown> = {};
@@ -420,124 +391,7 @@ export class StaffService {
       }
     });
 
-    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.staffListSelect }));
+    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.listSelect }));
   }
 
-  /** Deactivates (never hard-deletes -- historical records reference this user). */
-  async setActive(id: string, active: boolean, actor?: Actor) {
-    const user = await this.requireStaffUser(id);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.user.update({
-        where: { id },
-        // Deactivating also kills any already-issued session immediately,
-        // not just future logins.
-        data: active ? { active } : { active, tokenVersion: { increment: 1 } },
-        select: this.staffListSelect,
-      });
-      await tx.auditLog.create({
-        data: {
-          actorUserId: actor?.id ?? null,
-          actorRole: actor?.roleName ?? 'System',
-          action: active ? 'staff.activated' : 'staff.deactivated',
-          entityType: 'User',
-          entityId: id,
-          beforeSnapshot: { active: user.active },
-          afterSnapshot: { active },
-        },
-      });
-      return u;
-    });
-    return this.toDto(updated);
-  }
-
-  async resetPassword(id: string, actor?: Actor, reason?: string) {
-    const user = await this.requireStaffUser(id);
-    const temporaryPassword = generateSecurePassword();
-    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id },
-        data: {
-          passwordHash,
-          mustChangePassword: true,
-          passwordChangedAt: null,
-          tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_TTL_MS),
-          tokenVersion: { increment: 1 },
-        },
-      });
-      await tx.auditLog.create({
-        data: {
-          actorUserId: actor?.id ?? null,
-          actorRole: actor?.roleName ?? 'System',
-          action: 'staff.password_reset',
-          entityType: 'User',
-          entityId: id,
-          reason: reason ?? null,
-        },
-      });
-    });
-
-    const { hospitalId } = getTenantContext();
-    await this.sendCredentialEmails({
-      identifier: user.identifier,
-      staffName: user.employee?.name ?? user.identifier,
-      staffId: user.employee?.employeeId ?? null,
-      role: user.role.name,
-      hospitalId,
-      actorUserId: actor?.id,
-      temporaryPassword,
-    });
-
-    return { id, email: user.identifier, temporaryPassword };
-  }
-
-  async setLocked(id: string, locked: boolean, actor?: Actor, reason?: string) {
-    const user = await this.requireStaffUser(id);
-    if (locked) {
-      await this.loginDirectory.lockManually(user.identifier);
-      // Locking also kills any already-issued session immediately.
-      await this.prisma.user.update({ where: { id }, data: { tokenVersion: { increment: 1 } } });
-    } else {
-      await this.loginDirectory.unlock(user.identifier);
-    }
-    await this.prisma.auditLog.create({
-      data: {
-        actorUserId: actor?.id ?? null,
-        actorRole: actor?.roleName ?? 'System',
-        action: locked ? 'staff.locked' : 'staff.unlocked',
-        entityType: 'User',
-        entityId: id,
-        reason: reason ?? null,
-      },
-    });
-    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.staffListSelect }));
-  }
-
-  /** Invalidates any outstanding unused activation token and sends a fresh one. Never resends or reveals an old password. */
-  async resendActivation(id: string, actor?: Actor) {
-    const user = await this.requireStaffUser(id);
-    const { hospitalId } = getTenantContext();
-
-    await this.authService.sendActivationEmail({
-      identifier: user.identifier,
-      staffName: user.employee?.name ?? user.identifier,
-      staffId: user.employee?.employeeId ?? null,
-      role: user.role.name,
-      hospitalId,
-      actorUserId: actor?.id,
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        actorUserId: actor?.id ?? null,
-        actorRole: actor?.roleName ?? 'System',
-        action: 'staff.activation_resent',
-        entityType: 'User',
-        entityId: id,
-      },
-    });
-
-    return { status: 'success', message: 'Activation email resent.' };
-  }
 }

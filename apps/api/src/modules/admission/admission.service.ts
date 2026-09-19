@@ -472,7 +472,10 @@ export class AdmissionService {
   }
 
   /**
-   * Doctor-approved discharge flow (transactional: generates summary and frees bed)
+   * Discharge, gated to Doctor/Administrator/SuperAdmin below (transactional:
+   * generates summary and frees bed). This role check *is* the approval --
+   * there is no separate pending-approval status; discharge happens
+   * atomically in one call once an authorized role invokes it.
    */
   async discharge(id: string, dto: DischargeDto, userId: string, roleName: string) {
     // Spec §8.1 & FR-ADM-05: Doctor, Administrator, or the platform Super Admin

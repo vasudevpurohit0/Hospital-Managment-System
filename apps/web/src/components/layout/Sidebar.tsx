@@ -101,7 +101,12 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'patient-records',
         label: 'Patient Records',
         icon: ClipboardList,
-        roles: ['Doctor', 'Reception', 'SuperAdmin', 'Administrator'],
+        // Reception removed: this page reads full diagnosis/prescription/lab
+        // history via the backend's new PatientHistory:read permission
+        // (V-06), which Reception no longer holds -- they'd otherwise land
+        // here and get 403s on every clinical section. Reception's own
+        // identity/registration lookups stay on Patient Search above.
+        roles: ['Doctor', 'SuperAdmin', 'Administrator'],
       },
       {
         id: 'registration',

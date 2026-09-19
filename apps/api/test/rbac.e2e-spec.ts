@@ -3,13 +3,17 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('RBAC & Core Data Model (e2e)', () => {
   let app: INestApplication;
 
   let superAdminToken: string;
   let dataEntryToken: string;
+  let registerBillingClerk: (identifier: string, hospitalId?: string | null) => void;
 
   // In-memory data store for E2E testing without external DB connection
   const rolesStore: any[] = [
@@ -108,7 +112,9 @@ describe('RBAC & Core Data Model (e2e)', () => {
         usersStore.push(newUser);
         return newUser;
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
     auditLog: {
       create: jest.fn().mockImplementation(async ({ data }) => {
         const newLog = {
@@ -169,11 +175,24 @@ describe('RBAC & Core Data Model (e2e)', () => {
       active: true,
     });
 
+    const { platformPrismaMock, tenantClientFactoryMock, registerUser } = createPlatformAuthMocks(
+      [
+        { identifier: 'superadmin@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID },
+        { identifier: 'deop@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID },
+      ],
+      mockPrismaService,
+    );
+    registerBillingClerk = registerUser;
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -290,6 +309,11 @@ describe('RBAC & Core Data Model (e2e)', () => {
           active: true,
         },
       });
+      // This user was created by calling mockPrismaService.user.create()
+      // directly (bypassing the real registration flow, which would itself
+      // call LoginDirectoryService.register()) -- so it needs registering in
+      // the mocked platform directory by hand for its login below to resolve.
+      registerBillingClerk('billingclerk@esic.gov.in');
 
       // Login as new Billing Clerk
       const loginRes = await request(app.getHttpServer())

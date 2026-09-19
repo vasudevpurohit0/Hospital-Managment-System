@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { listAuditLog, AuditLogEntry } from '../../api/platform.api';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { FileClock, RefreshCw } from 'lucide-react';
+import { formatDateTimeDefault } from '../../utils/date';
 
 export const PlatformAuditLogScreen: React.FC = () => {
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
@@ -29,7 +30,7 @@ export const PlatformAuditLogScreen: React.FC = () => {
       key: 'createdAt',
       header: 'When',
       sortable: true,
-      render: (e) => new Date(e.createdAt).toLocaleString(),
+      render: (e) => formatDateTimeDefault(e.createdAt),
     },
     { key: 'platformUserEmail', header: 'Admin', sortable: true },
     { key: 'hospitalName', header: 'Hospital', render: (e) => e.hospitalName || '—' },

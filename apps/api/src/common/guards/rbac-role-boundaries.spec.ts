@@ -24,6 +24,27 @@ describe('RBAC cross-role boundaries (seed regression guard)', () => {
     expect(receptionClinicalGrants).toHaveLength(0);
   });
 
+  // V-06: this is the boundary the test above was actually meant to check
+  // but didn't -- PatientController's :id/history and :id/master routes
+  // (full diagnoses/prescriptions/lab results/therapy per visit) were gated
+  // on Employee:read, a permission Reception (and DataEntryOperator,
+  // Pharmacist, LabTechnician, StoreManager, ProcurementOfficer,
+  // QueueManager, Accountant, AdmissionDesk) hold for identity/registration
+  // lookups, giving every one of those roles the same full clinical read
+  // access as a Doctor despite having no clinical grant of any kind.
+  it('only clinically-appropriate roles hold PatientHistory:read -- the real gate on full diagnosis/prescription/lab history (V-06)', () => {
+    const grantedTo = new Set(
+      PERMISSION_GRANTS.filter((g) => g.resource === 'PatientHistory' && g.action === 'read').map((g) => g.roleName),
+    );
+    expect(grantedTo).toEqual(new Set(['Doctor', 'Nurse', 'Administrator', 'Pathologist']));
+    expect(grantedTo.has('Reception')).toBe(false);
+    expect(grantedTo.has('DataEntryOperator')).toBe(false);
+    expect(grantedTo.has('Pharmacist')).toBe(false);
+    expect(grantedTo.has('LabTechnician')).toBe(false);
+    expect(grantedTo.has('QueueManager')).toBe(false);
+    expect(grantedTo.has('Accountant')).toBe(false);
+  });
+
   it('Pharmacist can view and dispense prescriptions but cannot alter the diagnosis or edit the prescription itself', () => {
     expect(has('Pharmacist', 'Prescription', 'read')).toBe(true);
     expect(has('Pharmacist', 'Prescription', 'update')).toBe(false);

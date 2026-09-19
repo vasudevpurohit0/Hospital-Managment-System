@@ -3,7 +3,12 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
+import { ChargeService } from '../src/modules/billing/charge.service';
+import { ReceiptService } from '../src/modules/billing/receipt.service';
 import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
   let app: INestApplication;
@@ -17,8 +22,9 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
 
   const permissionsStore: any[] = [
     { id: 'p1', roleId: 'r-pharmacist', resource: 'Employee', action: 'read' },
-    { id: 'p2', roleId: 'r-pharmacist', resource: 'Pharmacy', action: 'dispense' },
-    { id: 'p3', roleId: 'r-reception', resource: 'Employee', action: 'read' },
+    { id: 'p2', roleId: 'r-pharmacist', resource: 'Prescription', action: 'read' },
+    { id: 'p3', roleId: 'r-pharmacist', resource: 'StockTransaction', action: 'dispense' },
+    { id: 'p4', roleId: 'r-reception', resource: 'Employee', action: 'read' },
   ];
 
   const usersStore: any[] = [];
@@ -31,6 +37,7 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
       expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days future (Top FEFO)
       issuePrice: 15.0,
       currentStock: 100,
+      minimumStockLevel: 10,
       stockStatus: 'IN_STOCK',
     },
     {
@@ -109,7 +116,9 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
         const perms = permissionsStore.filter((p) => p.roleId === user.roleId);
         return { ...user, role: { ...role, permissions: perms } };
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
     prescription: {
       findMany: jest.fn().mockResolvedValue(prescriptionsStore),
       findUnique: jest.fn().mockImplementation(async ({ where }) => {
@@ -141,6 +150,18 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
         if (b) Object.assign(b, data);
         return b;
       }),
+      // Atomic conditional decrement (see the `deducted.count === 0` guard
+      // this backs in pharmacy.service.ts::dispense()).
+      updateMany: jest.fn().mockImplementation(async ({ where, data }) => {
+        const b = batchesStore.find((item) => item.id === where?.id);
+        const decrementBy = data?.currentStock?.decrement ?? 0;
+        if (!b || b.currentStock < decrementBy) return { count: 0 };
+        b.currentStock -= decrementBy;
+        return { count: 1 };
+      }),
+    },
+    pharmacyStock: {
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     prescriptionItem: {
       update: jest.fn().mockImplementation(async ({ where, data }) => {
@@ -185,11 +206,38 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
       active: true,
     });
 
+    const { platformPrismaMock, tenantClientFactoryMock } = createPlatformAuthMocks(
+      [
+        { identifier: 'pharmacist@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID },
+        { identifier: 'reception@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID },
+      ],
+      mockPrismaService,
+    );
+
+    // ChargeService/ReceiptService are real collaborators pharmacy.service.ts
+    // calls directly -- mocked at this boundary rather than re-implementing
+    // their own internal Prisma calls (pricing, receipt numbering, etc.),
+    // which belong to their own unit tests, not this one.
+    const mockChargeService = {
+      postPharmacyCharge: jest.fn().mockResolvedValue({ id: 'charge-e2e-1', netAmount: '30.00', status: 'COVERED' }),
+    };
+    const mockReceiptService = {
+      issue: jest.fn().mockResolvedValue({ id: 'receipt-e2e-1', receiptNumber: 'RCPT/2026/000001' }),
+    };
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
+      .overrideProvider(ChargeService)
+      .useValue(mockChargeService)
+      .overrideProvider(ReceiptService)
+      .useValue(mockReceiptService)
       .compile();
 
     app = moduleFixture.createNestApplication();

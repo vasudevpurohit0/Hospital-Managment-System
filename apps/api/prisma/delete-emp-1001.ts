@@ -1,4 +1,8 @@
 import { PrismaClient } from '@prisma/client';
+import { assertSafeToRunDestructiveScript } from './guard-destructive-script';
+
+assertSafeToRunDestructiveScript('delete-emp-1001.ts');
+
 const prisma = new PrismaClient();
 
 async function main() {

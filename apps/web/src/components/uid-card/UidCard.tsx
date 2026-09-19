@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDateDefault } from '../../utils/date';
 
 export interface UidCardProps {
   uidCode: string;
@@ -98,7 +99,7 @@ export const UidCard: React.FC<UidCardProps> = ({
 
         {/* Card Footer */}
         <div className="bg-gray-50 px-5 py-2 text-[10px] text-gray-500 border-t border-gray-100 flex justify-between items-center">
-          <span>Issued: {new Date(issuedAt).toLocaleDateString()}</span>
+          <span>Issued: {formatDateDefault(issuedAt)}</span>
           <span>ESIC Labour Dept Integration</span>
         </div>
       </div>

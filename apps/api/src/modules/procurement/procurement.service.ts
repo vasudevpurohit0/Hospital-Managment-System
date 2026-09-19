@@ -61,22 +61,24 @@ export class ProcurementService {
 
   private async scanLowStock() {
     this.logger.log('🔍 Running low-stock inventory scan...');
-    const activeBatches = await this.prisma.medicineBatch.findMany({
-      where: {
-        stockStatus: {
-          notIn: [StockStatus.DISPOSED],
-        },
-      },
-    });
+    // Prisma's fluent `where` can't compare `currentStock` to
+    // `minimumStockLevel` (a field-to-field comparison), so this used to
+    // fetch every non-disposed batch's full row into Node and filter
+    // in-process. A raw query does the comparison at the database and only
+    // ever returns the ids that actually need a requisition.
+    const lowStockBatches = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id
+      FROM medicine_batches
+      WHERE stock_status != ${StockStatus.DISPOSED}::"StockStatus"
+        AND current_stock < minimum_stock_level
+    `;
 
     let triggeredCount = 0;
-    for (const batch of activeBatches) {
-      if (batch.currentStock < batch.minimumStockLevel) {
-        await this.prisma.$transaction(async (tx) => {
-          await this.checkAndTriggerLowStockRequisition(batch.id, tx);
-        });
-        triggeredCount++;
-      }
+    for (const batch of lowStockBatches) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.checkAndTriggerLowStockRequisition(batch.id, tx);
+      });
+      triggeredCount++;
     }
 
     if (triggeredCount > 0) {

@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
+import { resolveCorsOrigins } from './common/config/cors.util';
 
 const server = express();
 let isAppInitialized = false;
@@ -21,7 +22,7 @@ async function bootstrapServer() {
         transform: true,
       }),
     );
-    nestApp.enableCors();
+    nestApp.enableCors({ origin: resolveCorsOrigins(), credentials: false });
     await nestApp.init();
     isAppInitialized = true;
   }
@@ -51,7 +52,7 @@ async function bootstrapLocal() {
         transform: true,
       }),
     );
-    app.enableCors();
+    app.enableCors({ origin: resolveCorsOrigins(), credentials: false });
     app.enableShutdownHooks();
 
     const port = process.env.API_PORT || 3000;

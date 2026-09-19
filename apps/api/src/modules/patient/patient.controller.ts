@@ -69,14 +69,19 @@ export class PatientController {
     return this.patientService.createVisit(dto, user?.id);
   }
 
+  // V-06: these two return full diagnoses/prescriptions/lab results/therapy
+  // history, not just identity/registration data -- Employee:read (held by
+  // front-desk/data-entry/pharmacy/lab-logistics roles that have no clinical
+  // justification for it) was never the right gate for that. PatientHistory
+  // is granted only to Doctor/Nurse/Administrator/Pathologist.
   @Get(':id/history')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('PatientHistory', 'read')
   async getPatientMedicalHistory(@Param('id') id: string) {
     return this.patientService.getPatientMedicalHistory(id);
   }
 
   @Get(':id/master')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('PatientHistory', 'read')
   async getPatientMasterRecord(@Param('id') id: string) {
     return this.patientService.getPatientMasterRecord(id);
   }

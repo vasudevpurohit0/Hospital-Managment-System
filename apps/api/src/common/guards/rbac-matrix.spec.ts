@@ -144,6 +144,13 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
       'RbacGuard\'s MUST_CHANGE_PASSWORD_ALLOWLIST so a forced first-login change can reach it before anything else.',
   },
   {
+    file: 'modules/auth/auth.controller.ts',
+    method: 'logout',
+    reason:
+      'Revokes the caller\'s own session (bumps tokenVersion) — any authenticated user, by definition (V-02). ' +
+      'No resource permission applies; a role-scoped RequirePermission would make no sense for logging oneself out.',
+  },
+  {
     file: 'modules/dashboard/dashboard.controller.ts',
     method: 'getMetrics',
     reason:

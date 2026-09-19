@@ -7,6 +7,7 @@ import {
 } from '../../api/billing.api';
 import { downloadReceiptPdf } from '../../api/ledger.api';
 import { Receipt } from 'lucide-react';
+import { formatDateTimeDefault } from '../../utils/date';
 
 interface BillingScreenProps {
   authToken?: string;
@@ -288,7 +289,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
                     Issue Date
                   </span>
                   <span className="font-bold text-gray-800">
-                    {new Date(selectedReceipt.issueDate).toLocaleString()}
+                    {formatDateTimeDefault(selectedReceipt.issueDate)}
                   </span>
                 </div>
               </div>

@@ -12,8 +12,52 @@ import { seedLabCatalog } from './seeds/lab-catalog.seed';
 import { SEED_DEPARTMENTS } from '../src/modules/opd/services/department.service';
 import { DEFAULT_BRANDING } from '../src/modules/auth/branding.controller';
 import { DEFAULT_HOSPITAL_SETTINGS } from '../src/modules/auth/hospital-settings.controller';
+import { generateSecurePassword } from '../src/common/security/password.util';
 
 const prisma = new PrismaClient();
+
+/**
+ * V-17: this script runs for every real hospital onboarded through the
+ * platform (HospitalsService.createHospital() shells out to `prisma db
+ * seed`), not just local dev -- so the fixed, guessable passwords it used to
+ * hash for every demo/reference staff account below (e.g. "DoctorPass123!",
+ * identical across every tenant ever onboarded) were a real, platform-wide
+ * credential risk, not just a demo convenience.
+ *
+ * Defaults to a fresh, securely-random password per seed run (printed once
+ * to the seed log, with mustChangePassword forcing a real change before any
+ * real use). Set SEED_USE_PREDICTABLE_PASSWORDS=true (docker-compose.yml
+ * does, for local dev only -- see .env.example) to keep the old fixed
+ * passwords, so the documented local dev login flow keeps working without
+ * having to read them out of a seed log every time.
+ */
+const SEED_USE_PREDICTABLE_PASSWORDS = process.env.SEED_USE_PREDICTABLE_PASSWORDS === 'true';
+
+async function seedDemoUser(params: {
+  roleLabel: string;
+  identifierLocalPart: string;
+  predictablePassword: string;
+  roleId: string;
+}) {
+  const identifier = `${params.identifierLocalPart}@${TENANT_TAG}.esic.gov.in`;
+  const password = SEED_USE_PREDICTABLE_PASSWORDS ? params.predictablePassword : generateSecurePassword();
+  const passwordHash = await bcrypt.hash(password, 10);
+  const mustChangePassword = !SEED_USE_PREDICTABLE_PASSWORDS;
+
+  const user = await prisma.user.upsert({
+    where: { identifier },
+    update: { passwordHash, roleId: params.roleId, active: true, mustChangePassword },
+    create: { identifier, passwordHash, roleId: params.roleId, active: true, mustChangePassword },
+  });
+
+  console.log(
+    SEED_USE_PREDICTABLE_PASSWORDS
+      ? `  ✓ Seeded ${params.roleLabel} user: ${identifier} (${user.id})`
+      : `  ✓ Seeded ${params.roleLabel} user: ${identifier} (${user.id}) — temporary password: ${password} (must be changed at first login)`,
+  );
+
+  return user;
+}
 
 // Login identifiers must now be unique across the WHOLE platform (the
 // unified single-login directory, see LoginDirectoryService), not just
@@ -97,6 +141,10 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
 
   // --- Doctor ---
   { roleName: 'Doctor', resource: 'Employee', action: 'read' },
+  // V-06: full clinical history (diagnoses/prescriptions/lab results/therapy)
+  // is gated on this, not the identity-lookup-scoped Employee:read above --
+  // see PatientController's :id/history and :id/master routes.
+  { roleName: 'Doctor', resource: 'PatientHistory', action: 'read' },
   { roleName: 'Doctor', resource: 'Doctor', action: 'read' },
   { roleName: 'Doctor', resource: 'Visit', action: 'read' },
   // Lets a doctor start a fresh OPD visit for a patient found by search on
@@ -149,6 +197,7 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
 
   // --- Nurse ---
   { roleName: 'Nurse', resource: 'Employee', action: 'read' },
+  { roleName: 'Nurse', resource: 'PatientHistory', action: 'read' }, // V-06, see Doctor above
   { roleName: 'Nurse', resource: 'Doctor', action: 'read' },
   { roleName: 'Nurse', resource: 'Visit', action: 'read' },
   { roleName: 'Nurse', resource: 'Admission', action: 'read' },
@@ -203,6 +252,7 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Administrator', resource: 'Employee', action: 'create' },
   { roleName: 'Administrator', resource: 'Employee', action: 'read' },
   { roleName: 'Administrator', resource: 'Employee', action: 'update' },
+  { roleName: 'Administrator', resource: 'PatientHistory', action: 'read' }, // V-06, see Doctor above
   // Reclassification (post/grade/employment type) changes benefit
   // eligibility and pay-grade-linked billing, so it's kept narrower than
   // ordinary Employee:update (which Reception/DataEntryOperator also hold,
@@ -347,6 +397,7 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
 
   // --- Pathologist (verifies results and releases reports) ---
   { roleName: 'Pathologist', resource: 'Employee', action: 'read' },
+  { roleName: 'Pathologist', resource: 'PatientHistory', action: 'read' }, // V-06, see Doctor above
   { roleName: 'Pathologist', resource: 'Visit', action: 'read' },
   { roleName: 'Pathologist', resource: 'LabTest', action: 'read' },
   { roleName: 'Pathologist', resource: 'LabTest', action: 'update' },
@@ -834,239 +885,78 @@ export async function main() {
   // retired now that cross-hospital access is a real platform-level concept
   // (see PlatformUser / apps/api/prisma/platform/seed.ts, which seeds the
   // global Super Admin instead).
-  const doctorPasswordHash = await bcrypt.hash('DoctorPass123!', 10);
-  const doctorUser = await prisma.user.upsert({
-    where: { identifier: `doctor@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: doctorPasswordHash,
-      roleId: roleMap['Doctor'],
-      active: true,
-    },
-    create: {
-      identifier: `doctor@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: doctorPasswordHash,
-      roleId: roleMap['Doctor'],
-      active: true,
-    },
+  const doctorUser = await seedDemoUser({
+    roleLabel: 'Doctor',
+    identifierLocalPart: 'doctor',
+    predictablePassword: 'DoctorPass123!',
+    roleId: roleMap['Doctor'],
   });
-
-  console.log(`  ✓ Seeded Doctor user: doctor@${TENANT_TAG}.esic.gov.in (${doctorUser.id})`);
-
-  const nursePasswordHash = await bcrypt.hash('NursePass123!', 10);
-  const nurseUser = await prisma.user.upsert({
-    where: { identifier: `nurse@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: nursePasswordHash,
-      roleId: roleMap['Nurse'],
-      active: true,
-    },
-    create: {
-      identifier: `nurse@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: nursePasswordHash,
-      roleId: roleMap['Nurse'],
-      active: true,
-    },
+  const nurseUser = await seedDemoUser({
+    roleLabel: 'Nurse',
+    identifierLocalPart: 'nurse',
+    predictablePassword: 'NursePass123!',
+    roleId: roleMap['Nurse'],
   });
-
-  console.log(`  ✓ Seeded Nurse user: nurse@${TENANT_TAG}.esic.gov.in (${nurseUser.id})`);
-
-  const admissionPasswordHash = await bcrypt.hash('AdmissionPass123!', 10);
-  const admissionUser = await prisma.user.upsert({
-    where: { identifier: `admission@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: admissionPasswordHash,
-      roleId: roleMap['AdmissionDesk'],
-      active: true,
-    },
-    create: {
-      identifier: `admission@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: admissionPasswordHash,
-      roleId: roleMap['AdmissionDesk'],
-      active: true,
-    },
+  const admissionUser = await seedDemoUser({
+    roleLabel: 'AdmissionDesk',
+    identifierLocalPart: 'admission',
+    predictablePassword: 'AdmissionPass123!',
+    roleId: roleMap['AdmissionDesk'],
   });
-
-  console.log(
-    `  ✓ Seeded AdmissionDesk user: admission@${TENANT_TAG}.esic.gov.in (${admissionUser.id})`,
-  );
-
-  const adminPasswordHash = await bcrypt.hash('AdminPass123!', 10);
-  const adminUser = await prisma.user.upsert({
-    where: { identifier: `admin@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: adminPasswordHash,
-      roleId: roleMap['Administrator'],
-      active: true,
-    },
-    create: {
-      identifier: `admin@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: adminPasswordHash,
-      roleId: roleMap['Administrator'],
-      active: true,
-    },
+  const adminUser = await seedDemoUser({
+    roleLabel: 'Administrator',
+    identifierLocalPart: 'admin',
+    predictablePassword: 'AdminPass123!',
+    roleId: roleMap['Administrator'],
   });
-
-  console.log(`  ✓ Seeded Administrator user: admin@${TENANT_TAG}.esic.gov.in (${adminUser.id})`);
-
-  const pharmacistPasswordHash = await bcrypt.hash('PharmacistPass123!', 10);
-  const pharmacistUser = await prisma.user.upsert({
-    where: { identifier: `pharmacist@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: pharmacistPasswordHash,
-      roleId: roleMap['Pharmacist'],
-      active: true,
-    },
-    create: {
-      identifier: `pharmacist@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: pharmacistPasswordHash,
-      roleId: roleMap['Pharmacist'],
-      active: true,
-    },
+  const pharmacistUser = await seedDemoUser({
+    roleLabel: 'Pharmacist',
+    identifierLocalPart: 'pharmacist',
+    predictablePassword: 'PharmacistPass123!',
+    roleId: roleMap['Pharmacist'],
   });
-
-  console.log(
-    `  ✓ Seeded Pharmacist user: pharmacist@${TENANT_TAG}.esic.gov.in (${pharmacistUser.id})`,
-  );
-
-  const storeManagerPasswordHash = await bcrypt.hash('StoreManagerPass123!', 10);
-  const storeManagerUser = await prisma.user.upsert({
-    where: { identifier: `storemanager@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: storeManagerPasswordHash,
-      roleId: roleMap['StoreManager'],
-      active: true,
-    },
-    create: {
-      identifier: `storemanager@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: storeManagerPasswordHash,
-      roleId: roleMap['StoreManager'],
-      active: true,
-    },
+  const storeManagerUser = await seedDemoUser({
+    roleLabel: 'StoreManager',
+    identifierLocalPart: 'storemanager',
+    predictablePassword: 'StoreManagerPass123!',
+    roleId: roleMap['StoreManager'],
   });
-
-  console.log(
-    `  ✓ Seeded StoreManager user: storemanager@${TENANT_TAG}.esic.gov.in (${storeManagerUser.id})`,
-  );
-
-  const procurementPasswordHash = await bcrypt.hash('ProcurementPass123!', 10);
-  const procurementUser = await prisma.user.upsert({
-    where: { identifier: `procurement@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: procurementPasswordHash,
-      roleId: roleMap['ProcurementOfficer'],
-      active: true,
-    },
-    create: {
-      identifier: `procurement@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: procurementPasswordHash,
-      roleId: roleMap['ProcurementOfficer'],
-      active: true,
-    },
+  const procurementUser = await seedDemoUser({
+    roleLabel: 'ProcurementOfficer',
+    identifierLocalPart: 'procurement',
+    predictablePassword: 'ProcurementPass123!',
+    roleId: roleMap['ProcurementOfficer'],
   });
-
-  console.log(
-    `  ✓ Seeded ProcurementOfficer user: procurement@${TENANT_TAG}.esic.gov.in (${procurementUser.id})`,
-  );
-
-  const receptionPasswordHash = await bcrypt.hash('ReceptionPass123!', 10);
-  const receptionUser = await prisma.user.upsert({
-    where: { identifier: `reception@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: receptionPasswordHash,
-      roleId: roleMap['Reception'],
-      active: true,
-    },
-    create: {
-      identifier: `reception@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: receptionPasswordHash,
-      roleId: roleMap['Reception'],
-      active: true,
-    },
+  const receptionUser = await seedDemoUser({
+    roleLabel: 'Reception',
+    identifierLocalPart: 'reception',
+    predictablePassword: 'ReceptionPass123!',
+    roleId: roleMap['Reception'],
   });
-
-  console.log(
-    `  ✓ Seeded Reception user: reception@${TENANT_TAG}.esic.gov.in (${receptionUser.id})`,
-  );
-
-  const dataEntryPasswordHash = await bcrypt.hash('DataEntryPass123!', 10);
-  const dataEntryUser = await prisma.user.upsert({
-    where: { identifier: `dataentry@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: dataEntryPasswordHash,
-      roleId: roleMap['DataEntryOperator'],
-      active: true,
-    },
-    create: {
-      identifier: `dataentry@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: dataEntryPasswordHash,
-      roleId: roleMap['DataEntryOperator'],
-      active: true,
-    },
+  const dataEntryUser = await seedDemoUser({
+    roleLabel: 'DataEntryOperator',
+    identifierLocalPart: 'dataentry',
+    predictablePassword: 'DataEntryPass123!',
+    roleId: roleMap['DataEntryOperator'],
   });
-
-  console.log(
-    `  ✓ Seeded DataEntryOperator user: dataentry@${TENANT_TAG}.esic.gov.in (${dataEntryUser.id})`,
-  );
-
-  const queueManagerPasswordHash = await bcrypt.hash('QueueManagerPass123!', 10);
-  const queueManagerUser = await prisma.user.upsert({
-    where: { identifier: `queuemanager@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: queueManagerPasswordHash,
-      roleId: roleMap['QueueManager'],
-      active: true,
-    },
-    create: {
-      identifier: `queuemanager@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: queueManagerPasswordHash,
-      roleId: roleMap['QueueManager'],
-      active: true,
-    },
+  const queueManagerUser = await seedDemoUser({
+    roleLabel: 'QueueManager',
+    identifierLocalPart: 'queuemanager',
+    predictablePassword: 'QueueManagerPass123!',
+    roleId: roleMap['QueueManager'],
   });
-
-  console.log(
-    `  ✓ Seeded QueueManager user: queuemanager@${TENANT_TAG}.esic.gov.in (${queueManagerUser.id})`,
-  );
-
-  const labTechPasswordHash = await bcrypt.hash('LabTechPass123!', 10);
-  const labTechUser = await prisma.user.upsert({
-    where: { identifier: `labtech@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: labTechPasswordHash,
-      roleId: roleMap['LabTechnician'],
-      active: true,
-    },
-    create: {
-      identifier: `labtech@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: labTechPasswordHash,
-      roleId: roleMap['LabTechnician'],
-      active: true,
-    },
+  const labTechUser = await seedDemoUser({
+    roleLabel: 'LabTechnician',
+    identifierLocalPart: 'labtech',
+    predictablePassword: 'LabTechPass123!',
+    roleId: roleMap['LabTechnician'],
   });
-
-  console.log(
-    `  ✓ Seeded LabTechnician user: labtech@${TENANT_TAG}.esic.gov.in (${labTechUser.id})`,
-  );
-
-  const pathologistPasswordHash = await bcrypt.hash('PathologistPass123!', 10);
-  const pathologistUser = await prisma.user.upsert({
-    where: { identifier: `pathologist@${TENANT_TAG}.esic.gov.in` },
-    update: {
-      passwordHash: pathologistPasswordHash,
-      roleId: roleMap['Pathologist'],
-      active: true,
-    },
-    create: {
-      identifier: `pathologist@${TENANT_TAG}.esic.gov.in`,
-      passwordHash: pathologistPasswordHash,
-      roleId: roleMap['Pathologist'],
-      active: true,
-    },
+  const pathologistUser = await seedDemoUser({
+    roleLabel: 'Pathologist',
+    identifierLocalPart: 'pathologist',
+    predictablePassword: 'PathologistPass123!',
+    roleId: roleMap['Pathologist'],
   });
-
-  console.log(
-    `  ✓ Seeded Pathologist user: pathologist@${TENANT_TAG}.esic.gov.in (${pathologistUser.id})`,
-  );
 
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   // 6. Seed Doctor Profiles (Replacing Fake Patients)
@@ -1122,20 +1012,34 @@ export async function main() {
   ];
 
   for (const doc of doctorsData) {
+    // Same V-17 reasoning as seedDemoUser() above: this used to reuse the
+    // single shared 'DoctorPass123!' hash for every one of these named
+    // doctors too, meaning all of them (across every hospital ever
+    // onboarded) shared one guessable password.
+    const doctorAccountPassword = SEED_USE_PREDICTABLE_PASSWORDS ? 'DoctorPass123!' : generateSecurePassword();
+    const doctorAccountPasswordHash = await bcrypt.hash(doctorAccountPassword, 10);
+    const mustChangePassword = !SEED_USE_PREDICTABLE_PASSWORDS;
     const user = await prisma.user.upsert({
       where: { identifier: doc.email },
       update: {
-        passwordHash: doctorPasswordHash,
+        passwordHash: doctorAccountPasswordHash,
         roleId: roleMap['Doctor'],
         active: true,
+        mustChangePassword,
       },
       create: {
         identifier: doc.email,
-        passwordHash: doctorPasswordHash,
+        passwordHash: doctorAccountPasswordHash,
         roleId: roleMap['Doctor'],
         active: true,
+        mustChangePassword,
       },
     });
+    console.log(
+      SEED_USE_PREDICTABLE_PASSWORDS
+        ? `  ✓ Seeded ${doc.name}: ${doc.email}`
+        : `  ✓ Seeded ${doc.name}: ${doc.email} — temporary password: ${doctorAccountPassword} (must be changed at first login)`,
+    );
 
     const empId = `DOC-${doc.email.split('@')[0]}`;
     const employee = await prisma.employee.upsert({

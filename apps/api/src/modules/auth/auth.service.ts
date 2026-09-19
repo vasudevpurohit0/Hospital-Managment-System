@@ -33,6 +33,15 @@ interface RefreshPayload {
   hospitalId: string;
   schemaName: string;
   type: 'refresh';
+  /**
+   * V-02: mirrors the access token's tokenVersion so a password change,
+   * password reset, account activation, or /auth/logout call -- all of
+   * which already bump the User row's tokenVersion -- also invalidates any
+   * refresh token issued before that point, not just access tokens.
+   * Optional so a refresh token issued before this field existed still
+   * verifies once (same backward-compatibility rule jwt.strategy.ts uses).
+   */
+  tokenVersion?: number;
 }
 
 interface RequestMeta {
@@ -244,6 +253,7 @@ export class AuthService {
       hospitalId,
       schemaName,
       type: 'refresh',
+      tokenVersion: user.tokenVersion,
     };
 
     try {
@@ -341,11 +351,43 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token invalid or expired');
     }
 
+    // V-13: hospitalId/schemaName above come straight from the JWT with no
+    // re-check against the platform DB -- without this, suspending a
+    // hospital does nothing to its staff's already-issued refresh tokens,
+    // leaving up to a 7-day window (the refresh token TTL) where a
+    // suspended hospital's staff can keep minting fresh access tokens.
+    // Mirrors the same check resetPasswordWithToken() already does.
+    const hospital = await this.platformPrisma.hospital.findUnique({
+      where: { id: payload.hospitalId },
+    });
+    if (!hospital || hospital.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This hospital account is no longer active.');
+    }
+
     const client = await this.tenantClients.getClient(payload.schemaName);
     return runWithTenant(
       { hospitalId: payload.hospitalId, schemaName: payload.schemaName, prismaClient: client },
       () => this.issueAccessTokenFromRefresh(payload),
     );
+  }
+
+  /**
+   * V-02: bumps tokenVersion so every outstanding access AND refresh token
+   * for this user is rejected from this point on -- both jwt.strategy.ts
+   * (access tokens) and issueAccessTokenFromRefresh() (refresh tokens) above
+   * already compare the token's tokenVersion against the live User row.
+   * Platform (Super Admin) tokens have no tokenVersion/refresh-token
+   * mechanism at all today, so there's nothing server-side to revoke for
+   * them; logout there is a client-side no-op that still returns success.
+   */
+  async logout(user: AuthenticatedUser): Promise<{ status: 'success' }> {
+    if (user.type === 'hospital') {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { tokenVersion: { increment: 1 } },
+      });
+    }
+    return { status: 'success' };
   }
 
   /** Self-service password change -- the mustChangePassword flow and any voluntary change both go through this. */
@@ -581,6 +623,10 @@ export class AuthService {
 
       if (!user || !user.active) {
         throw new UnauthorizedException('User no longer active');
+      }
+
+      if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+        throw new UnauthorizedException('Refresh token has been revoked');
       }
 
       const roleName = user.role?.name || 'Doctor';

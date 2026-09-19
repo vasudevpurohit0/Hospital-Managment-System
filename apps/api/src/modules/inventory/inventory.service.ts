@@ -10,6 +10,7 @@ import {
   generateMedicineTemplateXlsx,
   RejectedImportRow,
 } from './excel/medicine-excel.util';
+import { EARLY_WARNING_WINDOW_DAYS, daysFromNow } from '../../common/inventory/expiry-window.const';
 
 @Injectable()
 export class InventoryService {
@@ -148,12 +149,22 @@ export class InventoryService {
    * Fetch batches below reorder level from PostgreSQL DB
    */
   async getLowStockAlerts() {
-    const allBatches = await this.prisma.medicineBatch.findMany({
+    // Prisma's fluent `where` can't compare `currentStock` to `reorderLevel`
+    // (a field-to-field comparison), so this used to fetch every batch in
+    // the table into Node and filter in-process. The raw query below does
+    // the comparison at the database, so only the ids that actually qualify
+    // ever leave Postgres; the real (fully-`include`d) rows for just those
+    // ids are then fetched the normal way.
+    const lowStockIds = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM medicine_batches WHERE current_stock <= reorder_level
+    `;
+    if (lowStockIds.length === 0) return [];
+
+    return this.prisma.medicineBatch.findMany({
+      where: { id: { in: lowStockIds.map((b) => b.id) } },
       include: { medicine: true },
       orderBy: { currentStock: 'asc' },
     });
-
-    return allBatches.filter((b) => b.currentStock <= b.reorderLevel);
   }
 
   /**
@@ -173,8 +184,8 @@ export class InventoryService {
   /**
    * Fetch expiring batches from PostgreSQL DB
    */
-  async getExpiringBatches(withinDays = 90) {
-    const thresholdDate = new Date(Date.now() + withinDays * 24 * 60 * 60 * 1000);
+  async getExpiringBatches(withinDays = EARLY_WARNING_WINDOW_DAYS) {
+    const thresholdDate = daysFromNow(withinDays);
     return this.prisma.medicineBatch.findMany({
       where: {
         expiryDate: { lte: thresholdDate },
@@ -238,7 +249,7 @@ export class InventoryService {
    * Checks required fields, within-file duplicates, and existing database duplicates.
    */
   async validateMedicineImport(buffer: Buffer) {
-    const rawRows = parseMedicineSpreadsheet(buffer);
+    const rawRows = await parseMedicineSpreadsheet(buffer);
     if (rawRows.length === 0) {
       throw new BadRequestException(
         'The uploaded spreadsheet contains no data rows or headers were not recognized.',

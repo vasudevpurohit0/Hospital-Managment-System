@@ -3,7 +3,10 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
+import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import * as bcrypt from 'bcryptjs';
+import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Employment-Type Benefit Rules Engine (e2e)', () => {
   let app: INestApplication;
@@ -15,6 +18,7 @@ describe('Employment-Type Benefit Rules Engine (e2e)', () => {
     { id: 'p1', roleId: 'r-admin', resource: 'Employee', action: 'read' },
     { id: 'p2', roleId: 'r-admin', resource: 'Employee', action: 'create' },
     { id: 'p3', roleId: 'r-admin', resource: 'BenefitRule', action: 'create' },
+    { id: 'p4', roleId: 'r-admin', resource: 'BenefitRule', action: 'update' },
   ];
 
   const usersStore: any[] = [];
@@ -56,7 +60,9 @@ describe('Employment-Type Benefit Rules Engine (e2e)', () => {
         const perms = permissionsStore.filter((p) => p.roleId === user.roleId);
         return { ...user, role: { ...role, permissions: perms } };
       }),
+      update: jest.fn().mockResolvedValue({}),
     },
+    loginActivity: { create: jest.fn().mockResolvedValue({}) },
     employmentType: {
       findUnique: jest.fn().mockImplementation(async ({ where }) => {
         if (where?.code === 'CONTRACTUAL') return { id: 'emp-contractual', code: 'CONTRACTUAL' };
@@ -105,11 +111,20 @@ describe('Employment-Type Benefit Rules Engine (e2e)', () => {
       active: true,
     });
 
+    const { platformPrismaMock, tenantClientFactoryMock } = createPlatformAuthMocks(
+      [{ identifier: 'admin@esic.gov.in', hospitalId: E2E_TEST_HOSPITAL_ID }],
+      mockPrismaService,
+    );
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(PrismaService)
       .useValue(mockPrismaService)
+      .overrideProvider(PlatformPrismaService)
+      .useValue(platformPrismaMock)
+      .overrideProvider(TenantClientFactory)
+      .useValue(tenantClientFactoryMock)
       .compile();
 
     app = moduleFixture.createNestApplication();
