@@ -1,6 +1,8 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
+  IsEmail,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -17,6 +19,15 @@ export class UpdateDoctorDto {
   @IsString()
   @IsNotEmpty()
   name?: string;
+
+  /** Changing this also updates the login identifier (LoginDirectoryService.rename) and is audit-logged separately from a normal profile edit. */
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  verified?: boolean;
 
   @IsOptional()
   @IsString()

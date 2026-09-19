@@ -19,6 +19,8 @@ export interface JwtPayload {
    * schema is already selected).
    */
   schemaName: string;
+  /** Compared against the live User row on every request; a mismatch means this token was issued before a password change/reset/lock/deactivation and must be rejected even though it hasn't expired yet. */
+  tokenVersion: number;
   type?: 'access' | 'refresh';
 }
 
@@ -55,6 +57,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('User account inactive or missing');
     }
 
+    if (payload.tokenVersion !== undefined && payload.tokenVersion !== user.tokenVersion) {
+      throw new UnauthorizedException('Session invalidated -- please log in again.');
+    }
+
     return {
       id: user.id,
       identifier: user.identifier,
@@ -62,6 +68,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       roleName: user.role.name,
       hospitalId: payload.hospitalId,
       type: 'hospital',
+      mustChangePassword: user.mustChangePassword,
       permissions: user.role.permissions.map((p: any) => ({
         resource: p.resource,
         action: p.action,

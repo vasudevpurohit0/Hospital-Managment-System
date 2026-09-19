@@ -15,14 +15,24 @@ export interface DoctorProfile {
   name: string;
   email: string;
   active: boolean;
+  mustChangePassword: boolean;
+  passwordChangedAt: string | null;
+  lastLoginAt: string | null;
+  dateJoined: string;
   department: string;
+  consultationRoom: string | null;
+  contactPhone: string | null;
   specialty: string;
   experience: string;
   available: boolean;
+  verified: boolean;
   departmentId: string | null;
   assignedDepartment: { id: string; name: string; code: string } | null;
   consultationFee: number;
   weeklySchedule: WeeklyScheduleEntry[] | null;
+  /** Only present on the admin roster (fetchAllDoctorsForAdmin), not the plain active-only list. */
+  locked?: boolean;
+  failedLoginAttempts?: number;
 }
 
 async function unwrap<T>(res: Response, fallback: string): Promise<T> {
@@ -36,6 +46,12 @@ async function unwrap<T>(res: Response, fallback: string): Promise<T> {
 export async function fetchDoctors(): Promise<DoctorProfile[]> {
   const res = await apiFetch('/api/doctors');
   return unwrap(res, 'Failed to fetch doctors');
+}
+
+/** Backs the OPD registration doctor picker -- active, has a profile, belongs to this department. */
+export async function fetchEligibleDoctors(departmentId: string): Promise<DoctorProfile[]> {
+  const res = await apiFetch(`/api/doctors/eligible?departmentId=${encodeURIComponent(departmentId)}`);
+  return unwrap(res, 'Failed to fetch eligible doctors');
 }
 
 /** Admin roster: includes deactivated doctors too, unlike the plain active-only fetchDoctors(). */
@@ -54,13 +70,20 @@ export interface CreateDoctorPayload {
   weeklySchedule?: WeeklyScheduleEntry[];
 }
 
-export async function createDoctor(data: CreateDoctorPayload): Promise<DoctorProfile & { temporaryPassword: string }> {
+export interface DoctorCreatedResult extends DoctorProfile {
+  staffId: string;
+  temporaryPassword: string;
+}
+
+export async function createDoctor(data: CreateDoctorPayload): Promise<DoctorCreatedResult> {
   const res = await apiFetch('/api/doctors', { method: 'POST', body: JSON.stringify(data) });
   return unwrap(res, 'Failed to create doctor');
 }
 
 export interface UpdateDoctorPayload {
   name?: string;
+  email?: string;
+  verified?: boolean;
   specialty?: string;
   experience?: string;
   departmentId?: string | null;
@@ -76,4 +99,32 @@ export async function updateDoctor(id: string, data: UpdateDoctorPayload): Promi
 export async function setDoctorActive(id: string, active: boolean): Promise<DoctorProfile> {
   const res = await apiFetch(`/api/doctors/${id}/active`, { method: 'PATCH', body: JSON.stringify({ active }) });
   return unwrap(res, 'Failed to update doctor');
+}
+
+export interface PasswordResetResult {
+  id: string;
+  email: string;
+  temporaryPassword: string;
+}
+
+export async function resetDoctorPassword(id: string, reason?: string): Promise<PasswordResetResult> {
+  const res = await apiFetch(`/api/doctors/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ reason }) });
+  return unwrap(res, 'Failed to reset password');
+}
+
+export async function setDoctorLocked(id: string, locked: boolean, reason?: string): Promise<DoctorProfile> {
+  const res = await apiFetch(`/api/doctors/${id}/lock`, { method: 'PATCH', body: JSON.stringify({ locked, reason }) });
+  return unwrap(res, 'Failed to update account lock');
+}
+
+export async function resendDoctorActivation(id: string): Promise<{ status: string; message: string }> {
+  const res = await apiFetch(`/api/doctors/${id}/resend-activation`, { method: 'POST' });
+  return unwrap(res, 'Failed to resend activation email');
+}
+
+/** Backs the "Auto-assign to least-busy doctor" registration option. Returns the single best doctor (or none), not the full list. */
+export async function fetchLeastBusyEligibleDoctor(departmentId: string): Promise<DoctorProfile | null> {
+  const res = await apiFetch(`/api/doctors/eligible?departmentId=${encodeURIComponent(departmentId)}&autoAssign=true`);
+  const doctors = await unwrap<DoctorProfile[]>(res, 'Failed to auto-assign a doctor');
+  return doctors[0] ?? null;
 }

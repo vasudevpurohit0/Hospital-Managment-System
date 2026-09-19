@@ -66,7 +66,9 @@ export type PageId =
   | 'analytics'
   | 'reports'
   | 'rbac-management'
-  | 'system-config';
+  | 'system-config'
+  | 'staff-management'
+  | 'activity-log';
 
 interface MenuItem {
   id: PageId;
@@ -214,6 +216,20 @@ const MENU_GROUPS: MenuGroup[] = [
   {
     title: 'Administration',
     items: [
+      {
+        id: 'staff-management',
+        label: 'Staff Management',
+        icon: Users,
+        roles: ['SuperAdmin', 'Administrator'],
+        description: 'Create and manage staff accounts, passwords, and lock status',
+      },
+      {
+        id: 'activity-log',
+        label: 'Activity Log',
+        icon: ClipboardList,
+        roles: ['SuperAdmin', 'Administrator'],
+        description: 'Audit trail of staff actions for this hospital',
+      },
       {
         id: 'service-pricing',
         label: 'Service Pricing',

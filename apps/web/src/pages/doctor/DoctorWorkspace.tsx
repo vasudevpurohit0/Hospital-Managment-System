@@ -8,7 +8,16 @@ import {
 import { evaluateBenefitRule } from '../../api/benefit.api';
 import { fetchVisitById, lookupPatientByUid, VisitDetail } from '../../api/patient-lookup.api';
 import { searchPatients, createPatientVisit } from '../../api/patient.api';
-import { fetchDepartments, Department } from '../../api/opd.api';
+import {
+  fetchDepartments,
+  Department,
+  fetchMyOpdQueue,
+  callNextOpdVisit,
+  completeOpdConsultation,
+  markOpdNoShow,
+  skipOpdVisit,
+  OPDVisitRecord,
+} from '../../api/opd.api';
 import { fetchBranding } from '../../api/security.api';
 import { fetchMedicines, MedicineRecord } from '../../api/inventory.api';
 import { fetchLabTests, fetchLabQueue, LabTestSummary, LabOrderRecord } from '../../api/lab.api';
@@ -34,6 +43,7 @@ import {
   Printer,
   Microscope,
   Activity,
+  Volume2,
 } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
 
@@ -238,6 +248,92 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         // Non-fatal: the Start New Visit button falls back to the hospital's default department.
       });
   }, [authToken]);
+
+  /* ── Doctor's own OPD queue — Call Next / Complete / No-show / Skip ── */
+  const [myQueue, setMyQueue] = useState<OPDVisitRecord[]>([]);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [queueActionBusy, setQueueActionBusy] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+
+  const loadMyQueue = useCallback(async () => {
+    setQueueLoading(true);
+    try {
+      const q = await fetchMyOpdQueue(authToken);
+      setMyQueue(q);
+      setQueueError(null);
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : 'Failed to load your queue');
+    } finally {
+      setQueueLoading(false);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    loadMyQueue();
+    const interval = setInterval(loadMyQueue, 8000);
+    return () => clearInterval(interval);
+  }, [loadMyQueue]);
+
+  const currentQueuePatient = myQueue.find((v) => v.status === 'CALLED' || v.status === 'IN_CONSULTATION');
+  const waitingQueuePatients = myQueue
+    .filter((v) => v.status === 'WAITING')
+    .sort((a, b) => (a.queuePosition ?? 0) - (b.queuePosition ?? 0));
+
+  const handleCallNext = async () => {
+    setQueueActionBusy(true);
+    setQueueError(null);
+    try {
+      const called = await callNextOpdVisit(authToken);
+      await loadMyQueue();
+      await handleLoadVisit(called.visitId);
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : 'Failed to call the next patient');
+    } finally {
+      setQueueActionBusy(false);
+    }
+  };
+
+  const handleCompleteCurrent = async () => {
+    if (!currentQueuePatient) return;
+    setQueueActionBusy(true);
+    setQueueError(null);
+    try {
+      await completeOpdConsultation(currentQueuePatient.id, authToken);
+      await loadMyQueue();
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : 'Failed to complete the consultation');
+    } finally {
+      setQueueActionBusy(false);
+    }
+  };
+
+  const handleNoShowCurrent = async () => {
+    if (!currentQueuePatient) return;
+    setQueueActionBusy(true);
+    setQueueError(null);
+    try {
+      await markOpdNoShow(currentQueuePatient.id, undefined, authToken);
+      await loadMyQueue();
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : 'Failed to mark no-show');
+    } finally {
+      setQueueActionBusy(false);
+    }
+  };
+
+  const handleSkipCurrent = async () => {
+    if (!currentQueuePatient) return;
+    setQueueActionBusy(true);
+    setQueueError(null);
+    try {
+      await skipOpdVisit(currentQueuePatient.id, undefined, authToken);
+      await loadMyQueue();
+    } catch (err) {
+      setQueueError(err instanceof Error ? err.message : 'Failed to skip patient');
+    } finally {
+      setQueueActionBusy(false);
+    }
+  };
 
   const resolveAndLoadPatient = useCallback(
     async (identifier: string) => {
@@ -644,6 +740,94 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
 
         {error && <div className="alert alert-danger">{error}</div>}
         {successMessage && <div className="alert alert-success">{successMessage}</div>}
+        {queueError && <div className="alert alert-danger">{queueError}</div>}
+
+        {/* My OPD Queue — own queue only, JWT-scoped server-side */}
+        <div className="card p-4 space-y-3">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2.5">
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2">
+              <Stethoscope className="w-4 h-4 text-primary-500" />
+              My OPD Queue
+            </h3>
+            <button
+              type="button"
+              onClick={handleCallNext}
+              disabled={queueActionBusy || !!currentQueuePatient || waitingQueuePatients.length === 0}
+              className="btn btn-primary btn-sm gap-1.5 text-xs"
+              title={currentQueuePatient ? 'Finish or skip the current patient first' : undefined}
+            >
+              <Volume2 className="w-3.5 h-3.5" />
+              Call Next ({waitingQueuePatients.length} Waiting)
+            </button>
+          </div>
+
+          {queueLoading && myQueue.length === 0 ? (
+            <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">Loading queue…</p>
+          ) : currentQueuePatient ? (
+            <div className="p-3 rounded-lg border border-primary-200 bg-primary-50/50 dark:bg-primary-950/10 dark:border-primary-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-primary-600 tracking-wide">
+                  {currentQueuePatient.status === 'IN_CONSULTATION' ? 'In Consultation' : 'Now Called'}
+                </span>
+                <p className="font-mono font-bold text-sm">{currentQueuePatient.tokenNumber}</p>
+                <p className="text-xs text-[var(--color-text-secondary)]">
+                  {currentQueuePatient.visit?.employee?.name || 'Patient'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleLoadVisit(currentQueuePatient.visitId)}
+                  className="btn btn-secondary btn-sm text-xs"
+                >
+                  Open Chart
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNoShowCurrent}
+                  disabled={queueActionBusy}
+                  className="btn btn-ghost btn-sm text-xs text-amber-600"
+                >
+                  No-show
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSkipCurrent}
+                  disabled={queueActionBusy}
+                  className="btn btn-ghost btn-sm text-xs text-amber-600"
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCompleteCurrent}
+                  disabled={queueActionBusy}
+                  className="btn btn-primary btn-sm text-xs"
+                >
+                  Complete Consultation
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">
+              No patient currently called. {waitingQueuePatients.length} waiting.
+            </p>
+          )}
+
+          {waitingQueuePatients.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pt-1">
+              {waitingQueuePatients.map((v, idx) => (
+                <div
+                  key={v.id}
+                  className="shrink-0 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] text-xs"
+                >
+                  <span className="font-mono font-bold block">#{idx + 1} {v.tokenNumber}</span>
+                  <span className="text-[var(--color-text-secondary)]">{v.visit?.employee?.name || 'Patient'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* 3-Panel Split Workspace */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

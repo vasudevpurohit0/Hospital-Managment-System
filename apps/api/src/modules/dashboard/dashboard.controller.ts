@@ -1,6 +1,7 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 /**
  * Dashboard summary is hospital-wide aggregate counts (visits, beds, stock,
@@ -18,5 +19,15 @@ export class DashboardController {
   @Get('summary')
   async getMetrics() {
     return this.dashboardService.getMetrics();
+  }
+
+  /**
+   * A lean, role-scoped personal summary -- always the caller's own role and
+   * own id (from the JWT), never a query param, so one user can never pull
+   * another's queue/patient counts through this route.
+   */
+  @Get('my-summary')
+  async getMySummary(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.getMySummary(user);
   }
 }

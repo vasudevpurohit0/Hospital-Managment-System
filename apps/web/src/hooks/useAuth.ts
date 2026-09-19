@@ -8,6 +8,8 @@ export interface AuthUser {
   department?: string;
   /** Present for a hospital-staff session; absent for a platform session. */
   hospitalId?: string;
+  /** True until the doctor completes a forced first-login (or post-reset) password change. Platform/Super Admin sessions never carry this. */
+  mustChangePassword?: boolean;
 }
 
 export type AuthMode = 'hospital' | 'platform';
@@ -36,6 +38,8 @@ interface AuthContextType extends AuthState {
   enterHospital: (hospital: ActiveHospital) => void;
   /** Returns to the platform console, no hospital selected. */
   exitHospital: () => void;
+  /** Called once a forced password change succeeds, so the app stops gating on it for the rest of this session. */
+  clearMustChangePassword: () => void;
 }
 
 const AUTH_STORAGE_KEY = 'esic-hms-auth';
@@ -211,6 +215,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.user?.name) user.name = data.user.name;
       if (data.user?.id) user.id = data.user.id;
       if (data.user?.department) user.department = data.user.department;
+      user.mustChangePassword = !!data.mustChangePassword;
     }
 
     storeAuth(mode, token, user, null);
@@ -258,6 +263,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  const clearMustChangePassword = useCallback(() => {
+    setState((prev) => {
+      if (!prev.token || !prev.user || !prev.mode) return prev;
+      const updatedUser = { ...prev.user, mustChangePassword: false };
+      storeAuth(prev.mode, prev.token, updatedUser, prev.activeHospital);
+      return { ...prev, user: updatedUser };
+    });
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
       const stored = getStoredAuth();
@@ -270,7 +284,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return React.createElement(
     AuthContext.Provider,
-    { value: { ...state, login, logout, clearError, enterHospital, exitHospital } },
+    { value: { ...state, login, logout, clearError, enterHospital, exitHospital, clearMustChangePassword } },
     children,
   );
 };

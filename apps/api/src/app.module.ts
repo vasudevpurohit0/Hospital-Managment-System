@@ -4,6 +4,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { TenantModule } from './common/tenant/tenant.module';
 import { SequenceModule } from './common/sequence/sequence.module';
+import { EmailModule } from './common/email/email.module';
 import { RenderingModule } from './common/rendering/rendering.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -28,6 +29,7 @@ import { UserModule } from './modules/user/user.module';
 import { PatientModule } from './modules/patient/patient.module';
 import { RbacAdminModule } from './modules/rbac-admin/rbac-admin.module';
 import { PlatformModule } from './modules/platform/platform.module';
+import { AuditLogModule } from './modules/audit/audit-log.module';
 import { BrandingController } from './modules/auth/branding.controller';
 import { HospitalSettingsController } from './modules/auth/hospital-settings.controller';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -42,6 +44,7 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
     TenantModule,
     PrismaModule,
     SequenceModule,
+    EmailModule,
     RenderingModule,
     HealthModule,
     AuthModule,
@@ -66,6 +69,7 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
     UserModule,
     RbacAdminModule,
     PlatformModule,
+    AuditLogModule,
   ],
   controllers: [BrandingController, HospitalSettingsController],
   providers: [

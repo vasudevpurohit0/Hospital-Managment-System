@@ -82,3 +82,19 @@ export function queueTokenSequence(departmentCode: string): SequenceDefinition {
     format: (_period, seq) => `${code}-${seq}`,
   };
 }
+
+/**
+ * Staff ID, scoped per role prefix: NUR-0001, REC-0001. Never resets -- a
+ * staff ID must stay unique for the lifetime of the hospital, not just a
+ * year. Role prefixes are a small fixed set owned by the staff service, not
+ * baked in here, so this stays a builder the same way queueTokenSequence is.
+ */
+export function staffIdSequence(rolePrefix: string): SequenceDefinition {
+  const prefix = rolePrefix.trim().toUpperCase();
+  return {
+    name: `STAFF:${prefix}`,
+    reset: 'NEVER',
+    padding: 4,
+    format: (_period, seq) => `${prefix}-${seq}`,
+  };
+}

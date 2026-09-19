@@ -9,45 +9,54 @@ datasource db {
 }
 
 model User {
-  id                   String                    @id @default(uuid()) @db.Uuid
-  identifier           String                    @unique
-  passwordHash         String                    @map("password_hash")
-  roleId               String                    @map("role_id") @db.Uuid
-  employeeId           String?                   @unique @map("employee_id") @db.Uuid
-  active               Boolean                   @default(true)
-  createdAt            DateTime                  @default(now()) @map("created_at")
-  updatedAt            DateTime                  @updatedAt @map("updated_at")
-  admissionNotes       AdmissionNote[]
-  admissionsDoctor     Admission[]               @relation("AdmissionDoctor")
-  admissionsNurse      Admission[]               @relation("AdmissionNurse")
-  approvals            Approval[]
-  auditLogs            AuditLog[]
-  dischargeSummaries   DischargeSummary[]
-  facilityRulesCreated FacilityEligibilityRule[]
-  opdVisitsAsDoctor    OPDVisit[]                @relation("OPDVisitDoctor")
-  servicesCreated      Service[]                 @relation("ServiceCreatedBy")
-  servicesUpdated      Service[]                 @relation("ServiceUpdatedBy")
-  servicePricesCreated ServicePrice[]            @relation("ServicePriceCreatedBy")
-  chargesCreated       ChargeItem[]              @relation("ChargeCreatedBy")
-  chargesCancelled     ChargeItem[]              @relation("ChargeCancelledBy")
-  receiptsCollected    Receipt[]
-  labOrdersAsDoctor    LabOrder[]                @relation("LabOrderDoctor")
-  labSamplesCollected  LabSample[]
-  labResultsEntered    LabResult[]
-  labReportsVerified   LabReport[]
-  therapyCoursesCreated  TherapyCourse[]
-  therapySessionsPerformed TherapySession[] @relation("TherapySessionPerformedBy")
-  therapySessionsCreated   TherapySession[] @relation("TherapySessionCreatedBy")
-  patientLocationMoves   PatientLocationHistory[]
-  verifiedGRNs         GoodsReceiptNote[]
-  issuedPOs            PurchaseOrder[]
-  raisedRequisitions   PurchaseRequisition[]
-  stockTransactions    StockTransaction[]
-  storeTransfers       StoreTransfer[]
-  employee             Employee?                 @relation(fields: [employeeId], references: [id])
-  role                 Role                      @relation(fields: [roleId], references: [id])
-  doctorProfile        DoctorProfile?
-  loginActivity        LoginActivity[]
+  id                       String                      @id @default(uuid()) @db.Uuid
+  identifier               String                      @unique
+  passwordHash             String                      @map("password_hash")
+  roleId                   String                      @map("role_id") @db.Uuid
+  employeeId               String?                     @unique @map("employee_id") @db.Uuid
+  active                   Boolean                     @default(true)
+  mustChangePassword       Boolean                     @default(false) @map("must_change_password")
+  passwordChangedAt        DateTime?                   @map("password_changed_at")
+  lastLoginAt              DateTime?                   @map("last_login_at")
+  /// Set whenever a temporary (not self-chosen) password is issued; checked at login so an unused temp password stops working after 24h.
+  tempPasswordExpiresAt    DateTime?                   @map("temp_password_expires_at")
+  /// Bumped on password change/reset/activation/lock/deactivation so an already-issued access token is rejected immediately, not just future logins.
+  tokenVersion             Int                         @default(0) @map("token_version")
+  createdAt                DateTime                    @default(now()) @map("created_at")
+  updatedAt                DateTime                    @updatedAt @map("updated_at")
+  admissionNotes           AdmissionNote[]
+  admissionsDoctor         Admission[]                 @relation("AdmissionDoctor")
+  admissionsNurse          Admission[]                 @relation("AdmissionNurse")
+  approvals                Approval[]
+  auditLogs                AuditLog[]
+  dischargeSummaries       DischargeSummary[]
+  facilityRulesCreated     FacilityEligibilityRule[]
+  opdVisitsAsDoctor        OPDVisit[]                  @relation("OPDVisitDoctor")
+  servicesCreated          Service[]                   @relation("ServiceCreatedBy")
+  servicesUpdated          Service[]                   @relation("ServiceUpdatedBy")
+  servicePricesCreated     ServicePrice[]              @relation("ServicePriceCreatedBy")
+  chargesCreated           ChargeItem[]                @relation("ChargeCreatedBy")
+  chargesCancelled         ChargeItem[]                @relation("ChargeCancelledBy")
+  receiptsCollected        Receipt[]
+  labOrdersAsDoctor        LabOrder[]                  @relation("LabOrderDoctor")
+  labSamplesCollected      LabSample[]
+  labResultsEntered        LabResult[]
+  labReportsVerified       LabReport[]
+  therapyCoursesCreated    TherapyCourse[]
+  therapySessionsPerformed TherapySession[]            @relation("TherapySessionPerformedBy")
+  therapySessionsCreated   TherapySession[]            @relation("TherapySessionCreatedBy")
+  patientLocationMoves     PatientLocationHistory[]
+  verifiedGRNs             GoodsReceiptNote[]
+  issuedPOs                PurchaseOrder[]
+  raisedRequisitions       PurchaseRequisition[]
+  stockTransactions        StockTransaction[]
+  storeTransfers           StoreTransfer[]
+  employee                 Employee?                   @relation(fields: [employeeId], references: [id])
+  role                     Role                        @relation(fields: [roleId], references: [id])
+  doctorProfile            DoctorProfile?
+  loginActivity            LoginActivity[]
+  staffShifts              StaffShift[]
+  departmentAssignments    StaffDepartmentAssignment[]
 
   @@map("users")
 }
@@ -152,6 +161,7 @@ model Employee {
   employeeId       String          @unique @map("employee_id")
   name             String
   department       String
+  designation      String?
   consultationRoom String?         @map("consultation_room")
   postId           String          @map("post_id") @db.Uuid
   gradeId          String          @map("grade_id") @db.Uuid
@@ -216,62 +226,91 @@ model ManualVerificationCase {
 }
 
 model Visit {
-  id            String         @id @default(uuid()) @db.Uuid
-  employeeId    String         @map("employee_id") @db.Uuid
-  type          VisitType
-  status        VisitStatus    @default(OPEN)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  closedAt      DateTime?      @map("closed_at")
-  admissions    Admission[]
-  chargeItems   ChargeItem[]
-  diagnoses     Diagnosis[]
-  labOrders     LabOrder[]
-  opdVisit      OPDVisit?
-  prescriptions Prescription[]
-  receipts      Receipt[]
+  id              String           @id @default(uuid()) @db.Uuid
+  employeeId      String           @map("employee_id") @db.Uuid
+  type            VisitType
+  status          VisitStatus      @default(OPEN)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  closedAt        DateTime?        @map("closed_at")
+  admissions      Admission[]
+  chargeItems     ChargeItem[]
+  diagnoses       Diagnosis[]
+  labOrders       LabOrder[]
+  opdVisit        OPDVisit?
+  prescriptions   Prescription[]
+  receipts        Receipt[]
   therapyCourses  TherapyCourse[]
   therapySessions TherapySession[]
-  employee      Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, status])
   @@map("visits")
 }
 
 model Department {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String     @unique
-  code      String     @unique
+  id                         String                      @id @default(uuid()) @db.Uuid
+  name                       String                      @unique
+  code                       String                      @unique
   // Deactivated, never hard-deleted -- a department may already be
   // referenced by historical OPDVisit rows, which must keep resolving.
   // Deactivating only removes it from the set offered for NEW visits.
-  active         Boolean          @default(true)
-  createdAt      DateTime         @default(now()) @map("created_at")
-  opdVisits      OPDVisit[]
-  doctorProfiles DoctorProfile[]
+  active                     Boolean                     @default(true)
+  createdAt                  DateTime                    @default(now()) @map("created_at")
+  opdVisits                  OPDVisit[]
+  doctorProfiles             DoctorProfile[]
+  doctorDepartments          DoctorDepartment[]
+  doctorRoomAssignments      DoctorRoomAssignment[]
+  staffDepartmentAssignments StaffDepartmentAssignment[]
 
   @@map("departments")
 }
 
+enum OpdVisitStatus {
+  WAITING
+  CALLED
+  IN_CONSULTATION
+  COMPLETED
+  NO_SHOW
+  SKIPPED
+  CANCELLED
+  TRANSFERRED
+}
+
 model OPDVisit {
-  id           String     @id @default(uuid()) @db.Uuid
+  id                    String         @id @default(uuid()) @db.Uuid
   /// Permanent OPD number (OPD/2026/000123), distinct from the daily queue
   /// token (CARDIO-001, which resets every day) — Feature 11 searches by
   /// both as separate identifiers. Nullable for the same reason labNumber is:
   /// existing rows predate this field.
-  opdNumber    String?    @unique @map("opd_number")
-  visitId      String     @unique @map("visit_id") @db.Uuid
-  departmentId String     @map("department_id") @db.Uuid
-  tokenNumber  String     @map("token_number")
-  doctorId     String?    @map("doctor_id") @db.Uuid
-  calledAt     DateTime?  @map("called_at")
-  closedAt     DateTime?  @map("closed_at")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  department   Department @relation(fields: [departmentId], references: [id])
-  doctor       User?      @relation("OPDVisitDoctor", fields: [doctorId], references: [id])
-  visit        Visit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  opdNumber             String?        @unique @map("opd_number")
+  visitId               String         @unique @map("visit_id") @db.Uuid
+  departmentId          String         @map("department_id") @db.Uuid
+  tokenNumber           String         @map("token_number")
+  doctorId              String?        @map("doctor_id") @db.Uuid
+  // `status` is the source of truth for queue state; `calledAt`/`closedAt`
+  // are kept and still written alongside every transition below so any
+  // existing reader of those two columns keeps working unmodified.
+  status                OpdVisitStatus @default(WAITING)
+  assignedAt            DateTime?      @map("assigned_at")
+  checkedInAt           DateTime?      @map("checked_in_at")
+  calledAt              DateTime?      @map("called_at")
+  consultationStartedAt DateTime?      @map("consultation_started_at")
+  completedAt           DateTime?      @map("completed_at")
+  closedAt              DateTime?      @map("closed_at")
+  priority              Int            @default(0)
+  queuePosition         Int?           @map("queue_position")
+  assignedRoomLabel     String?        @map("assigned_room_label")
+  transferReason        String?        @map("transfer_reason")
+  skipReason            String?        @map("skip_reason")
+  queueNotes            String?        @map("queue_notes")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  department            Department     @relation(fields: [departmentId], references: [id])
+  doctor                User?          @relation("OPDVisitDoctor", fields: [doctorId], references: [id])
+  visit                 Visit          @relation(fields: [visitId], references: [id], onDelete: Cascade)
 
   @@index([departmentId, createdAt])
   @@index([doctorId])
+  @@index([doctorId, status])
   @@map("opd_visits")
 }
 
@@ -331,27 +370,27 @@ model PrescriptionItem {
 /// data. New orders leave it null and use `items` instead — the same
 /// non-destructive pattern as `employees.consultation_room` in P0.
 model LabOrder {
-  id             String         @id @default(uuid()) @db.Uuid
+  id            String           @id @default(uuid()) @db.Uuid
   /// Human-readable order number, e.g. LAB/2026/00087. Also identifies the
   /// one report this order produces — reports are not separately numbered.
-  labNumber      String?        @unique @map("lab_number")
-  visitId        String         @map("visit_id") @db.Uuid
+  labNumber     String?          @unique @map("lab_number")
+  visitId       String           @map("visit_id") @db.Uuid
   /// Set when this is an IPD order, so its charges count toward the
   /// admission's running total.
-  admissionId    String?        @map("admission_id") @db.Uuid
-  testName       String?        @map("test_name")
-  orderedBy      String         @map("ordered_by") @db.Uuid
-  priority       LabOrderPriority @default(ROUTINE)
-  clinicalNotes  String?        @map("clinical_notes")
-  status         LabOrderStatus @default(ORDERED)
-  createdAt      DateTime       @default(now()) @map("created_at")
+  admissionId   String?          @map("admission_id") @db.Uuid
+  testName      String?          @map("test_name")
+  orderedBy     String           @map("ordered_by") @db.Uuid
+  priority      LabOrderPriority @default(ROUTINE)
+  clinicalNotes String?          @map("clinical_notes")
+  status        LabOrderStatus   @default(ORDERED)
+  createdAt     DateTime         @default(now()) @map("created_at")
 
-  visit    Visit           @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  admission Admission?     @relation(fields: [admissionId], references: [id])
-  orderingDoctor User      @relation("LabOrderDoctor", fields: [orderedBy], references: [id])
-  items    LabOrderItem[]
-  sample   LabSample?
-  report   LabReport?
+  visit          Visit          @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  admission      Admission?     @relation(fields: [admissionId], references: [id])
+  orderingDoctor User           @relation("LabOrderDoctor", fields: [orderedBy], references: [id])
+  items          LabOrderItem[]
+  sample         LabSample?
+  report         LabReport?
 
   @@index([visitId])
   @@index([status])
@@ -363,15 +402,15 @@ model LabOrder {
 /// even though several items on one order can share one sample and one
 /// receipt.
 model LabOrderItem {
-  id        String           @id @default(uuid()) @db.Uuid
-  labOrderId String          @map("lab_order_id") @db.Uuid
-  labTestId String           @map("lab_test_id") @db.Uuid
-  status    LabOrderItemStatus @default(ORDERED)
-  createdAt DateTime         @default(now()) @map("created_at")
+  id         String             @id @default(uuid()) @db.Uuid
+  labOrderId String             @map("lab_order_id") @db.Uuid
+  labTestId  String             @map("lab_test_id") @db.Uuid
+  status     LabOrderItemStatus @default(ORDERED)
+  createdAt  DateTime           @default(now()) @map("created_at")
 
-  labOrder LabOrder    @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
-  labTest  LabTest     @relation(fields: [labTestId], references: [id])
-  results  LabResult[]
+  labOrder    LabOrder     @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  labTest     LabTest      @relation(fields: [labTestId], references: [id])
+  results     LabResult[]
   chargeItems ChargeItem[]
 
   @@index([labOrderId])
@@ -405,18 +444,18 @@ model LabSample {
 /// Service/ServicePrice pair that prices it (see plan §07/C3 — pricing lives
 /// once, in the catalogue, not duplicated onto the test master).
 model LabTest {
-  id              String              @id @default(uuid()) @db.Uuid
-  serviceId       String              @unique @map("service_id") @db.Uuid
-  code            String              @unique
+  id              String        @id @default(uuid()) @db.Uuid
+  serviceId       String        @unique @map("service_id") @db.Uuid
+  code            String        @unique
   name            String
   discipline      LabDiscipline
-  specimenType    String              @map("specimen_type")
-  containerType   String?             @map("container_type")
-  methodDefault   String?             @map("method_default")
-  turnaroundHours Int                 @default(24) @map("turnaround_hours")
-  active          Boolean             @default(true)
-  createdAt       DateTime            @default(now()) @map("created_at")
-  updatedAt       DateTime            @updatedAt @map("updated_at")
+  specimenType    String        @map("specimen_type")
+  containerType   String?       @map("container_type")
+  methodDefault   String?       @map("method_default")
+  turnaroundHours Int           @default(24) @map("turnaround_hours")
+  active          Boolean       @default(true)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
   service    Service            @relation(fields: [serviceId], references: [id])
   parameters LabTestParameter[]
@@ -430,25 +469,25 @@ model LabTest {
 /// a single-analyte test like S. Uric Acid has exactly one, named after the
 /// test itself.
 model LabTestParameter {
-  id             String              @id @default(uuid()) @db.Uuid
-  labTestId      String              @map("lab_test_id") @db.Uuid
+  id             String        @id @default(uuid()) @db.Uuid
+  labTestId      String        @map("lab_test_id") @db.Uuid
   name           String
   /// Sub-heading printed above a group of parameters on the report, e.g.
   /// "RBC INDICES", "CHEMICAL EXAMINATION" — taken from the reference reports.
-  groupLabel     String?             @map("group_label")
+  groupLabel     String?       @map("group_label")
   unit           String?
-  resultType     LabResultType       @default(NUMERIC) @map("result_type")
+  resultType     LabResultType @default(NUMERIC) @map("result_type")
   /// Valid choices when resultType is SELECT, e.g. ["Absent","Present","Trace"].
-  selectOptions  String[]            @map("select_options")
+  selectOptions  String[]      @map("select_options")
   method         String?
-  isCalculated   Boolean             @default(false) @map("is_calculated")
+  isCalculated   Boolean       @default(false) @map("is_calculated")
   /// Human-readable derivation for a calculated parameter (VLDL, TC/HDL ratio,
   /// Urea/Creatinine ratio) — computed by LabService, not evaluated from this
   /// string, so this documents the rule rather than executing it.
   formula        String?
   /// The prose block printed under a panel in the reference reports.
   interpretation String?
-  sortOrder      Int                 @default(0) @map("sort_order")
+  sortOrder      Int           @default(0) @map("sort_order")
 
   labTest LabTest             @relation(fields: [labTestId], references: [id], onDelete: Cascade)
   ranges  LabReferenceRange[]
@@ -463,14 +502,14 @@ model LabTestParameter {
 /// "3.0-5.0" — rarely a clean number), with optional numeric bounds that
 /// drive automatic H/L/critical flagging only when they can.
 model LabReferenceRange {
-  id            String   @id @default(uuid()) @db.Uuid
-  parameterId   String   @map("parameter_id") @db.Uuid
-  displayText   String   @map("display_text")
-  numericLow    Decimal? @map("numeric_low") @db.Decimal(12, 4)
-  numericHigh   Decimal? @map("numeric_high") @db.Decimal(12, 4)
-  sex           LabRangeSex @default(ANY)
-  ageMinYears   Int?     @map("age_min_years")
-  ageMaxYears   Int?     @map("age_max_years")
+  id          String      @id @default(uuid()) @db.Uuid
+  parameterId String      @map("parameter_id") @db.Uuid
+  displayText String      @map("display_text")
+  numericLow  Decimal?    @map("numeric_low") @db.Decimal(12, 4)
+  numericHigh Decimal?    @map("numeric_high") @db.Decimal(12, 4)
+  sex         LabRangeSex @default(ANY)
+  ageMinYears Int?        @map("age_min_years")
+  ageMaxYears Int?        @map("age_max_years")
 
   parameter LabTestParameter @relation(fields: [parameterId], references: [id], onDelete: Cascade)
 
@@ -479,13 +518,13 @@ model LabReferenceRange {
 }
 
 model LabResult {
-  id             String       @id @default(uuid()) @db.Uuid
-  labOrderItemId String       @map("lab_order_item_id") @db.Uuid
-  parameterId    String       @map("parameter_id") @db.Uuid
+  id             String        @id @default(uuid()) @db.Uuid
+  labOrderItemId String        @map("lab_order_item_id") @db.Uuid
+  parameterId    String        @map("parameter_id") @db.Uuid
   value          String
   flag           LabResultFlag @default(NORMAL)
-  enteredById    String       @map("entered_by_id") @db.Uuid
-  enteredAt      DateTime     @default(now()) @map("entered_at")
+  enteredById    String        @map("entered_by_id") @db.Uuid
+  enteredAt      DateTime      @default(now()) @map("entered_at")
 
   labOrderItem LabOrderItem     @relation(fields: [labOrderItemId], references: [id], onDelete: Cascade)
   parameter    LabTestParameter @relation(fields: [parameterId], references: [id])
@@ -499,18 +538,18 @@ model LabResult {
 /// one document). Printed with LabOrder.labNumber — a report is not
 /// separately numbered.
 model LabReport {
-  id                  String    @id @default(uuid()) @db.Uuid
-  labOrderId          String    @unique @map("lab_order_id") @db.Uuid
+  id                 String   @id @default(uuid()) @db.Uuid
+  labOrderId         String   @unique @map("lab_order_id") @db.Uuid
   /// Technician result entry is never the final report (Feature 6): a report
   /// exists only once a Pathologist verifies, and verifiedById/verifiedAt are
   /// mandatory, not merely set when convenient.
-  verifiedById        String    @map("verified_by_id") @db.Uuid
-  verifiedAt          DateTime  @default(now()) @map("verified_at")
-  pathologistRemarks  String?   @map("pathologist_remarks")
-  releasedAt          DateTime  @default(now()) @map("released_at")
+  verifiedById       String   @map("verified_by_id") @db.Uuid
+  verifiedAt         DateTime @default(now()) @map("verified_at")
+  pathologistRemarks String?  @map("pathologist_remarks")
+  releasedAt         DateTime @default(now()) @map("released_at")
 
-  labOrder LabOrder @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
-  verifiedBy User    @relation(fields: [verifiedById], references: [id])
+  labOrder   LabOrder @relation(fields: [labOrderId], references: [id], onDelete: Cascade)
+  verifiedBy User     @relation(fields: [verifiedById], references: [id])
 
   @@map("lab_reports")
 }
@@ -544,11 +583,11 @@ model TherapyCourse {
   createdById     String?             @map("created_by_id") @db.Uuid
   createdAt       DateTime            @default(now()) @map("created_at")
 
-  visit      Visit            @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  admission  Admission?       @relation(fields: [admissionId], references: [id])
-  service    Service          @relation(fields: [serviceId], references: [id])
-  createdBy  User?            @relation(fields: [createdById], references: [id])
-  sessions   TherapySession[]
+  visit     Visit            @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  admission Admission?       @relation(fields: [admissionId], references: [id])
+  service   Service          @relation(fields: [serviceId], references: [id])
+  createdBy User?            @relation(fields: [createdById], references: [id])
+  sessions  TherapySession[]
 
   @@index([visitId])
   @@map("therapy_courses")
@@ -559,25 +598,25 @@ model TherapyCourse {
 /// sitting case (Abhyanga, ₹1,145 each time). A session that belongs to a
 /// course (`courseId` set) never bills on its own; the course already did.
 model TherapySession {
-  id             String               @id @default(uuid()) @db.Uuid
-  visitId        String               @map("visit_id") @db.Uuid
-  admissionId    String?              @map("admission_id") @db.Uuid
-  serviceId      String               @map("service_id") @db.Uuid
-  courseId       String?              @map("course_id") @db.Uuid
-  sessionNumber  Int                  @default(1) @map("session_number")
+  id            String               @id @default(uuid()) @db.Uuid
+  visitId       String               @map("visit_id") @db.Uuid
+  admissionId   String?              @map("admission_id") @db.Uuid
+  serviceId     String               @map("service_id") @db.Uuid
+  courseId      String?              @map("course_id") @db.Uuid
+  sessionNumber Int                  @default(1) @map("session_number")
   /// Same derivation rule as TherapyCourse.source; a session inside a course
   /// inherits its course's source rather than re-deriving it.
-  source         TherapySource
-  scheduledAt    DateTime             @default(now()) @map("scheduled_at")
-  performedAt    DateTime?            @map("performed_at")
-  performedById  String?              @map("performed_by_id") @db.Uuid
+  source        TherapySource
+  scheduledAt   DateTime             @default(now()) @map("scheduled_at")
+  performedAt   DateTime?            @map("performed_at")
+  performedById String?              @map("performed_by_id") @db.Uuid
   /// Who booked/recommended this standalone session — the OPD doctor, the
   /// IPD doctor, or Reception for a Direct-Therapy booking. Null only for
   /// sessions created before this column existed.
-  createdById    String?              @map("created_by_id") @db.Uuid
-  status         TherapySessionStatus @default(SCHEDULED)
-  notes          String?
-  createdAt      DateTime             @default(now()) @map("created_at")
+  createdById   String?              @map("created_by_id") @db.Uuid
+  status        TherapySessionStatus @default(SCHEDULED)
+  notes         String?
+  createdAt     DateTime             @default(now()) @map("created_at")
 
   visit       Visit          @relation(fields: [visitId], references: [id], onDelete: Cascade)
   admission   Admission?     @relation(fields: [admissionId], references: [id])
@@ -593,34 +632,34 @@ model TherapySession {
 }
 
 model Admission {
-  id                  String            @id @default(uuid()) @db.Uuid
+  id                  String                   @id @default(uuid()) @db.Uuid
   /// Permanent IPD number (IPD/2026/000045) — Feature 11's separate "IPD
   /// number" search identifier. Nullable for pre-existing rows.
-  admissionNumber     String?           @unique @map("admission_number")
-  visitId             String            @map("visit_id") @db.Uuid
-  status              AdmissionStatus   @default(REQUESTED)
-  eligibleCategory    String            @default("C") @map("eligible_category")
-  requestedAt         DateTime          @default(now()) @map("requested_at")
-  allocatedAt         DateTime?         @map("allocated_at")
-  dischargedAt        DateTime?         @map("discharged_at")
-  wardId              String?           @map("ward_id") @db.Uuid
-  roomId              String?           @map("room_id") @db.Uuid
-  bedId               String?           @map("bed_id") @db.Uuid
-  assignedDoctorId    String?           @map("assigned_doctor_id") @db.Uuid
-  assignedNurseId     String?           @map("assigned_nurse_id") @db.Uuid
+  admissionNumber     String?                  @unique @map("admission_number")
+  visitId             String                   @map("visit_id") @db.Uuid
+  status              AdmissionStatus          @default(REQUESTED)
+  eligibleCategory    String                   @default("C") @map("eligible_category")
+  requestedAt         DateTime                 @default(now()) @map("requested_at")
+  allocatedAt         DateTime?                @map("allocated_at")
+  dischargedAt        DateTime?                @map("discharged_at")
+  wardId              String?                  @map("ward_id") @db.Uuid
+  roomId              String?                  @map("room_id") @db.Uuid
+  bedId               String?                  @map("bed_id") @db.Uuid
+  assignedDoctorId    String?                  @map("assigned_doctor_id") @db.Uuid
+  assignedNurseId     String?                  @map("assigned_nurse_id") @db.Uuid
   notes               AdmissionNote[]
   chargeItems         ChargeItem[]
   labOrders           LabOrder[]
   therapyCourses      TherapyCourse[]
   therapySessions     TherapySession[]
   locationHistory     PatientLocationHistory[]
-  assignedDoctor      User?             @relation("AdmissionDoctor", fields: [assignedDoctorId], references: [id])
-  assignedNurse       User?             @relation("AdmissionNurse", fields: [assignedNurseId], references: [id])
-  bed                 Bed?              @relation("AdmissionBed", fields: [bedId], references: [id])
-  room                Room?             @relation(fields: [roomId], references: [id])
-  visit               Visit             @relation(fields: [visitId], references: [id], onDelete: Cascade)
-  ward                Ward?             @relation(fields: [wardId], references: [id])
-  currentAdmissionBed Bed?              @relation("CurrentAdmission")
+  assignedDoctor      User?                    @relation("AdmissionDoctor", fields: [assignedDoctorId], references: [id])
+  assignedNurse       User?                    @relation("AdmissionNurse", fields: [assignedNurseId], references: [id])
+  bed                 Bed?                     @relation("AdmissionBed", fields: [bedId], references: [id])
+  room                Room?                    @relation(fields: [roomId], references: [id])
+  visit               Visit                    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  ward                Ward?                    @relation(fields: [wardId], references: [id])
+  currentAdmissionBed Bed?                     @relation("CurrentAdmission")
   dischargeSummary    DischargeSummary?
 
   @@map("admissions")
@@ -635,26 +674,89 @@ model AuditLog {
   entityId       String   @map("entity_id")
   beforeSnapshot Json?    @map("before_snapshot")
   afterSnapshot  Json?    @map("after_snapshot")
+  reason         String?
   createdAt      DateTime @default(now()) @map("created_at")
   actorUser      User?    @relation(fields: [actorUserId], references: [id])
 
   @@index([createdAt])
   @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@index([action])
   @@map("audit_logs")
 }
 
+/// Generic weekly availability row for any staff role (Doctor uses the
+/// richer DoctorProfile-based DoctorSchedule instead of this).
+model StaffShift {
+  id        String  @id @default(uuid()) @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  dayOfWeek String  @map("day_of_week")
+  startTime String  @map("start_time")
+  endTime   String  @map("end_time")
+  active    Boolean @default(true)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+  @@map("staff_shifts")
+}
+
+/// Relational multi-department assignment for the non-Doctor staff roles --
+/// mirrors DoctorDepartment exactly. Employee.department stays as the
+/// existing free-text display value; this is the structured source for
+/// filtering/search going forward.
+model StaffDepartmentAssignment {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  departmentId String     @map("department_id") @db.Uuid
+  isPrimary    Boolean    @default(false) @map("is_primary")
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([userId, departmentId])
+  @@map("staff_department_assignments")
+}
+
+/// Metadata-only record that a credential/activation email was sent --
+/// never the body, token, or password itself.
+model EmailLog {
+  id           String      @id @default(uuid()) @db.Uuid
+  toEmail      String      @map("to_email")
+  subject      String
+  kind         EmailKind
+  status       EmailStatus
+  sentByUserId String?     @map("sent_by_user_id") @db.Uuid
+  errorMessage String?     @map("error_message")
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  @@index([toEmail])
+  @@index([createdAt])
+  @@map("email_logs")
+}
+
+enum EmailKind {
+  ACTIVATION
+  ACTIVATION_RESEND
+  TEMP_PASSWORD
+}
+
+enum EmailStatus {
+  SENT
+  FAILED
+  DEV_LOGGED
+}
+
 model Ward {
-  id         String           @id @default(uuid()) @db.Uuid
-  name       String
-  category   FacilityCategory
+  id                  String                   @id @default(uuid()) @db.Uuid
+  name                String
+  category            FacilityCategory
   /// Official hospital location, printed on the location trail (Feature 9):
   /// "Main Hospital → 2nd Floor → General Medicine → Room 204 → Bed 12".
-  building   String?          @default("Main Hospital")
-  floor      String?
-  createdAt  DateTime         @default(now()) @map("created_at")
-  updatedAt  DateTime         @updatedAt @map("updated_at")
-  admissions Admission[]
-  rooms      Room[]
+  building            String?                  @default("Main Hospital")
+  floor               String?
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+  admissions          Admission[]
+  rooms               Room[]
   locationHistoryFrom PatientLocationHistory[] @relation("LocationFromWard")
   locationHistoryTo   PatientLocationHistory[] @relation("LocationToWard")
 
@@ -662,15 +764,15 @@ model Ward {
 }
 
 model Room {
-  id         String      @id @default(uuid()) @db.Uuid
-  wardId     String      @map("ward_id") @db.Uuid
-  roomNumber String      @map("room_number")
-  type       RoomType
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  admissions Admission[]
-  beds       Bed[]
-  ward       Ward        @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  id                  String                   @id @default(uuid()) @db.Uuid
+  wardId              String                   @map("ward_id") @db.Uuid
+  roomNumber          String                   @map("room_number")
+  type                RoomType
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+  admissions          Admission[]
+  beds                Bed[]
+  ward                Ward                     @relation(fields: [wardId], references: [id], onDelete: Cascade)
   locationHistoryFrom PatientLocationHistory[] @relation("LocationFromRoom")
   locationHistoryTo   PatientLocationHistory[] @relation("LocationToRoom")
 
@@ -678,16 +780,16 @@ model Room {
 }
 
 model Bed {
-  id                 String      @id @default(uuid()) @db.Uuid
-  roomId             String      @map("room_id") @db.Uuid
-  bedNumber          String      @map("bed_number")
-  status             BedStatus   @default(AVAILABLE)
-  currentAdmissionId String?     @unique @map("current_admission_id") @db.Uuid
-  createdAt          DateTime    @default(now()) @map("created_at")
-  updatedAt          DateTime    @updatedAt @map("updated_at")
-  admissions         Admission[] @relation("AdmissionBed")
-  currentAdmission   Admission?  @relation("CurrentAdmission", fields: [currentAdmissionId], references: [id])
-  room               Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  id                  String                   @id @default(uuid()) @db.Uuid
+  roomId              String                   @map("room_id") @db.Uuid
+  bedNumber           String                   @map("bed_number")
+  status              BedStatus                @default(AVAILABLE)
+  currentAdmissionId  String?                  @unique @map("current_admission_id") @db.Uuid
+  createdAt           DateTime                 @default(now()) @map("created_at")
+  updatedAt           DateTime                 @updatedAt @map("updated_at")
+  admissions          Admission[]              @relation("AdmissionBed")
+  currentAdmission    Admission?               @relation("CurrentAdmission", fields: [currentAdmissionId], references: [id])
+  room                Room                     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   locationHistoryFrom PatientLocationHistory[] @relation("LocationFromBed")
   locationHistoryTo   PatientLocationHistory[] @relation("LocationToBed")
 
@@ -996,17 +1098,19 @@ model BrandingConfig {
 /// (id fixed to "singleton", defaults live in DEFAULT_HOSPITAL_SETTINGS in
 /// hospital-settings.controller.ts, not on the columns themselves).
 model HospitalSettings {
-  id                String   @id @default("singleton")
-  workingHoursStart String   @map("working_hours_start")
-  workingHoursEnd   String   @map("working_hours_end")
-  workingDays       String[] @map("working_days")
-  currency          String
-  taxPercent        Decimal  @map("tax_percent") @db.Decimal(5, 2)
-  billingPrefix     String   @map("billing_prefix")
-  notifyOnAdmission Boolean  @map("notify_on_admission")
-  notifyOnDischarge Boolean  @map("notify_on_discharge")
-  notifyOnLowStock  Boolean  @map("notify_on_low_stock")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id                           String   @id @default("singleton")
+  workingHoursStart            String   @map("working_hours_start")
+  workingHoursEnd              String   @map("working_hours_end")
+  workingDays                  String[] @map("working_days")
+  currency                     String
+  taxPercent                   Decimal  @map("tax_percent") @db.Decimal(5, 2)
+  billingPrefix                String   @map("billing_prefix")
+  notifyOnAdmission            Boolean  @map("notify_on_admission")
+  notifyOnDischarge            Boolean  @map("notify_on_discharge")
+  notifyOnLowStock             Boolean  @map("notify_on_low_stock")
+  /// Off by default -- when enabled, a newly-created or reset staff account's temporary password is also emailed to them directly (in addition to the always-sent activation link), with an explicit 24h-expiry warning.
+  sendTemporaryPasswordByEmail Boolean  @default(false) @map("send_temporary_password_by_email")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
 
   @@map("hospital_settings")
 }
@@ -1033,32 +1137,32 @@ model ServiceCategory {
 /// repricing supersedes rather than overwrites, and a bill raised last month
 /// still resolves the rate that applied when it was raised.
 model Service {
-  id          String               @id @default(uuid()) @db.Uuid
-  code        String               @unique
-  name        String
-  categoryId  String               @map("category_id") @db.Uuid
-  serviceType ServiceType          @map("service_type")
+  id                 String               @id @default(uuid()) @db.Uuid
+  code               String               @unique
+  name               String
+  categoryId         String               @map("category_id") @db.Uuid
+  serviceType        ServiceType          @map("service_type")
   /// Whether the service is billable in OPD, in IPD, or both.
   ///
   /// Replaces separate OPD/IPD rate columns: CGHS Annexure A-2 publishes one
   /// unit cost valid in both settings, while Annexure Y-2 lists OPD and IPD
   /// yoga packages as separate line items at different rates (₹500 vs ₹10,000).
   /// Two rate columns could represent neither faithfully.
-  applicability ServiceApplicability @default(BOTH)
-  unit        ServiceUnit          @default(SITTING)
-  description String?
+  applicability      ServiceApplicability @default(BOTH)
+  unit               ServiceUnit          @default(SITTING)
+  description        String?
   /// Minutes a single session is expected to take, where the source states it.
-  durationMinutes Int?             @map("duration_minutes")
+  durationMinutes    Int?                 @map("duration_minutes")
   /// Days a course package runs for, where the source states it.
-  courseDurationDays Int?          @map("course_duration_days")
+  courseDurationDays Int?                 @map("course_duration_days")
   /// Exact provenance of the seeded rate, e.g. "CGHS Annexure A-2, S.No 19".
   /// Lets an administrator review every unapproved rate before go-live.
-  sourceReference String?          @map("source_reference")
-  active      Boolean              @default(true)
-  createdById String?              @map("created_by_id") @db.Uuid
-  updatedById String?              @map("updated_by_id") @db.Uuid
-  createdAt   DateTime             @default(now()) @map("created_at")
-  updatedAt   DateTime             @updatedAt @map("updated_at")
+  sourceReference    String?              @map("source_reference")
+  active             Boolean              @default(true)
+  createdById        String?              @map("created_by_id") @db.Uuid
+  updatedById        String?              @map("updated_by_id") @db.Uuid
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
 
   category        ServiceCategory      @relation(fields: [categoryId], references: [id])
   createdBy       User?                @relation("ServiceCreatedBy", fields: [createdById], references: [id])
@@ -1080,10 +1184,10 @@ model Service {
 /// + KFT + FBS + Urine Routine. The package carries its own price; components
 /// are listed for clinical fulfilment, not for pricing.
 model ServicePackageItem {
-  id                 String  @id @default(uuid()) @db.Uuid
-  packageServiceId   String  @map("package_service_id") @db.Uuid
-  componentServiceId String  @map("component_service_id") @db.Uuid
-  quantity           Int     @default(1)
+  id                 String @id @default(uuid()) @db.Uuid
+  packageServiceId   String @map("package_service_id") @db.Uuid
+  componentServiceId String @map("component_service_id") @db.Uuid
+  quantity           Int    @default(1)
 
   packageService   Service @relation("PackageParent", fields: [packageServiceId], references: [id], onDelete: Cascade)
   componentService Service @relation("PackageComponent", fields: [componentServiceId], references: [id], onDelete: Cascade)
@@ -1099,20 +1203,20 @@ model ServicePackageItem {
 /// migration, as Prisma cannot express it) guarantees at most one open version
 /// per service even under concurrent edits.
 model ServicePrice {
-  id          String    @id @default(uuid()) @db.Uuid
-  serviceId   String    @map("service_id") @db.Uuid
-  amount      Decimal   @db.Decimal(10, 2)
-  effectiveFrom DateTime @map("effective_from")
+  id            String    @id @default(uuid()) @db.Uuid
+  serviceId     String    @map("service_id") @db.Uuid
+  amount        Decimal   @db.Decimal(10, 2)
+  effectiveFrom DateTime  @map("effective_from")
   /// NULL means this is the currently effective version.
-  effectiveTo DateTime? @map("effective_to")
+  effectiveTo   DateTime? @map("effective_to")
   /// Why the rate changed. Required, so price history is self-explaining.
-  reason      String
-  createdById String?   @map("created_by_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at")
+  reason        String
+  createdById   String?   @map("created_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
 
   chargeItems ChargeItem[]
-  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  createdBy User?   @relation("ServicePriceCreatedBy", fields: [createdById], references: [id])
+  service     Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  createdBy   User?        @relation("ServicePriceCreatedBy", fields: [createdById], references: [id])
 
   @@index([serviceId, effectiveFrom])
   @@map("service_prices")
@@ -1139,14 +1243,14 @@ model ServicePrice {
 /// fields) rather than editing amounts in place, so a statement reprinted
 /// later shows exactly what it showed when it was first issued.
 model ChargeItem {
-  id           String @id @default(uuid()) @db.Uuid
+  id          String  @id @default(uuid()) @db.Uuid
   /// The permanent link to the patient: every charge resolves to exactly one
   /// UHID through visit → employee. No module is ever given its own patient
   /// reference — this is what makes duplicate patients structurally
   /// impossible rather than merely discouraged.
-  visitId      String @map("visit_id") @db.Uuid
+  visitId     String  @map("visit_id") @db.Uuid
   /// Set when the charge is part of a running IPD admission bill.
-  admissionId  String? @map("admission_id") @db.Uuid
+  admissionId String? @map("admission_id") @db.Uuid
 
   // ── origin (see the CHECK constraints in the migration for the exact rule) ──
   // At most one "clinical origin" — prescriptionItemId or labOrderItemId (a
@@ -1191,8 +1295,8 @@ model ChargeItem {
   /// they are not simply omitted, unlike the legacy BillingTransaction, which
   /// stored no amount at all for a non-PAID item.
   benefitOutcome BenefitOutcome @map("benefit_outcome")
-  status         ChargeStatus @default(PENDING)
-  receiptId      String?      @map("receipt_id") @db.Uuid
+  status         ChargeStatus   @default(PENDING)
+  receiptId      String?        @map("receipt_id") @db.Uuid
 
   /// Points from a reversal back to the charge it corrects. A charge that is
   /// itself a reversal is unique per original (enforced by @unique below), so
@@ -1291,23 +1395,119 @@ model DocumentSequence {
 }
 
 model DoctorProfile {
-  id               String      @id @default(uuid()) @db.Uuid
-  userId           String      @unique @map("user_id") @db.Uuid
-  specialty        String
-  experience       String
-  available        Boolean     @default(true)
-  departmentId     String?     @map("department_id") @db.Uuid
-  consultationFee  Decimal     @default(0) @map("consultation_fee") @db.Decimal(10, 2)
+  id                          String                 @id @default(uuid()) @db.Uuid
+  userId                      String                 @unique @map("user_id") @db.Uuid
+  specialty                   String
+  subSpecialty                String?                @map("sub_specialty")
+  experience                  String
+  available                   Boolean                @default(true)
+  verified                    Boolean                @default(false)
+  departmentId                String?                @map("department_id") @db.Uuid
+  consultationFee             Decimal                @default(0) @map("consultation_fee") @db.Decimal(10, 2)
+  consultationDurationMinutes Int?                   @map("consultation_duration_minutes")
+  dailyCapacity               Int?                   @map("daily_capacity")
+  professionalPhone           String?                @map("professional_phone")
+  professionalEmail           String?                @map("professional_email")
+  signatureRef                String?                @map("signature_ref")
   // A 7-entry [{ day, startTime, endTime, available }] structure (see
-  // WeeklyScheduleEntryDto), replacing the old free-text `timing` column --
-  // existing rows predate this and simply have no schedule until an admin
-  // sets one, rather than attempting to parse the old free-text values (this
-  // is still early test data, per the plan this was built from).
-  weeklySchedule   Json?       @map("weekly_schedule")
-  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  department       Department? @relation(fields: [departmentId], references: [id])
+  // WeeklyScheduleEntryDto). Superseded by the relational `DoctorSchedule`
+  // model below as the canonical source going forward -- this column is kept
+  // exactly as-is (existing rows untouched, still readable) but is no longer
+  // the write target for new schedule edits.
+  weeklySchedule              Json?                  @map("weekly_schedule")
+  user                        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department                  Department?            @relation(fields: [departmentId], references: [id])
+  credentials                 DoctorCredential[]
+  departments                 DoctorDepartment[]
+  schedules                   DoctorSchedule[]
+  leaves                      DoctorLeave[]
+  roomAssignments             DoctorRoomAssignment[]
+  substituteFor               DoctorLeave[]          @relation("DoctorLeaveSubstitute")
 
   @@map("doctor_profiles")
+}
+
+/// A registration/license number or a qualification entry. Modeled as its
+/// own table (not scalar columns on DoctorProfile) since a doctor can hold
+/// several of each -- one council registration plus multiple degrees.
+model DoctorCredential {
+  id                String        @id @default(uuid()) @db.Uuid
+  doctorProfileId   String        @map("doctor_profile_id") @db.Uuid
+  credentialType    String        @map("credential_type")
+  licenseNumber     String?       @map("license_number")
+  issuingBody       String?       @map("issuing_body")
+  qualificationName String?       @map("qualification_name")
+  expiryDate        DateTime?     @map("expiry_date")
+  verified          Boolean       @default(false)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  doctorProfile     DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+
+  @@index([doctorProfileId])
+  @@map("doctor_credentials")
+}
+
+/// Multi-department assignment. `DoctorProfile.departmentId` remains the
+/// single "primary" department (unchanged, still read/written by Phase 8
+/// code); this table is the additional departments a doctor also practices in.
+model DoctorDepartment {
+  id              String        @id @default(uuid()) @db.Uuid
+  doctorProfileId String        @map("doctor_profile_id") @db.Uuid
+  departmentId    String        @map("department_id") @db.Uuid
+  isPrimary       Boolean       @default(false) @map("is_primary")
+  doctorProfile   DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  department      Department    @relation(fields: [departmentId], references: [id])
+
+  @@unique([doctorProfileId, departmentId])
+  @@map("doctor_departments")
+}
+
+/// Relational weekly schedule -- the canonical source going forward,
+/// replacing `DoctorProfile.weeklySchedule` (kept, but frozen) as the write
+/// target. One row per (doctor, day of week).
+model DoctorSchedule {
+  id              String        @id @default(uuid()) @db.Uuid
+  doctorProfileId String        @map("doctor_profile_id") @db.Uuid
+  dayOfWeek       String        @map("day_of_week")
+  startTime       String        @map("start_time")
+  endTime         String        @map("end_time")
+  roomLabel       String?       @map("room_label")
+  active          Boolean       @default(true)
+  doctorProfile   DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorProfileId, dayOfWeek])
+  @@map("doctor_schedules")
+}
+
+/// Leave/unavailability window, with an optional substitute doctor.
+model DoctorLeave {
+  id                        String         @id @default(uuid()) @db.Uuid
+  doctorProfileId           String         @map("doctor_profile_id") @db.Uuid
+  startDate                 DateTime       @map("start_date")
+  endDate                   DateTime       @map("end_date")
+  reason                    String?
+  substituteDoctorProfileId String?        @map("substitute_doctor_profile_id") @db.Uuid
+  createdAt                 DateTime       @default(now()) @map("created_at")
+  doctorProfile             DoctorProfile  @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  substituteDoctor          DoctorProfile? @relation("DoctorLeaveSubstitute", fields: [substituteDoctorProfileId], references: [id])
+
+  @@index([doctorProfileId])
+  @@map("doctor_leaves")
+}
+
+/// A consultation room a doctor is assigned to. Deliberately a free-text
+/// `roomLabel`, not a FK to the ward/bed `Room` model -- OPD consultation
+/// rooms and IPD ward rooms are different concepts in this schema.
+model DoctorRoomAssignment {
+  id              String        @id @default(uuid()) @db.Uuid
+  doctorProfileId String        @map("doctor_profile_id") @db.Uuid
+  roomLabel       String        @map("room_label")
+  departmentId    String?       @map("department_id") @db.Uuid
+  isPrimary       Boolean       @default(false) @map("is_primary")
+  doctorProfile   DoctorProfile @relation(fields: [doctorProfileId], references: [id], onDelete: Cascade)
+  department      Department?   @relation(fields: [departmentId], references: [id])
+
+  @@index([doctorProfileId])
+  @@map("doctor_room_assignments")
 }
 
 enum EmploymentTypeCode {

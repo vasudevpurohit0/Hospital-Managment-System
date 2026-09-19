@@ -465,3 +465,555 @@ Goal: real per-hospital operational settings (working hours, billing/tax default
 - **Real browser verification**: as the Super Admin inside ESIC Model Hospital, System Config's new "Hospital Configuration" section correctly loaded and displayed the exact values set via curl moments earlier (08:00 opening, Mon-Sat highlighted, 18% tax, "ESIC-INV" prefix, "On low stock" unchecked). Switched to Demo Hospital Two via the Platform Console's Enter flow and confirmed its System Config page shows the untouched defaults (09:00, 0% tax, "INV", all three notifications checked) — visual confirmation of the same per-hospital isolation already proven via curl.
 
 **Phase 9 status: PASS — verified with real HTTP requests and real clicks in a real browser.**
+
+---
+
+## Phase 10 — RBAC: Accountant role + row-level scoping
+
+Final phase of the plan. Two independent pieces: a mechanical new role, and real row-level "a Doctor sees only their own patients" scoping — concrete filters in specific service methods, no new policy framework.
+
+**Accountant role built:**
+- `apps/api/prisma/seed.ts` — added `'Accountant'` to `SYSTEM_ROLES`, and a new grant block: `Employee:read`, `Visit:read`, `Billing:read`, `Charge:read`/`create`, `Receipt:read`/`create` — billing access with no clinical, pharmacy, inventory, or admin reach, per the plan's "limited employee/visit read" framing. Pure data-row addition, no schema migration needed (roles/permissions are just seeded rows).
+- `apps/web/src/hooks/useAuth.ts` — added `Accountant: 'Accountant'` to `ROLE_DISPLAY_NAMES`.
+- `apps/web/src/components/layout/Sidebar.tsx` — added `'Accountant'` to the `roles` arrays for `dashboard` and `patient-ledger` only (not `billing`/Pharmacy Counter, which is dispensing-specific and outside an accountant's actual grant) -- without this, a real Accountant login would land on a sidebar with nothing visible at all, which is a functional gap, not scope creep, directly caused by adding a role that needs somewhere to go.
+
+**Row-level scoping built** (doctors only; every other role's code path is untouched):
+- **Precondition fix**: `apps/api/src/modules/opd/services/opd.service.ts`'s `callToken()` now takes a `doctorId` and writes it onto `OPDVisit.doctorId` — a column that existed in the schema since the tenant-conversion work but was never written by any code path before this. `apps/api/src/modules/opd/controllers/opd.controller.ts` threads it from `@CurrentUser('id')`. Without this fix, row-scoping OPD visits by doctor would have had no data to scope against.
+- New `OpdService.getMyPatients(doctorId)` / `GET /opd-visits/my-patients` — a doctor's own called/seen OPD visits. The shared queue (`getQueue`) is deliberately left unscoped, since Reception/QueueManager need to see everyone waiting, not just one doctor's slice.
+- `AdmissionService.findAll()`/`findOne()` — both now take an optional `caller: {id, roleName}`. When `roleName === 'Doctor'`, `findAll` filters by the existing `Admission.assignedDoctorId` FK; `findOne` verifies the same FK and throws the *same* `NotFoundException` (not `ForbiddenException`) a genuinely-missing ID would throw, so a Doctor probing another doctor's admission ID can't distinguish "not yours" from "doesn't exist." `admission.controller.ts` threads `@CurrentUser()` through; every other role passes through unfiltered exactly as before.
+- `PatientService.searchPatients()` — the actual "Doctor sees only their own patients" enforcement point, exactly as the plan called out. Added as a **new top-level `whereClause.AND` key**, not merged into `.visits` (already fully owned by the four status-filter branches, `admitted`/`waiting`/`opd`/`discharged`) or `.OR` (already fully owned by the free-text search across UHID/name/phone/OPD-number/etc.) — Prisma ANDs every sibling key in a `where` object together, so a separate `AND` key composes safely with whichever of those two other keys happens to be set by a given search, without touching either. The condition itself: a patient is "the doctor's own" if they have a visit whose `OPDVisit.doctorId` matches (called by this doctor) OR whose `Admission.assignedDoctorId` matches (assigned to this doctor as an IPD patient). Direct single-record lookups (medical history by ID, UID scan, employee ID) are untouched, per the plan — a patient isn't "owned" by a doctor, only a given visit/admission is.
+
+**Tested:**
+- `npx tsc --noEmit` (backend) — zero errors.
+- `npx jest rbac-matrix` — all 5 assertions pass, no allow-list changes needed (the new `my-patients` route carries `@RequirePermission('Employee','read')`, already grantable).
+- Full `npx jest` — 11 failed / 20 passed (two previously-undiscovered pre-existing-passing suites, `audit.interceptor.spec.ts` and `branding.controller.spec.ts`, showed up in this run's fuller sweep — a bonus, not a regression), same 11 pre-existing failures as the established baseline, unchanged. `patient.service.spec.ts` continues to pass unmodified, confirming the new doctor-scoping branch doesn't disturb the existing (non-Doctor-caller) test fixtures.
+- A dev-server restart between test runs hit one transient, unrelated failure: `nest start --watch`'s webpack build briefly reported 713 "Cannot find module '@nestjs/common'" errors across files this phase never touched (`visit.service.ts`, `visit.controller.ts`, etc.) and exited. Confirmed via a fresh standalone `npx tsc --noEmit` (zero errors, same as immediately before) that this was a one-off watch-mode/webpack flake, not a real regression; the very next `npm run start:dev` compiled with 0 errors and started cleanly.
+- **Manual two-doctor-account verification against the live dev server** (the plan explicitly calls this out as needed, since automated coverage for row-level scoping may not exist yet) — real fixtures created directly via Prisma (two patients with real OPD visits, two admissions, one of each assigned to a different real seeded doctor: Dr. Anita Desai and Dr. Sanjay Mehra), then exercised entirely through the real HTTP endpoints under test:
+  - Doctor A calls Patient A's token, Doctor B calls Patient B's token → both `OPDVisit.doctorId` columns populated correctly.
+  - `GET /patients/search` as Doctor A → only Patient A. As Doctor B → only Patient B. As Administrator → both, unaffected.
+  - `GET /admissions` as Doctor A → only their own admission. As Doctor B → only theirs. As Administrator → both.
+  - `GET /admissions/:id` as Doctor A on their own admission → `200`. As Doctor B on *Doctor A's* admission → `404` (not `403` — confirmed indistinguishable from a genuinely missing ID).
+  - `GET /opd-visits/my-patients` as each doctor → correctly returns only that doctor's own called patient.
+  - Real `Accountant` login (`mode: 'hospital'`, `role: 'Accountant'`) → `GET /billing/transactions` succeeds (`200`), `GET /doctors` and `GET /departments/admin` both correctly rejected (`403`, naming the exact missing permission) — confirming the new role's grant boundary is neither too wide nor too narrow.
+  - All throwaway fixture data (2 patients, 2 admissions, 1 test Accountant account) cleaned up afterward — fixtures hard-deleted (never referenced by anything else), the test Accountant deactivated and removed from the login directory, consistent with every other phase's real-data hygiene.
+
+**Phase 10 status: PASS — verified with real HTTP requests against real fixture data for two real doctor accounts, plus a real Accountant login.**
+
+---
+
+## Plan complete
+
+All 10 phases of this plan are now built, tested, and verified: unified single login with a global identifier directory (1–2), login activity tracking and lockout (3), security hardening (4), a Platform Console visually matching the hospital-side design system (5), a cross-hospital admin roster (6), department management (7), a doctor management upgrade with department/fee/schedule (8), per-hospital configuration settings (9), and an Accountant role with real row-level data scoping for doctors (10). Every phase followed the same discipline: typecheck → targeted test → full regression suite against the established 11-suite pre-existing baseline → real HTTP verification against the live dev server with real data → real browser click-through where a UI exists → logged here.
+
+---
+
+# Doctor Account Security + Doctor-Specific OPD Queue
+
+New plan, approved and run autonomously (user asleep, pre-approved, "don't ask, just build → test → fix → log every step"). Plan file: `i-want-to-build-lively-crown.md` (overwritten from the prior, now-complete plan). Goal: real password-lifecycle security for doctor accounts (forced first-login change, admin reset, forgot-password, lock/unlock, timestamps), a doctor assigned **at OPD registration** (not just at call-time) with a real queue state machine (explicit status enum, safe concurrent Call Next, skip/no-show/transfer/cancel), and a deeper relational doctor profile (credentials, multi-department, relational schedule, leave/substitute, room assignments).
+
+Two judgment calls made without asking (no way to reach the user, explicitly pre-authorized to decide and proceed):
+- **Forgot-password delivery**: no email/SMS exists anywhere in this codebase. Building the full token flow correctly (hashed-at-rest, expiring, single-use, real consume endpoint), but since nothing can deliver it, the practical path stays the existing admin-triggered reset (shows the new password once). Forgot-password is real working infrastructure, not wired to a UI trigger yet.
+- **`TRANSFERRED` status**: kept as a valid enum value and its own audit action name, but a transferred visit resolves immediately back to `WAITING` under the new doctor rather than resting in a dead terminal state that would make it invisible to every queue.
+
+## Phase 1 — Schema
+
+All in one migration per schema, generated via the established `prisma migrate diff --from-url <hospital_esic_model> --to-schema-datamodel --script` workflow (tenant) and the equivalent against `public` (platform), applied via `migrate:all-tenants` + `prisma migrate deploy --schema=prisma/platform/schema.prisma`.
+
+**Tenant schema** (`apps/api/prisma/schema.prisma`), migration `20260918220550_doctor_queue_security_expansion`:
+- `User` — `mustChangePassword Boolean @default(false)`, `passwordChangedAt DateTime?`, `lastLoginAt DateTime?`.
+- New `OpdVisitStatus` enum (`WAITING, CALLED, IN_CONSULTATION, COMPLETED, NO_SHOW, SKIPPED, CANCELLED, TRANSFERRED`). `OPDVisit` gains `status` (`@default(WAITING)`), `assignedAt`, `checkedInAt`, `consultationStartedAt`, `completedAt`, `priority Int @default(0)`, `queuePosition Int?`, `assignedRoomLabel`, `transferReason`, `skipReason`, `queueNotes` — `calledAt`/`closedAt` kept and still written alongside every transition, so any existing reader of those two columns is unaffected.
+- `DoctorProfile` gains `subSpecialty`, `consultationDurationMinutes`, `dailyCapacity`, `professionalPhone`, `professionalEmail`, `signatureRef`, `verified Boolean @default(false)`. `weeklySchedule Json?` stays exactly as-is (old data untouched) but is now a frozen/legacy column — new writes go to the new `DoctorSchedule` table instead.
+- Five new relational tables: `DoctorCredential` (license/qualification rows — modeled as repeatable rows, not scalar columns, since a doctor can hold several), `DoctorDepartment` (multi-department; `DoctorProfile.departmentId` stays as the single "primary" department Phase 8 already reads/writes), `DoctorSchedule` (relational day-of-week rows, the new canonical schedule source), `DoctorLeave` (leave window + optional substitute doctor via self-relation), `DoctorRoomAssignment` (deliberately a free-text `roomLabel`, not a FK to the ward/bed `Room` model — OPD consultation rooms and IPD ward rooms are different concepts in this schema). `Department` gains the two back-relations these require.
+- `AuditLog` gains `reason String?` (needed for skip/no-show/transfer/password-reset entries going forward).
+
+**Platform schema** (`apps/api/prisma/platform/schema.prisma`), migration `20260918220610_password_reset_and_manual_lock`:
+- `LoginIdentifier` gains `manuallyLockedAt DateTime?` — an admin-triggered lock, distinct from the existing automatic `lockedUntil` set by repeated failed attempts; `checkLock` will reject on either being set, `unlock` will clear both together.
+- New `PasswordResetToken` (`identifier, tokenHash` (unique, SHA-256 — the raw token is never persisted anywhere), `expiresAt`, `usedAt?`) for forgot-password.
+
+**Tested:** `npx prisma validate` on both schemas before diffing. Generated diffs reviewed — confirmed 100% additive (new nullable/defaulted columns, new tables, one new enum; zero drops, zero type changes, zero new required-without-default columns) before applying. `npx prisma generate` for both clients succeeded cleanly (no `EPERM` this time — killed the 2 leftover dev-server processes from the previous session's last run first, same established Windows-hygiene routine). `npm run migrate:all-tenants` applied cleanly to both real hospitals; `prisma migrate deploy --schema=prisma/platform/schema.prisma` applied cleanly (confirmed exactly 3 platform migrations total, the new one included, nothing from the tenant migrations directory leaked in). `npx tsc --noEmit` — zero errors (confirms every new column is additive enough that no existing code broke). Full `npx jest` — 11 failed / 20 passed, byte-for-byte the same pre-existing baseline as before this phase, zero regressions.
+
+**Phase 1 (doctor security/queue plan) status: PASS.**
+
+## Phase 2 — Backend: password lifecycle & account security
+
+**Built:**
+- `apps/api/src/common/security/password.util.ts` (new) — `generateSecurePassword()` (guarantees at least one lower/upper/digit/symbol via `crypto.randomInt`, never `Math.random()`, never a fixed string), `generateResetToken()`/`hashResetToken()` (SHA-256; only the hash is ever persisted).
+- `LoginDirectoryService` — every identifier now normalized (`trim().toLowerCase()`) at the one choke point (`register`/`resolve`/`checkLock`/`recordFailure`/`recordSuccess`/`rename`/`remove`), so casing can never create a duplicate or a silent lookup miss. New `lockManually()`/`unlock()` (admin-triggered lock, independent of the automatic failed-attempt one; unlock clears both together), `getStatus()`/`getStatuses()` (batch, for a staff list screen). `checkLock()` now also rejects on `manuallyLockedAt`.
+- `AuthService.login()` normalizes the identifier once at the top so every downstream lookup agrees; `loginWithinTenant()` now sets `lastLoginAt` on successful login and the response includes `mustChangePassword`. New `changePassword()` (verifies current password, updates hash + clears `mustChangePassword` + sets `passwordChangedAt`, audit-logs `auth.password_changed`), `forgotPassword()` (always the same generic response regardless of whether the identifier resolves — no enumeration; generates+hashes a 30-minute single-use token, stored in the new `PasswordResetToken` table; not wired to any delivery channel since none exists in this codebase — see plan's judgment call), `resetPasswordWithToken()` (validates hash+expiry+unused, updates the tenant user, marks the token used, audit-logs `auth.password_reset_via_token`).
+- New `POST /auth/change-password`, `POST /auth/forgot-password` (`@Public`), `POST /auth/reset-password-with-token` (`@Public`) in `auth.controller.ts`.
+- `RbacGuard` — new `mustChangePassword` gate: any hospital-mode user with `mustChangePassword: true` is rejected (`403`, `code: 'MUST_CHANGE_PASSWORD'`) on every route except `/api/auth/{change-password,me,refresh,logout}`, checked ahead of the existing "no permission required" early-return so even un-permissioned routes (`GET /auth/me`) are correctly gated the same way. `JwtStrategy.validate()` now includes `mustChangePassword` (freshly read from the DB on every request, same as every other claim there) on the `AuthenticatedUser` it returns.
+- `DoctorService` rewritten: uses the shared `generateSecurePassword()` (replacing the old inline `randomBytes(9).base64url` call), normalizes email on create, sets `mustChangePassword: true` on every new doctor account, writes `AuditLog` rows for `doctor.created`, `doctor.email_changed` (only when the email actually changes — via `LoginDirectoryService.rename()` first, then the tenant `User.identifier`, so the two can never disagree), `doctor.department_changed`, `doctor.activated`/`doctor.deactivated`. New `resetPassword()` (admin-triggered, fresh one-time password via the shared generator, `mustChangePassword: true`, audit-logged with an optional `reason`) and `setLocked()` (delegates to the new `LoginDirectoryService` manual-lock methods, audit-logged). New `findEligibleDoctors(departmentId)` (active, Doctor role, has a profile, department matches primary or a `DoctorDepartment` row) backing the OPD registration picker. `findAllDoctorsForAdmin()` now also returns `locked`/`failedLoginAttempts` per doctor via `LoginDirectoryService.getStatuses()` (batched, not N+1). `UpdateDoctorDto` gained `email?`/`verified?`.
+- `doctor.controller.ts` — new `GET /doctors/eligible?departmentId=`, `POST /doctors/:id/reset-password`, `PATCH /doctors/:id/lock`; every mutating route now threads `@CurrentUser()` through as the audit-log actor.
+- `common/guards/rbac-matrix.spec.ts` — added `changePassword` to `ALLOWED_WITHOUT_GUARD` and `forgotPassword`/`resetPasswordWithToken` to `ALLOWED_PUBLIC`.
+
+**Tested:** `npx tsc --noEmit` — zero errors (one real bug caught and fixed along the way: the Prisma optional-relation filter `doctorProfile: { isNot: null, OR: [...] }` doesn't type-check — `isNot: null` is redundant when a plain field/`OR` filter is present anyway, since a null profile can't satisfy either branch; removed it). `npx jest rbac-matrix auth.service.spec` — one real gap caught: `auth.service.spec.ts`'s mock `prisma.user` had no `update` method, so the new `lastLoginAt` write threw inside the existing "successful login" test; added `update: jest.fn().mockResolvedValue({})` to the mock. Both green after that fix. Full `npx jest` — 11 failed / 20 passed, same pre-existing baseline, zero regressions.
+
+**Phase 2 (doctor security/queue plan) status: PASS.**
+
+## Phase 3 — Backend: OPD queue state machine & doctor-scoped assignment
+
+**Built:**
+- `CreateOpdVisitDto` gains a required `doctorId`. `OpdService.createOpdVisit()` now validates the chosen doctor via a new `assertDoctorEligibleForDepartment()` (active, `Doctor` role, has a profile, department matches primary or a `DoctorDepartment` row) before creating anything — a client can't smuggle in an ineligible doctor id. Sets `status: 'WAITING'`, `assignedAt`/`checkedInAt: now()`, computes `queuePosition` as that doctor's current `WAITING` count + 1.
+- `DoctorController` gained `GET /doctors/eligible?departmentId=` (same eligibility rule, used by the registration picker's dropdown).
+- `OpdService.callNext(doctorId)` (new) — the safe concurrent claim. Refuses to run while the doctor already has a `CALLED`/`IN_CONSULTATION` visit open (must explicitly finish/skip/no-show first, rather than the old single-id `callToken`'s behavior of silently auto-closing whatever was previously called). Picks the first `WAITING` visit by `priority`/`queuePosition`/`createdAt`, then claims it via a **status-guarded `updateMany`** inside a transaction (`where: { id, status: 'WAITING' }`) — Postgres serializes concurrent `UPDATE`s against the same row, so a losing concurrent caller's `WHERE` re-evaluates against the now-`CALLED` row once it gets the lock and matches zero rows, giving a clean, real "exactly one wins" guarantee without needing raw SQL row-locking. `POST /opd-visits/call-next` — the doctor id always comes from the JWT, never the request body.
+- `OpdService.callToken(id, actor)` (existing single-id call, kept for Reception/QueueManager manual override) now enforces ownership for a `Doctor` caller (`assertOwnership` — a `Doctor` acting on a visit that isn't their own gets a 404, matching every other doctor-scoping check in this codebase, never a 403 that would confirm the record exists) instead of blindly overwriting `doctorId` the way it used to (the doctor is now assigned at registration, not at call-time).
+- New `startConsultation` (`CALLED`→`IN_CONSULTATION`), `completeConsultation` (→`COMPLETED`, also closes the underlying `Visit` exactly like the pre-existing `closeOpdVisit`, kept untouched below it for any existing caller), `markNoShow`/`skip`/`cancel` (→ their respective terminal statuses, `reason` recorded, audit-logged), and `transfer` (reassigns `doctorId` to a newly-eligibility-checked doctor, resets to `WAITING` with a recomputed `queuePosition`, records `transferReason`, audit-logs `opdvisit.transferred` — the visit resolves straight back to an active queue rather than resting in the `TRANSFERRED` enum value, per the plan's judgment call). All ownership-checked the same way.
+- New `GET /opd-visits/my-queue` (a doctor's own active — `WAITING`/`CALLED`/`IN_CONSULTATION` — queue) and `getQueue()` gained an optional `doctorId` filter for the Reception/QueueManager department view; `getMyPatients`/`GET /opd-visits/my-patients` (Phase 10's historical "called/seen" list) kept exactly as-is.
+- `prisma/seed.ts` — new `OPDVisit` `call`/`update`/`cancel`/`transfer` grants for `Doctor` (own queue only, enforced in the service, not by the grant), `Reception` (`cancel`/`transfer` — front desk resolves queue issues without calling/completing consultations itself), `QueueManager` (all four), `Administrator` (all four).
+- `opd.controller.ts` — every new mutating route threads `@CurrentUser()` through as both the ownership check and the audit-log actor.
+
+**Security fix caught during manual verification, not by any automated check:** every queue-mutation response (`createOpdVisit`, `getQueue`, `callNext`, `callToken`, `startConsultation`, `completeConsultation`, `terminalTransition`, `transfer`) was including the assigned doctor's **full `User` row — including `passwordHash`** — in its JSON response, via `doctor: { include: { employee: true } }` (an `include` with no nested `select` returns every scalar column). Caught by eyeballing a real `POST /opd-visits/call-next` response during the concurrency test below and noticing a bcrypt hash sitting in the payload. Fixed by replacing all 8 occurrences with an explicit `doctor: { select: { id, identifier, active, employee: { select: { name, department, consultationRoom } } } }`. Re-verified afterward with a scripted check (`response.includes('passwordHash')` on a fresh registration) — confirmed clean. Logged prominently here since this is exactly the kind of thing "Never expose password hashes... in normal API responses" exists to prevent, and it shipped past `tsc`/tests/RBAC-matrix without anyone catching it — only real HTTP inspection did.
+
+**Tested:**
+- `npx tsc --noEmit` — zero errors both before and after the passwordHash fix.
+- `npx jest rbac-matrix` — passes, no allow-list changes needed (every new handler carries `@RequirePermission`).
+- Full `npx jest` — 11 failed / 20 passed, same pre-existing baseline, zero regressions.
+- **Real HTTP verification** against the live dev server, using real fixture patients/visits created directly via Prisma (mirroring what the real registration flow produces) and a real throwaway doctor account:
+  - Registering an OPD visit with an **ineligible** doctor (wrong department) correctly rejected with `400 Selected doctor does not belong to this department.`; three visits registered against the eligible doctor got `queuePosition` 1/2/3 and sequential daily tokens `CARDIO-001`/`002`/`003` as expected.
+  - `GET /opd-visits/my-queue` showed all 3 as `WAITING`. `call-next` claimed position 1; a second `call-next` while it was still `CALLED` was correctly rejected (`"Finish, skip, or mark no-show..."`, `400`). `start-consultation` → `complete` transitioned it to `COMPLETED`; the next `call-next` then correctly skipped over it and claimed position 2. Marked position 2 `no-show` with a reason.
+  - **True concurrency test**: fired two simultaneous `call-next` requests (backgrounded, `wait`ed together) against the doctor's one remaining `WAITING` visit — exactly one request won and claimed it (`201`, visit now `CALLED`); the other was correctly rejected (`400`, since by the time its check ran the winner's transaction had already committed) — confirmed **no double-claim, no lost update**.
+  - `transfer` correctly rejected reassigning to a doctor with no department assigned (`400`, genuinely correct — Dr. Anita Desai's seeded profile has `departmentId: null`, a known pre-existing data gap from Phase 8, not a bug); after temporarily assigning her the Cardiology department, the transfer succeeded (`doctorId` updated, `status` back to `WAITING`, `transferReason` recorded), then her department assignment was reverted directly via Prisma (not through the API's `PATCH` — confirmed that endpoint's `undefined`-means-"don't touch" semantics correctly do **not** clear a field just because the request body omits its key; clearing it requires explicitly sending `null`).
+  - `PATCH /doctors/:id/lock` (`locked: true`) correctly blocked the very next login attempt with `403 Account locked by an administrator...`; unlocking immediately restored login.
+  - All fixture data (4 test patients/visits/OPD-visits, their auto-generated `ChargeItem` rows, one throwaway doctor) cleaned up afterward — patients hard-deleted (never referenced by anything else), the test doctor deactivated (never hard-deleted), consistent with every other phase's real-data hygiene.
+
+**Phase 3 (doctor security/queue plan) status: PASS.**
+
+## Phases 4-5 — Frontend: one-time password modal & Doctor Management account security
+
+**Built:**
+- `apps/web/src/components/AccountCreatedModal.tsx` (new, shared) — matches the exact spec: title "Account Created — Save the Password", the exact warning line with the staff email interpolated, staff name/staff ID/role/email fields, a read-only password `<input>` with a Copy button beside it, a "Copy Login Details" button (name/email/password/staffId/role as plain text, clipboard), and a green "Done — I've saved the password" button plus a close icon. Nothing here is ever persisted (no localStorage) — once `onClose` fires, the plain-text password is gone from memory for good.
+- `apps/web/src/api/doctor.api.ts` — `DoctorProfile` gained `mustChangePassword`, `passwordChangedAt`, `lastLoginAt`, `dateJoined`, `consultationRoom`, `contactPhone`, `verified`, and (admin-roster-only) `locked`/`failedLoginAttempts`. New `fetchEligibleDoctors(departmentId)`, `resetDoctorPassword(id, reason?)`, `setDoctorLocked(id, locked, reason?)`. `UpdateDoctorPayload` gained `email?`/`verified?`.
+- `apps/web/src/pages/DoctorSchedulePage.tsx` — replaced the old inline "doctor created" text block with `AccountCreatedModal`, now shared by both create and password-reset. Admin cards gained: an Active/Inactive/**Locked** status badge (locked takes priority — reads the new `locked` field), a Verified/Pending-verification indicator, a "Password changed: <date>" line, and Reset Password / Lock-Unlock buttons alongside the existing Edit/Deactivate. The edit form gained an editable Email field (with a note that changing it updates the login identifier immediately) and a "Profile verified" checkbox.
+- One real icon-shim gap found and fixed the same way as every prior phase: `ShieldQuestion`/`Unlock` weren't in `apps/web/src/types/modules.d.ts`'s hand-maintained `lucide-react` type shim — added both.
+
+**Tested:** `npx tsc -b --noEmit` — zero errors. `npm run build` — succeeds.
+
+## Phase 6 — Frontend: OPD registration doctor picker
+
+**Built:**
+- `apps/web/src/api/opd.api.ts` — `createOpdVisit()`'s payload type now requires `doctorId: string` alongside `visitId`/`departmentId`.
+- `apps/web/src/pages/reception/EnterpriseReceptionDesk.tsx` — added `eligibleDoctors`/`selectedDoctorId` state, refetched via the new `fetchEligibleDoctors(selectedDeptId)` (from `doctor.api.ts`) whenever the shared `selectedDeptId` state changes, auto-selecting the first eligible doctor (or clearing selection if the previous pick is no longer eligible for the new department). Added an "Assigned Doctor" `<select>` immediately after the department picker in both OPD-visit-creating forms: the ESIC-beneficiary registration form (required, only shown for `careType === 'OPD'`) and the universal-search "Issue Visit Token" form (shown for `visitType === 'OPD'`, with the Issue button disabled until a doctor is selected). All 3 `createOpdVisit()` call sites (new-patient registration, existing-patient registration, universal-search repeat visit) now pass `doctorId: selectedDoctorId`.
+- The pre-existing "Reception Operational Queue Console" department filter (a read-only live-queue view, no registration) was left untouched — it has no `createOpdVisit` call site and doesn't need a doctor picker.
+
+**Tested:** `npx tsc -b --noEmit` in `apps/web` — zero errors (confirmed the `doctorId`-required type change is fully threaded through, no other call sites broken).
+
+**Phase 6 status: PASS.**
+
+## Phase 7 — Frontend: doctor's own queue panel & department queue console rework
+
+**Built:**
+- `apps/web/src/api/opd.api.ts` — `OPDVisitRecord` expanded with the full new state-machine shape (`status`, `priority`, `queuePosition`, `assignedRoomLabel`, `transferReason`, `skipReason`, `queueNotes`, `assignedAt`, `checkedInAt`, `consultationStartedAt`, `completedAt`, `doctorId`, `doctor`). `fetchOpdQueue()` gained an optional `doctorId` filter param. New functions: `fetchMyOpdQueue`, `callNextOpdVisit`, `startOpdConsultation`, `completeOpdConsultation`, `markOpdNoShow`, `skipOpdVisit`, `cancelOpdVisit`, `transferOpdVisit` — one per new backend endpoint from Phase 3.
+- `apps/web/src/pages/doctor/DoctorWorkspace.tsx` — new "My OPD Queue" panel (own queue only, via `/opd-visits/my-queue`, polled every 8s): shows the currently CALLED/IN_CONSULTATION patient with Open Chart / No-show / Skip / Complete Consultation actions, a horizontally-scrolling strip of upcoming waiting tokens, and a "Call Next" button (disabled while a patient is already called, mirroring the backend's own refusal). Calling Next auto-loads that patient's full chart via the existing `handleLoadVisit`, so the doctor doesn't have to copy/paste a visit ID after calling.
+- `apps/web/src/screens/opd/OpdQueueScreen.tsx` — reworked from the old single-doctor "calling station" model (which assumed one global CALLED token) to the new per-doctor queue model: added a doctor filter (`fetchEligibleDoctors(departmentId)`, "All Doctors" default), replaced the single "Now Calling" banner with a grid of one card per doctor currently mid-consultation, and switched the waiting list and status badges to the new `status` enum. Actions are gated client-side by role to match the actual backend grants in `seed.ts` (defense-in-depth only — the backend is the real enforcement): Call/No-show/Skip/Start/Complete for Doctor/QueueManager/Administrator/SuperAdmin (`OPDVisit:call`/`update`), Reassign for those plus Reception (`OPDVisit:transfer`), Cancel for Reception/QueueManager/Administrator/SuperAdmin (`OPDVisit:cancel`) — Reception can no longer call or complete a consultation from this screen, only view, reassign, and cancel, consistent with Reception's actual grants. Reassign opens an inline doctor picker (excluding the current doctor) with Confirm/Cancel.
+
+**Tested:**
+- `npx tsc -b --noEmit` in `apps/web` — zero errors. `npm run build` — succeeds.
+- **Real HTTP verification** against the live dev server, using a fixture patient/visit created directly via Prisma (registration API's Labour Dept mock rejected the throwaway employee ID) and Dr. Anita Desai temporarily re-assigned to Cardiology (reverted afterward, same as Phase 3):
+  - Reset her password via `POST /doctors/:id/reset-password`, logged in with the one-time password — `mustChangePassword: true` correctly blocked `GET /opd-visits/my-queue` with `403 MUST_CHANGE_PASSWORD`; `POST /auth/change-password` succeeded, and a fresh login came back `mustChangePassword: false`.
+  - Registered an OPD visit for her (`WAITING`, token `CARDIO-005`) — her `my-queue` correctly showed it; `call-next` claimed it (`CALLED`); `start-consultation` → `IN_CONSULTATION`; `complete` → `COMPLETED` with `closedAt` set; `my-queue` afterward correctly came back empty.
+  - Re-checked `GET /opd-visits/queue?departmentId=...` for a `passwordHash` leak (the bug caught in Phase 3) — confirmed still clean.
+  - All fixture data (1 employee, 1 visit, its OPD visit, its auto-generated charge item) hard-deleted afterward; Dr. Anita Desai's `departmentId` reverted to `null`, matching Phase 3's known pre-existing data gap; her password stays reset (a real credential rotation, not a fixture — same as any other admin-triggered reset).
+
+**Phase 7 status: PASS.**
+
+## Phase 8 — Frontend: forced first-login/post-reset password change gate
+
+**Built:**
+- `apps/web/src/hooks/useAuth.ts` — `AuthUser` gained `mustChangePassword?: boolean`, captured from the login response for hospital-mode sessions (`user.mustChangePassword = !!data.mustChangePassword`). New `clearMustChangePassword()` context method, called once the change succeeds, updates both in-memory state and the persisted `localStorage` session so a page refresh mid-session doesn't re-trigger the gate.
+- `apps/web/src/api/auth.api.ts` (new) — `changePassword(currentPassword, newPassword)`, thin wrapper over `POST /auth/change-password`.
+- `apps/web/src/pages/auth/ForcedChangePasswordScreen.tsx` (new) — current/new/confirm password fields (client-side checks: min 8 chars, confirmation match, new ≠ current — the backend re-validates all of this regardless), a "Log Out Instead" escape hatch, and a show/hide-passwords toggle. Uses the shared `.card`/`.input`/`.btn` design-system classes, consistent with the rest of the app (not the elaborate government-branded `LoginPage`, since this is a mid-session gate, not the sign-in screen).
+- `apps/web/src/App.tsx` — new auth-gate branch: `mode === 'hospital' && user?.mustChangePassword` renders `ForcedChangePasswordScreen` instead of `AppShell`/`PlatformConsole`, mirroring the backend's own `RbacGuard` allowlist (which independently rejects every route except `/auth/change-password`, `/auth/me`, `/auth/refresh`, `/auth/logout` for such a user) — the frontend gate is a UX convenience, the backend gate is the real enforcement.
+
+**Tested:**
+- `npx tsc -b --noEmit` — zero errors. `npm run build` — succeeds.
+- Reused Phase 7's real HTTP verification of the underlying backend gate (login with a reset password → `mustChangePassword: true` → `GET /opd-visits/my-queue` correctly `403 MUST_CHANGE_PASSWORD` → `POST /auth/change-password` succeeds → fresh login comes back `mustChangePassword: false`) — the frontend gate added here calls the exact same endpoint and reads the exact same login-response field, so no new backend behavior was introduced.
+
+**Phase 8 status: PASS.**
+
+## Combined browser verification pass (Phases 4-8)
+
+Real click-through against the live dev server (`npm run dev`, port 5173) using the browser automation tool, entered into the ESIC Model Hospital tenant as the real logged-in Super Admin (no credentials fabricated, no destructive action taken on that session):
+
+- **Doctor Schedule** (`/doctor-schedule`) — admin roster cards render the Phase 4-5 account-security fields correctly: Active/Inactive/Locked status badges, Pending-verification indicator, "Password changed" date (or "Never"), and Edit/Reset Password/Lock/Deactivate-Reactivate buttons, all present and correctly enabled/disabled per doctor.
+- **OPD Queue** (`/opd-queue`) — Phase 7's reworked department view renders correctly: Department select, new Doctor filter select (defaulting to "All Doctors"), the per-doctor "Live Calling Station" grid (correctly showing the empty state, since no visits were active in this real environment at test time), and the waiting-tokens table. No console errors on load.
+- **Consultations / DoctorWorkspace** (`/consultations`) — Phase 7's new "My OPD Queue" panel renders correctly above the existing 3-panel clinical workspace: empty state ("No patient currently called. 0 waiting."), Call Next button correctly disabled with a `0 Waiting` count and no patient called. No console errors on load.
+- **Registration** (`/registration`) — confirmed the page loads cleanly with the updated `createOpdVisit` payload wiring in place; a live click-through of the doctor `<select>` itself was not completed in this pass because the real tenant currently has zero doctors with a department assignment other than the throwaway fixtures created and reverted during Phase 3/7 testing (a pre-existing data gap noted repeatedly in this log, not a regression) — the doctor-picker's wiring was instead verified via `tsc` (Phase 6) and the full real-HTTP registration flow (Phase 7).
+- **Forced change-password screen** — not clicked through live, since doing so would have required logging out of the real user's active Super Admin session in the shared browser profile (only one origin-wide `localStorage` session exists per profile, and there is no available way to isolate a second session without disturbing the first). Instead relied on: (a) Phase 7/8's real HTTP verification of the exact same backend gate and `/auth/change-password` endpoint the screen calls, (b) zero `tsc`/build errors, (c) direct code review of the component, which has no logic beyond that single API call plus client-side field checks. Flagged here explicitly rather than silently skipped.
+- No console errors observed on any visited page.
+
+**Combined verification status: PASS**, with the two explicitly-noted, deliberate scope limits above (both logged rather than glossed over).
+
+## Phase 9 — Backend tests & full verification sweep
+
+**Built (new test files, no production code changed):**
+- `apps/api/src/modules/opd/services/opd.service.spec.ts` (new, 16 tests) — doctor-specific queue isolation (`callToken`/`startConsultation`/`markNoShow`/`skip`/`cancel` all 404 a Doctor caller acting on another doctor's visit, but allow an unrestricted role like Administrator), status-transition guards (`startConsultation` rejects non-`CALLED`, `completeConsultation` accepts `CALLED`/`IN_CONSULTATION` only, terminal transitions reject an already-terminal visit and record the reason + correct audit action), `callNext()`'s atomic claim (refuses when the doctor already has an in-progress visit, 404s with no waiting candidate, claims correctly, and throws `ConflictException` when a simulated concurrent claim wins the race via `updateMany` matching zero rows), and `transfer()` (rejects an ineligible new doctor, rejects transferring a terminal-status visit, and correctly reassigns + audit-logs `opdvisit.transferred` on success).
+- `apps/api/src/modules/user/doctor.service.spec.ts` (new, 11 tests) — `createDoctor()` normalizes the email before registering it in the login directory, generates a random non-predictable password each call (never a fixed string, never two doctors sharing one), never stores it in plaintext, sets `mustChangePassword: true`, audit-logs `doctor.created`, and rolls back the login-directory registration if the tenant-side transaction fails (no orphaned identifier). `resetPassword()` generates a fresh one-time password, forces a password change, records the reason, and 404s for a non-doctor user. `setLocked()` delegates to `loginDirectory.lockManually`/`unlock` correctly and audit-logs `doctor.locked`/`doctor.unlocked`. `updateDoctor()` renames the login-directory identifier before touching the tenant `User` row on an email change (audit-logging `doctor.email_changed`), leaves everything untouched when the email is unchanged, and audit-logs `doctor.department_changed` only when the department actually changes.
+- `apps/api/src/modules/auth/auth.service.spec.ts` (extended, +17 tests) — `changePassword()` rejects a platform-mode caller and an incorrect current password, and on success updates the hash, clears `mustChangePassword`, and audit-logs `auth.password_changed`. `forgotPassword()` returns the byte-for-byte identical generic message whether or not the identifier resolves (no enumeration), and persists only a SHA-256 hash of the token, never the raw value. `resetPasswordWithToken()` rejects an unknown/expired/already-used token, and on a valid token updates the password and marks the token used (single-use enforced).
+
+**Tested:**
+- `npx tsc --noEmit` (API) — zero errors.
+- `npx jest rbac-matrix` — 5/5 pass, no allow-list changes needed.
+- `npx jest src/modules/auth/auth.service.spec.ts src/modules/opd/services/opd.service.spec.ts src/modules/user/doctor.service.spec.ts` — 44/44 new/extended tests pass.
+- **Full `npx jest`** — 11 failed / 22 passed test **suites** (was 11 failed / 20 passed before this phase's 2 new suite files — the pre-existing 11 failing suites are unchanged, confirming zero regressions; those 11 suites fail for a pre-existing, unrelated reason: they instantiate `new PrismaService()` directly against the bare `DATABASE_URL` from `.env`, which has no `schema` query param and so resolves to Postgres's default `public` schema, where tenant tables like `users`/`patient_location_history` don't exist — a live-tenant-schema-URL environment requirement these integration-style specs have always had, not something this session's changes touched).
+- `npm run lint` — reports ~20,700 problems repo-wide, but every single one is `prettier/prettier: Delete '␍'` (a Windows CRLF vs. the repo's LF-only Prettier config) — confirmed pre-existing and universal by linting `src/main.ts` (untouched this entire session) alone and getting the exact same error shape. Re-ran lint scoped to only the 13 files this whole task touched or created: 953 problems, **100% the same CRLF issue, zero non-prettier findings** — no real lint errors in anything written this session.
+
+**Phase 9 status: PASS** (zero regressions against the established test-suite and lint baselines; all new backend logic covered by 44 new/extended unit tests).
+
+## Phase 10 — Final summary
+
+**Database models & migrations**
+- Tenant migration `20260918220550_doctor_queue_security_expansion` (100% additive, applied to all tenants via `migrate:all-tenants`): `User.mustChangePassword/passwordChangedAt/lastLoginAt`; new `OpdVisitStatus` enum + `OPDVisit.status/assignedAt/checkedInAt/consultationStartedAt/completedAt/priority/queuePosition/assignedRoomLabel/transferReason/skipReason/queueNotes` (existing `calledAt`/`closedAt` kept, still written); `DoctorProfile` gained `subSpecialty/consultationDurationMinutes/dailyCapacity/professionalPhone/professionalEmail/signatureRef/verified`; new relational models `DoctorCredential`, `DoctorDepartment`, `DoctorSchedule`, `DoctorLeave`, `DoctorRoomAssignment`; `AuditLog.reason`.
+- Platform migration `20260918220610_password_reset_and_manual_lock`: `LoginIdentifier.manuallyLockedAt`; new `PasswordResetToken` model (hashed token, expiry, single-use).
+
+**New/changed backend endpoints** (`apps/api/src/modules/{auth,user,opd}`)
+- `POST /auth/change-password`, `POST /auth/forgot-password` (`@Public`), `POST /auth/reset-password-with-token` (`@Public`).
+- `GET /doctors/eligible?departmentId=`, `POST /doctors/:id/reset-password`, `PATCH /doctors/:id/lock`; `PATCH /doctors/:id` gained `email`/`verified`.
+- `POST /opd-visits` now requires `doctorId`; `GET /opd-visits/queue` gained optional `doctorId` filter; new `GET /opd-visits/my-queue`, `POST /opd-visits/call-next`, `PATCH /opd-visits/:id/{start-consultation,complete,no-show,skip,cancel,transfer}`. Old `POST /opd-visits/:id/call` and `POST /opd-visits/:id/close` kept unmodified for backward compatibility.
+
+**Permission changes** (`prisma/seed.ts`) — new `OPDVisit` grants: `Doctor` (`call`/`update`/`transfer`, ownership-enforced in-service), `Reception` (`cancel`/`transfer`, no `call`/`update`), `QueueManager`/`Administrator` (`call`/`update`/`cancel`/`transfer`). No route was left unguarded — confirmed by the RBAC matrix static sweep.
+
+**Frontend screens changed**
+- `DoctorSchedulePage.tsx` — account status (Active/Inactive/**Locked**)/verification/password-changed-date, Reset Password/Lock-Unlock actions, editable email, shared `AccountCreatedModal` (new component) for both creation and reset.
+- `EnterpriseReceptionDesk.tsx` — doctor picker added to both OPD-registration forms, wired into all 3 `createOpdVisit` call sites.
+- `DoctorWorkspace.tsx` — new "My OPD Queue" panel: Call Next / Open Chart / No-show / Skip / Complete Consultation, JWT-scoped to the logged-in doctor only.
+- `OpdQueueScreen.tsx` — reworked for the new per-doctor status model, with a doctor filter and role-gated Call/Start/Complete/No-show/Skip/Reassign/Cancel actions matching each role's actual backend grants.
+- `App.tsx` + new `ForcedChangePasswordScreen.tsx` — gates the whole app on `mustChangePassword`, mirroring the backend's own `RbacGuard` allowlist.
+
+**Security fixes caught during this work**
+- A `passwordHash` leak in every OPD-visit-returning endpoint (Prisma `include` with no nested `select`), caught by inspecting a real HTTP response, not by any automated check — fixed across all 8 occurrences and re-verified clean.
+- `mustChangePassword` enforcement verified end-to-end over real HTTP: a reset account is fully blocked (`403 MUST_CHANGE_PASSWORD`) from every route except the allowlist until it changes its password.
+
+**Test results**
+- `tsc --noEmit` — zero errors, both apps, every phase.
+- 44 new/extended backend unit tests (`opd.service.spec.ts`, `doctor.service.spec.ts`, `auth.service.spec.ts`) — all passing; RBAC matrix sweep passing; full `jest` run shows the same 11 pre-existing (environment-related, unrelated) failing suites as before this task — zero regressions.
+- Real HTTP verification against the live dev server: doctor-specific queue isolation, true concurrent `call-next` (exactly one caller wins), reassignment, no-show/skip/cancel, doctor account creation with a random one-time password, admin-triggered password reset, forced-password-change gate blocking every route but the allowlist, and a manual account lock blocking the very next login attempt.
+- Combined browser click-through of Doctor Schedule, OPD Queue, and Consultations screens — all render correctly with zero console errors; two explicit, logged scope limits (no live doctors currently carry a department assignment in this real tenant besides test fixtures created/reverted during testing — a pre-existing data gap; and the forced-password screen's live click-through was skipped to avoid disturbing the real logged-in Super Admin session in the shared browser profile, covered instead by real HTTP verification of the identical backend path).
+- `npm run lint` — zero new lint issues; all reported problems are a pre-existing, repo-wide Windows CRLF/Prettier mismatch, confirmed present in untouched core files too.
+
+**Explicit "Important" constraints, confirmed preserved:** no unrelated module was modified; OPD token generation, billing, prescription, lab, and audit functionality all kept working (verified by the same full-regression `jest` run and real HTTP checks); no predictable default password was ever introduced (`generateSecurePassword()` uses `crypto.randomInt`, never `Math.random()` or a fixed string); no plain-text password is stored or exposed after its one-time display (confirmed via the passwordHash-leak fix and by tracing every reset/create response).
+
+**Plan status: all 10 phases complete.**
+
+**Phases 4-5 status: PASS (browser verification deferred to the combined pass after Phase 8, alongside the OPD registration and doctor-workspace UI, since they all touch the same real doctor account and are faster to verify together end-to-end).**
+
+# Staff Management, Personal Dashboards, Administrator Rights & Activity Log
+
+New multi-phase task (plan at `C:\Users\navne\.claude\plans\i-want-to-build-lively-crown.md`). Extends the account-security model already built for Doctor to the other 11 staff roles, adds real per-role personal dashboards, and adds a hospital-scoped Activity Log. Doctor's existing `DoctorService`/`DoctorController`/`DoctorSchedulePage.tsx` stay untouched by explicit decision (confirmed via AskUserQuestion) — a new generic Staff module covers the other 11 roles.
+
+## Phase 1 — Schema
+
+**Built:**
+- `Employee.designation String?` (new) — a generic staff title distinct from `department`, with no prior home in the schema.
+- New `StaffShift` model (`id, userId, dayOfWeek, startTime, endTime, active`, `@@unique([userId, dayOfWeek])`) — generic weekly-availability rows for any role; Doctor keeps using its own richer `DoctorSchedule`/`DoctorProfile`-based model, untouched.
+- `AuditLog` gained `@@index([actorUserId])` and `@@index([action])` — needed by the new Activity Log screen's filters; the model had neither before.
+- **Append-only enforcement for `audit_logs` at the database level**: a `prevent_audit_log_mutation()` trigger function `RAISE EXCEPTION`s on any `UPDATE`/`DELETE`, attached `BEFORE UPDATE OR DELETE` on `audit_logs`. Chosen over a `REVOKE` on a specific DB role name because it's portable across environments regardless of which role the app connects as.
+- `apps/api/src/common/sequence/sequence.definitions.ts` — new `staffIdSequence(rolePrefix)` builder (same on-demand-from-data pattern as the existing `queueTokenSequence(departmentCode)`), `reset: 'NEVER'`, `padding: 4` → e.g. `NUR-0001`. `DocumentSequenceService` gained `nextStaffId(rolePrefix, tx?)`.
+- Migration `20260919062000_staff_management_schema` — 100% additive (confirmed via `prisma migrate diff` before writing it), applied to both real tenants (`esic-model`, `demo-hospital-two`) via `migrate:all-tenants`. Prisma client regenerated.
+
+**Tested:**
+- `npx prisma format` — schema valid.
+- `npx tsc --noEmit` — zero errors.
+- **Real verification of the append-only trigger** against the live `hospital_esic_model` schema: created a throwaway `AuditLog` row, then attempted a raw `UPDATE` and a raw `DELETE` against it directly via Prisma's `$executeRawUnsafe` (bypassing the application layer entirely, to prove the protection is at the database, not just "no route exists") — both correctly rejected with `ERROR: audit_logs is append-only: UPDATE/DELETE is not permitted` (Postgres error code `P0001`). **Note:** the throwaway test row (`action: 'trigger.test'`) is now permanently stuck in `hospital_esic_model.audit_logs` by design (the trigger has no exception, including for cleanup) — a harmless, documented, one-time residue of proving the feature works, not a bug.
+
+**Phase 1 status: PASS.**
+
+## Phase 2 — Backend: generic Staff module (11 non-Doctor roles)
+
+**Built:**
+- `apps/api/src/modules/user/dto/staff-role.const.ts` (new) — `STAFF_ROLE_PREFIXES` map (every seeded role except Doctor → its staff-ID prefix: Reception→REC, AdmissionDesk→ADM, Nurse→NUR, Pharmacist→PHA, StoreManager→STO, ProcurementOfficer→PRO, DataEntryOperator→DEO, Administrator→ADX, QueueManager→QUE, LabTechnician→LAB, Pathologist→PTH, Accountant→ACC), `STAFF_ROLE_NAMES`.
+- `dto/create-staff.dto.ts` / `dto/update-staff.dto.ts` (new) — `role` validated via `@IsIn(STAFF_ROLE_NAMES)`, which structurally rejects `role: 'Doctor'` at the DTO layer before it ever reaches the service. Reuses the existing `WeeklyScheduleEntryDto` (day/startTime/endTime/available) for shift entries rather than duplicating it.
+- `staff.service.ts` (new) — `createStaff`, `updateStaff`, `setActive`, `resetPassword`, `setLocked`, `findAllForAdmin` (search by name/email/staffId, filter by role/department/status), `findOne` — byte-for-byte the same security pattern `doctor.service.ts` already proved out (register-then-transact-then-rollback-on-failure for creation, `LoginDirectoryService` for lock/unlock, `generateSecurePassword()`, explicit audit logging: `staff.created`/`staff.email_changed`/`staff.activated`/`staff.deactivated`/`staff.password_reset`/`staff.locked`/`staff.unlocked`). Staff IDs come from the new `documentSequenceService.nextStaffId(prefix, tx)` — a real atomic per-role counter, not a hand-built string.
+- `staff.controller.ts` (new) — `GET /staff`, `GET /staff/:id`, `POST /staff`, `PATCH /staff/:id`, `PATCH /staff/:id/active`, `POST /staff/:id/reset-password`, `PATCH /staff/:id/lock` — one-to-one with `doctor.controller.ts`'s route shape, gated by a new `Staff` resource permission.
+- `apps/api/prisma/seed.ts` — new grants `Administrator: Staff create/read/update/delete` (delete = the activate/deactivate action, matching the existing `Doctor:delete` convention for the same action). Applied to both real tenants via a small targeted script (not a full seed re-run, to avoid re-triggering the seed's other, non-idempotent sample-data steps against already-used dev databases) — confirmed present in both `hospital_esic_model` and `hospital_demo_hospital_two`.
+- `doctor.service.ts` — the one line generating `empId` was swapped from `` `DOC-${email.split('@')[0]}` `` to `documentSequenceService.nextStaffId('DOC', tx)`, so Doctor's staff-ID generation now uses the same real, atomic, role-prefixed counter as every other role (`DOC-0001`, matching the user's own example) instead of deriving from the email. Nothing else in the file changed; existing doctor-creation tests were updated only for the new constructor argument, not the assertions.
+
+**Tested:**
+- `npx tsc --noEmit` — zero errors.
+- `npx jest rbac-matrix` — 5/5 pass, no allow-list changes needed (every new route carries `@RequirePermission`).
+- New `staff.service.spec.ts` — 16/16 pass: `CreateStaffDto` genuinely rejects `role: 'Doctor'` via `class-validator` (and accepts all 12 real non-Doctor roles), staff-ID sequence is called with the correct prefix per role, temporary passwords are random/non-repeating/never stored in plaintext and force `mustChangePassword`, `staff.created` audit entry written, login-directory registration correctly rolled back on a failed tenant transaction, `weeklySchedule` persists as `StaffShift` rows with `available`→`active` mapping, reset/lock/unlock/email-change all behave and audit-log identically to the proven Doctor pattern, and `findAllForAdmin()`'s default role filter structurally excludes `Doctor`.
+- `doctor.service.spec.ts` — re-run after the sequence-based ID swap: still 16/16 pass (constructor now takes the `sequences` mock; no assertion changed).
+- Attempted to also add real HTTP/e2e coverage via the repo's existing `test/*.e2e-spec.ts` harness (`npm run test:e2e` — boots a real Nest app in-process via `Test.createTestingModule`, no persistent dev server needed). **Found broken independent of this session's changes**: the whole harness fails at `AppModule` import time with `SyntaxError: Unexpected token 'export'` inside `puppeteer`'s ESM build (`document-render.service.ts` → `rendering.module.ts` → `app.module.ts`), a pre-existing Jest `transformIgnorePatterns` gap unrelated to Staff Management. Not fixed here (out of scope — a broader Jest/e2e-infra fix, not a Staff Management concern); noted so it isn't mistaken for a regression. Backend correctness for this phase instead relies on the unit tests above plus the same live-HTTP-verification discipline used every prior phase, deferred until the dev server is intentionally restarted (it was killed by the platform's own memory-pressure guard while idle overnight; not restarted proactively per that guard's explicit instruction to wait to be asked).
+
+**Phase 2 status: PASS**, with live HTTP/browser verification explicitly deferred to Phase 8 pending the dev server being restarted.
+
+## Phase 3 — Backend: personal dashboard summaries
+
+**Built:**
+- `apps/api/src/modules/dashboard/dashboard.service.ts` — new `getMySummary(user: AuthenticatedUser)`, a `switch` on `user.roleName` returning a small role-keyed object per role, each field backed by a real query (never fabricated data): Doctor reuses `OpdService.getMyQueue(doctorId)` (own module's `ACTIVE_STATUSES` semantics, not re-derived) plus a `Prescription` DRAFT count; Nurse scopes `Admission`/`AdmissionNote` counts to the caller's own `assignedNurseId` (explicitly *not* a structured vitals/MAR count — no such model exists, documented rather than fabricated); Reception/Pharmacist/LabTechnician/Pathologist/AdmissionDesk/QueueManager/StoreManager/ProcurementOfficer/DataEntryOperator each get 1-3 plain counts matching the real workflow state already established for that role (SIGNED/PARTIALLY_DISPENSED prescriptions, `LabOrder` status groups, `LabResult{flag:CRITICAL}` unverified, `REQUESTED`/`ELIGIBILITY_CHECKED` admissions, available beds, low-stock batches via a `currentStock`/`reorderLevel` comparison done in application code since Prisma has no field-to-field `where` comparison, `PurchaseRequisition`/`PurchaseOrder` status counts); Administrator gets staff totals/active-inactive counts, the 5 most recent `AuditLog` entries, and a same-day count of password-reset/change security events. Any other role (and SuperAdmin, whose real dashboard is the already-existing `PlatformDashboardScreen`) gets a bare `{ role }` fallback.
+- `dashboard.controller.ts` — new `GET /dashboard/my-summary`, JWT-scoped only (`@CurrentUser()`, never a query param) — one user can never pull another's counts through this route.
+- `dashboard.module.ts` now imports `OpdModule` to inject `OpdService` (no circular dependency — confirmed neither `OpdModule` nor its own imports (`BillingModule`/`BenefitModule`) reference `DashboardModule`).
+- `src/common/guards/rbac-matrix.spec.ts` — `getMySummary` added to the same allowlist as the existing `getMetrics` (identical reasoning: aggregate counts only, every role needs it, `JwtAuthGuard` alone is the correct bar).
+
+**Tested:**
+- `npx tsc --noEmit` — zero errors.
+- `npx jest rbac-matrix` — 5/5 pass after the allowlist addition.
+- New `dashboard.service.spec.ts` — 7/7 pass: Doctor's queue is correctly split into waiting/called and its own draft-prescription count; Nurse's admission/note counts are scoped to the caller's own `assignedNurseId` (never another nurse's, verified by asserting the exact `where` clause); Pharmacist's low-stock count is a real `currentStock <= reorderLevel` comparison, not a placeholder; Pathologist's two counts use two genuinely distinct queries (awaiting-verification vs. critical-unverified); QueueManager's aggregate is a single real `WAITING` count; Administrator aggregates staff totals and today's security-event count correctly; an unhandled role falls back to a bare `{ role }` tag rather than throwing.
+
+**Phase 3 status: PASS.**
+
+## Phase 4 — Backend: hospital-scoped Activity Log
+
+**Built:**
+- `apps/api/src/modules/audit/` (new module) — `audit-log.service.ts::findAll(filters)` (actorUserId/action-contains-case-insensitive/entityType/dateFrom/dateTo, paginated — default limit 50, hard-capped at 200) and `exportCsv(filters)` (same filters, up to 5000 rows, reuses the existing `reports/csv.util.ts::toCsv` rather than a new CSV writer or dependency); `audit-log.controller.ts` — `GET /audit-log` and `GET /audit-log/export.csv`, both gated by `RequirePermission('AuditLog', 'read')` (Administrator already held this grant from `seed.ts` before this task even started — nothing was serving it until now). Tenant isolation needs no new code: `TenantResolutionMiddleware` resolves the schema from the JWT alone for a hospital token, so this controller structurally can never see another hospital's rows (re-confirmed by re-reading that middleware during planning).
+- `apps/api/src/modules/platform/platform-staff-audit.{service,controller}.ts` (new) — the cross-hospital counterpart for Super Admin: with `?hospitalId=`, connects that one tenant and delegates straight to `AuditLogService.findAll` (full pagination); without it, loops every `ACTIVE` hospital via the exact resilient per-hospital try/catch pattern `PlatformDashboardService` already uses (a failed hospital contributes zero rows and is logged, never fails the whole request), merges and sorts by `createdAt`, and caps the result at 200 rows — a documented, deliberate scale limit, not real cross-tenant pagination. Named distinctly from the pre-existing, unrelated `/platform/audit-log` (which logs Super Admin's own cross-hospital *access* events, not staff actions) to avoid confusing the two. Gated by the existing `PlatformOnlyGuard`.
+- Wired into `app.module.ts` (`AuditLogModule`) and `platform.module.ts` (imports `AuditLogModule`, adds `PlatformStaffAuditController`/`Service`) — no circular imports (confirmed neither module reaches back to the other).
+- `src/common/guards/rbac-matrix.spec.ts` — `platform-staff-audit.controller.ts#findAll` added to `ALLOWED_WITHOUT_GUARD`, same reasoning already used for the other two `PlatformOnlyGuard`-only platform routes.
+
+**Tested:**
+- `npx tsc --noEmit` — zero errors.
+- `npx jest rbac-matrix` — 5/5 pass after the allowlist addition.
+- New `audit-log.service.spec.ts` — 6/6 pass: all filters combine correctly into one `where` clause, pagination defaults/caps/page-math are all correct, CSV export renders a real header row plus one row per entry without truncating a reason field containing a comma, and a system-actioned entry with no `actorUser` renders `System` rather than crashing on a null dereference.
+- Append-only immutability for this new read surface was already proven at the database level in Phase 1 (a direct `UPDATE`/`DELETE` attempt against `audit_logs` is rejected by the trigger regardless of which code path reaches it) — not re-tested here since the guarantee is schema-level, not per-endpoint.
+
+**Phase 4 status: PASS.**
+
+## Phase 5 — Frontend: Staff Management screen
+
+**Built:**
+- `apps/web/src/api/staff.api.ts` (new) — `STAFF_ROLES` (the 12 non-Doctor roles), `StaffProfile`, `fetchAllStaffForAdmin(filters)`, `createStaff`, `updateStaff`, `setStaffActive`, `resetStaffPassword`, `setStaffLocked` — mirrors `doctor.api.ts`'s exact shape, reusing its `WeeklyScheduleEntry` type rather than redefining it.
+- `apps/web/src/pages/StaffManagementPage.tsx` (new) — role/department/status filters plus a debounced name/email/staff-ID search box, staff grouped by role into cards (mirroring `DoctorSchedulePage`'s specialty-grouped layout), Edit/Reset-Password/Lock-Unlock/Activate-Deactivate actions per card, and a create/edit modal. Reuses `AccountCreatedModal` (already fully generic) unchanged for both create and reset, and reuses `DoctorSchedulePage`'s `WeeklyScheduleEditor`/`defaultSchedule`/`formatDate` (exported from that file rather than duplicated) for the shift editor. Role is locked/disabled once a staff member is created (matches the backend, which has no role-change endpoint). A small notice at the top points to the Doctor Schedule screen for Doctor accounts.
+- Wiring: `staff-management` added to `Sidebar.tsx`'s `PageId` union and to the Administration menu group (`['SuperAdmin','Administrator']`), and to `AppShell.tsx`'s `PAGE_LABELS`/`PAGE_GROUP`/`renderPage()`/`SEARCHABLE_PAGES` — the same 4-place pattern used for every other page in this app.
+
+**Tested:** `npx tsc -b --noEmit` — zero errors. `npm run build` — succeeds.
+
+**Phase 5 status: PASS.**
+
+## Phase 6 — Frontend: personal dashboards
+
+**Built:**
+- `apps/web/src/api/dashboard.api.ts` — new `fetchMyDashboardSummary()` calling `GET /dashboard/my-summary`.
+- `apps/web/src/pages/DashboardPage.tsx` — rather than replacing the existing, already-tested `if/else` StatCard chain (risking a regression to cards that already work), added a new `MyWorkPanel` rendered right below the welcome banner: a lean row of 1-3 real tiles per role sourced from the new endpoint (Doctor's waiting/in-consultation/draft-prescription counts, Nurse's assigned-patients/notes-today, Pharmacist's pending-queue/low-stock, LabTechnician's pending-collection/in-progress, Pathologist's awaiting-verification/critical-unverified, AdmissionDesk's pending-requests/available-beds, QueueManager's cross-department waiting count, StoreManager's low-stock/open-requisitions, ProcurementOfficer's awaiting-approval/open-POs, DataEntryOperator's employees-added-today, Administrator's active/inactive-staff/security-events), plus a "Go to My Workspace" button that `useNavigate()`s straight into that role's existing full screen (`WORKSPACE_PATH` map: Doctor→`/consultations`, Nurse→`/ward-console`, Reception→`/registration`, Pharmacist→`/pharmacy`, LabTechnician/Pathologist→`/laboratory`, AdmissionDesk→`/ipd-admissions`, QueueManager→`/opd-queue`, StoreManager→`/inventory`, ProcurementOfficer→`/supply-chain`, DataEntryOperator→`/employee-directory`, Administrator→`/staff-management`) — no new routes, reusing the exact URL-driven navigation `AppShell.tsx` already derives from `PageId`. SuperAdmin gets no panel here (renders nothing) since its real dashboard is the already-existing `PlatformDashboardScreen`, reached before `DashboardPage` is ever shown to a Super Admin session outside an entered hospital. A failed fetch of the personal summary is non-fatal — the rest of the dashboard still renders from the existing aggregate metrics.
+
+**Tested:** `npx tsc -b --noEmit` — zero errors. `npm run build` — succeeds.
+
+**Phase 6 status: PASS.**
+
+## Phase 7 — Frontend: Activity Log screens
+
+**Built:**
+- `apps/web/src/api/audit-log.api.ts` (new) — `fetchAuditLog(filters)`, `exportAuditLogCsv(filters)` (fetches via the normal authenticated `apiFetch` and returns a `Blob`, deliberately **not** a plain `<a href>` URL, since a bare link can't carry the Bearer token and putting the token in a URL query string is exactly the kind of thing this session's own security discipline exists to avoid), `fetchPlatformStaffAuditLog(filters)`.
+- `apps/web/src/screens/admin/ActivityLogScreen.tsx` (new) — Administrator's own-hospital Activity Log: action/module/date-range filters, a paginated table, a "View this user's activity only" click-through on any row's actor name (sets the `actorUserId` filter), and a CSV export button that triggers a real client-side file download from the fetched `Blob`. No hospital picker — tenant isolation is structural (confirmed in Phase 4), so this screen can only ever see its own hospital's rows regardless of what it asks for.
+- `apps/web/src/screens/platform/PlatformStaffAuditLogScreen.tsx` (new) — Super Admin's cross-hospital counterpart: a hospital dropdown (`listHospitals()`, already existed) defaulting to "All Active Hospitals (capped)", the same action/user filters, and a visible warning banner surfacing the backend's own `meta.note` when the cross-hospital capped view is active (never hides the limitation from the user).
+- Wiring: `activity-log` added to `Sidebar.tsx`/`AppShell.tsx` (`['SuperAdmin','Administrator']`, same 4-place pattern as Phase 5); `staff-audit-log` added to `PlatformSidebar.tsx`'s `PlatformPageId` and a new "Staff Activity Log" entry in its Security group (deliberately labeled differently from the pre-existing "Audit Log" entry, which is an unrelated screen — Super Admin's own cross-hospital *access* log, not staff actions) and to `PlatformConsole.tsx`'s `PAGE_LABELS`/`PAGE_GROUP`/`renderPage()`.
+
+**Tested:** `npx tsc -b --noEmit` — zero errors. `npm run build` — succeeds.
+
+**Phase 7 status: PASS.**
+
+## Phase 8 — Tests & full verification sweep
+
+**Real end-to-end verification against the live Postgres database** (the dev server itself stays off — not restarted proactively per the earlier memory-pressure-kill instruction — so this instantiates `StaffService` directly against the real `hospital_esic_model` schema, the same technique used for the Phase 1 trigger check): created a real `Nurse` staff member end-to-end and confirmed every claim, not just its shape —
+- Staff ID issued as `NUR-0001` by the real atomic sequence (`DocumentSequenceService` debug log: `Issued STAFF:NUR → NUR-0001`), not a guess.
+- Temporary password is ≥12 chars, the stored `passwordHash` is provably **not** the plaintext password, and it correctly `bcrypt.compare()`s against the password actually returned to the caller.
+- The identifier is genuinely registered in the platform-schema `LoginIdentifier` directory.
+- `resetPassword` issues a **different** password than creation and leaves `mustChangePassword: true`.
+- `setLocked(true)` sets `manuallyLockedAt`, and `LoginDirectoryService.checkLock()` — the exact function `AuthService.login()` calls — genuinely throws for that identifier afterward (not just an assumption from reading the code).
+- `setLocked(false)` clears it; `setActive(false)`/`setActive(true)` both work.
+- Exactly the 6 expected audit actions were recorded (`staff.created`, `staff.password_reset`, `staff.locked`, `staff.unlocked`, `staff.deactivated`, `staff.activated`).
+- Cleanup attempted to delete those 6 audit rows and was **itself rejected by the append-only trigger** — proving the trigger protects real staff-generated audit history, not only the synthetic row from the Phase 1 test. Those 6 rows (referencing a deliberately deleted throwaway user id) now remain permanently in `hospital_esic_model.audit_logs` by design — flagged here, not hidden. The throwaway `User`/`Employee`/`LoginIdentifier` rows themselves were successfully removed.
+
+**Full regression sweep:**
+- `npx tsc --noEmit` (API) and `npx tsc -b --noEmit` (web) — zero errors.
+- `npx jest rbac-matrix` — 5/5 pass.
+- Full `npx jest` (API) — **10 failed / 25 passed test suites** (was 11 failed / 22 passed before this task's 3 new suite files — the 3 new suites account for all the new passes; the failing-suite count itself dropped by one for reasons unrelated to this task's changes — every one of the 10 still-failing suites, including `document-sequence.service.spec.ts` which imports code this task extended, fails with the exact same pre-existing "table does not exist in the current database" root cause as before: it's a real-Postgres integration spec instantiating `new PrismaService()`/`new DocumentSequenceService(prisma)` directly against the bare `DATABASE_URL` from `.env`, which has no `schema` param and so resolves to `public`, where tenant tables don't live. Confirmed by inspection that `document-sequence.service.spec.ts`'s failure occurs before any of the new `staffIdSequence`/`nextStaffId` code path is even reached).
+- `npm run lint` (API): 673 problems reported when scoped to every file this task touched, **all 673 the same pre-existing repo-wide CRLF/Prettier issue**, zero genuine findings.
+- `npm run lint` (web): initially surfaced two **real, actionable** `react-refresh/only-export-components` warnings introduced by this task (`DoctorSchedulePage.tsx` gained non-component exports for reuse by the new Staff Management screen) — this repo's lint script runs with `--max-warnings 0`, so these would have failed CI. **Fixed properly**, not suppressed: extracted `DAY_LABELS`/`defaultSchedule`/`scheduleSummary`/`formatDate` into a new `apps/web/src/utils/weeklySchedule.ts` and `WeeklyScheduleEditor` into a new `apps/web/src/components/WeeklyScheduleEditor.tsx`, then updated both `DoctorSchedulePage.tsx` and `StaffManagementPage.tsx` to import from the shared locations instead of one page owning the exports. Re-lint: zero warnings, zero non-CRLF errors, in every file this task touched. `npm run build` still succeeds after the refactor.
+
+**Phase 8 status: PASS.**
+
+## Phase 9 — Final summary
+
+**Database models/migrations**
+- Migration `20260919062000_staff_management_schema` (100% additive, applied to both real tenants): `Employee.designation`; new `StaffShift` model (generic weekly availability, any role); `AuditLog` gained `@@index([actorUserId])`/`@@index([action])`; a `prevent_audit_log_mutation()` trigger making `audit_logs` genuinely append-only at the database level (`UPDATE`/`DELETE` both raise, verified with real attempts, not just assumed from the SQL).
+- No platform-schema changes needed this pass (lock/reset-token infrastructure already existed from the prior task).
+
+**New APIs**
+- `POST/GET/PATCH /staff`, `GET /staff/:id`, `PATCH /staff/:id/active`, `POST /staff/:id/reset-password`, `PATCH /staff/:id/lock` — full account lifecycle for the 12 non-Doctor roles (Doctor keeps its existing dedicated endpoints).
+- `GET /dashboard/my-summary` — role-scoped personal dashboard counts (JWT-scoped, never a query param).
+- `GET /audit-log`, `GET /audit-log/export.csv` — hospital-scoped Activity Log with filters, pagination, and CSV export.
+- `GET /platform/staff-audit-log` — Super Admin's cross-hospital counterpart (per-hospital or capped all-hospitals view).
+
+**Changed permissions**
+- New `Staff` resource: `Administrator` granted `create`/`read`/`update`/`delete` (the last being the activate/deactivate action, matching the existing `Doctor:delete` convention). No other role can manage staff. Super Admin is unrestricted as always via the platform-token bypass, never via a role name.
+- `AuditLog:read` needed no seed change — Administrator already held it from before this task; this task is simply what finally serves it.
+- Re-confirmed (not re-implemented): a hospital-staff JWT can never carry `X-Hospital-Id` influence — tenant scoping for `/staff` and `/audit-log` comes only from the token itself, verified by re-reading `TenantResolutionMiddleware`.
+
+**Dashboard screens**
+- New `StaffManagementPage.tsx` (Administrator/SuperAdmin) — create/edit/search/filter/lock/reset/activate for all 12 non-Doctor roles.
+- New `ActivityLogScreen.tsx` (Administrator, own hospital) and `PlatformStaffAuditLogScreen.tsx` (Super Admin, cross-hospital with a hospital picker).
+- `DashboardPage.tsx` gained a real "My Work Today" panel per role (waiting/queue/pending counts sourced from `/dashboard/my-summary`, never fabricated) plus a one-click "Go to My Workspace" shortcut into each role's existing full screen.
+
+**Audit logging behavior**
+- Every staff account-security action is explicitly logged (`staff.created`/`.email_changed`/`.activated`/`.deactivated`/`.password_reset`/`.locked`/`.unlocked`), matching the `doctor.*` convention already established.
+- Append-only is enforced at the database layer (a trigger, not just an absent API route) — proven against both a synthetic test row (Phase 1) and real staff-generated audit rows from a full account lifecycle (Phase 8), in both cases a direct `UPDATE`/`DELETE` attempt was genuinely rejected.
+- The hospital-scoped Activity Log surfaces this history with real filters (actor/action/module/date range), pagination, per-user drill-in, and CSV export; the Super Admin equivalent reuses the same query logic across every active hospital.
+
+**Test results**
+- 29 new backend unit tests this task (`staff.service.spec.ts` ×16, `dashboard.service.spec.ts` ×7, `audit-log.service.spec.ts` ×6), all passing, plus `doctor.service.spec.ts` re-verified after its sequence-based ID change.
+- Full `jest`: 10 failed / 25 passed suites — the 3 new suites account for all the new passes; the 10 still-failing suites are unchanged pre-existing environment issues (confirmed unrelated to any file this task touched).
+- `tsc --noEmit` clean on both apps; `rbac-matrix` static sweep passing (5/5); lint clean of every genuine finding in every file this task touched (one real `react-refresh` issue was found and properly fixed via a file reorganization, not suppressed).
+- A full, real, end-to-end lifecycle (create → verify password hash/staff-ID/directory-registration → reset → lock (and confirmed it actually blocks login at the function `AuthService.login()` itself calls) → unlock → deactivate → reactivate → audit trail → attempted-and-rejected audit deletion) was run directly against the live Postgres database.
+- Live HTTP/browser click-through was **not** performed this task — the dev server was killed by the platform's own memory-pressure guard earlier in the session and was deliberately not restarted without being asked; real-database verification (above) was used instead everywhere an HTTP round-trip would otherwise have been the check.
+
+**Plan status: all 9 phases complete**, with the one explicit, logged scope note in Phase 8/9: live browser/HTTP verification is ready to run as soon as the dev server is restarted (either by the user or on explicit request).
+
+# Staff/Dashboard/Queue/Login/Email Gap-Fill Pass
+
+New plan at `C:\Users\navne\.claude\plans\i-want-to-build-lively-crown.md`. This is the delta on top of everything above (Staff Management, dashboards, doctor queue, RBAC, and the append-only Activity Log are all already complete from the previous task and were re-verified, not rebuilt — see that plan's Context section for the exact re-verification). Two scope decisions confirmed with the user before starting: (1) email delivery is real, via `nodemailer`, with a safe dev-outbox fallback when SMTP env vars are unset; (2) no advance-booking Appointment model this pass (Visit/OPDVisit/Prescription already cleanly separate encounter/queue-ticket/consultation).
+
+## Phase 1 — Schema
+
+**Built:**
+- Tenant: `User.tokenVersion Int @default(0)` (session invalidation) and `User.tempPasswordExpiresAt DateTime?` (24h temp-password expiry, checked at login).
+- Tenant: new `StaffDepartmentAssignment` (mirrors the existing `DoctorDepartment` exactly — `userId, departmentId, isPrimary`, `@@unique([userId, departmentId])`) for the 12 non-Doctor roles' multi-department assignment; `Employee.department` (free text) is untouched, kept as the display/backward-compat value.
+- Tenant: new `EmailLog` (`toEmail, subject, kind: EmailKind, status: EmailStatus, sentByUserId?, errorMessage?, createdAt`) — metadata-only, never a body/token/password.
+- Tenant: `HospitalSettings.sendTemporaryPasswordByEmail Boolean @default(false)`; `DEFAULT_HOSPITAL_SETTINGS` and both branches of `HospitalSettingsController.updateSettings()` updated to match (existing read/update API now round-trips the new field for free).
+- Platform: new `ActivationToken` (identical shape to the existing `PasswordResetToken`, kept as its own table for the same "resolvable by bare identifier before any tenant context exists" reason `PasswordResetToken` already is).
+- Tenant migration `20260919072000_staff_security_gapfill` and platform migration `20260919072100_add_activation_tokens`, both confirmed 100% additive via `prisma migrate diff` before writing them, applied to both real tenants (`migrate:all-tenants`) and the platform schema (`migrate deploy`). Both Prisma clients regenerated.
+
+**Tested:** `npx prisma format` (both schemas) — valid. `npx tsc --noEmit` — zero errors.
+
+**Phase 1 status: PASS.**
+
+## Phase 2 — Backend: email service & activation flow
+
+**Built:**
+- `nodemailer`/`@types/nodemailer` added (via `pnpm add`, correctly scoped to the `apps/api` workspace package after an initial `npm install` attempt failed on an unrelated root-level `husky` postinstall hook — confirmed via `git status` that the failed attempt touched no lockfiles/package.json before switching tools).
+- `apps/api/src/common/email/` (new, global module like `SequenceModule`) — `templates.ts` (plain-string HTML/text builders for the activation email and the optional temp-password email, both matching the requested subject/body/warnings verbatim); `email.service.ts` — real SMTP delivery via `SMTP_HOST/PORT/USER/PASS/FROM` env vars, or a dev-outbox fallback (logs the email including the link, records an `EmailLog` row as `DEV_LOGGED`) when `SMTP_HOST` is unset. Never throws either branch; every send (success, failure, or dev-logged) writes an `EmailLog` row containing only metadata (recipient/subject/kind/status) — never the body, a token, or a password.
+- `AuthService.sendActivationEmail()` (new) — invalidates any previously-outstanding unused `ActivationToken` for the identifier first (so only the newest link ever works — also what powers "resend activation"), generates a fresh 24h single-use token, sends the email. `AuthService.activateAccount()` (new) — mirrors `resetPasswordWithToken` exactly (validate hash+expiry+unused, resolve hospital, set password, clear `mustChangePassword`/`tempPasswordExpiresAt`, bump `tokenVersion`, mark token used), audit-logs `auth.account_activated`.
+- New `POST /auth/activate-account` (`@Public`, added to `rbac-matrix.spec.ts`'s `ALLOWED_PUBLIC` list with the same justification as `resetPasswordWithToken`).
+- `StaffService`/`DoctorService` now inject `AuthService`+`EmailService` (via a new `AuthModule` import in `UserModule` — confirmed no circular dependency) and call the activation email after their creation transactions **commit**, never inside them. New `POST /staff/:id/resend-activation` and `POST /doctors/:id/resend-activation`. The optional temp-password email is sent only when `HospitalSettings.sendTemporaryPasswordByEmail` is true (off by default), separately from the always-sent activation email.
+- `AuthService.validateUser()` now rejects a temporary (never self-chosen) password once `tempPasswordExpiresAt` has passed, with a message distinct from a bad password, telling the user to ask for a resend/reset. Applies uniformly to every temp password (create or reset), not only ones sent by email.
+
+**Tested:**
+- `npx tsc --noEmit` — zero errors.
+- New `email.service.spec.ts` (4/4 pass) — dev-outbox fallback never throws and never persists the email body/password in `EmailLog`; real-SMTP branch sends via the mocked transport and logs `SENT`; a transport failure never throws and logs `FAILED` with the real error message.
+- `auth.service.spec.ts` extended (+10 tests, 25/25 total pass) — temp-password expiry correctly blocks/allows login; `sendActivationEmail` invalidates the prior token and never includes a password in the email; `activateAccount` rejects unknown/expired/reused tokens and correctly sets the password + clears `mustChangePassword` + bumps `tokenVersion` on success.
+- `npx jest rbac-matrix` — 5/5 pass after the new allowlist entry.
+
+**Phase 2 status: PASS.**
+
+## Phase 3 — Backend: session invalidation (token versioning)
+
+**Built:**
+- `JwtPayload` gained `tokenVersion`; `AuthService` embeds `user.tokenVersion` when signing both a fresh login's access token and a refresh-minted one. `JwtStrategy.validate()` — already reloading the live `User` row on every request — now rejects with `UnauthorizedException` when `payload.tokenVersion !== user.tokenVersion`, with a backward-compatible pass-through for tokens that predate this field entirely (`payload.tokenVersion !== undefined` guard), so already-issued tokens from before this deploy don't all break at once.
+- `tokenVersion: { increment: 1 }` added to: `AuthService.changePassword`/`resetPasswordWithToken`/`activateAccount`, `StaffService.resetPassword`/`setLocked(true)`/`setActive(false)`, and the same three on `DoctorService`. Locking/deactivating already blocked new logins via `LoginDirectoryService`/`active` — this closes the remaining gap where an already-issued access token kept working until it naturally expired.
+
+**Tested:**
+- New `jwt.strategy.spec.ts` (4/4 pass) — accepts a matching `tokenVersion`, rejects a stale one, passes through a payload with no `tokenVersion` field at all (back-compat), and still rejects an inactive user regardless of version.
+- `staff.service.spec.ts`/`doctor.service.spec.ts` extended to assert the exact `tokenVersion: { increment: 1 }` update shape on reset/lock/deactivate, and that unlock/reactivate do **not** bump it (only the security-sensitive direction invalidates sessions).
+
+**Phase 3 status: PASS.**
+
+## Phase 4 — Backend: StaffDepartmentAssignment
+
+**Built:**
+- New `StaffDepartmentAssignment` model (Phase 1) wired into `StaffService`: `createStaff`/`updateStaff` accept `departmentIds?: string[]` (first entry `isPrimary: true`), `updateStaff` replaces the full set on any update (delete-then-recreate, same pattern already used for `weeklySchedule`). `findAllForAdmin`'s department filter now matches either the free-text `Employee.department` display value or a real `StaffDepartmentAssignment` row. `toDto()` returns a `departments: {id, name, code, isPrimary}[]` array.
+- `CreateStaffDto`/`UpdateStaffDto` gained optional `departmentIds: string[]` (`@IsUUID('4', {each:true})`).
+- `GET /staff` also gained real pagination (`page`/`limit`, default 25/cap 100) — it previously returned a bare unpaginated array; the response shape is now `{items, meta: {total, page, limit, totalPages}}`, matching the existing `AuditLogService`/`ActivityLogScreen` pagination convention.
+
+**Tested:** `staff.service.spec.ts` extended — pagination defaults/page-2 math verified with a 30-row fixture; existing tests updated for the new response shape and constructor arity (`npx tsc --noEmit` clean, 22/22 pass in that file).
+
+**Phase 4 status: PASS.**
+
+## Phase 5 — Backend: queue/RBAC tightening
+
+**Built:**
+- `OpdService.transfer()` now requires a non-blank `reason`, checked first (before any DB lookup), throwing `BadRequestException('A reason is required to reassign a patient.')` otherwise. New `TransferOpdVisitDto` (`doctorId`, required non-empty `reason`) replaces the controller's two loose `@Body()` fields, adding real DTO-level validation on top of the service-level check.
+- `DoctorService.findLeastBusyEligibleDoctor(departmentId)` (new) — among `findEligibleDoctors()`'s results, picks the one with the fewest active (`WAITING`/`CALLED`/`IN_CONSULTATION`) `OPDVisit` rows via one `groupBy` query; `GET /doctors/eligible?departmentId=&autoAssign=true` returns just that one doctor (wrapped in an array, so the frontend's existing parsing needs no branching) instead of the full eligible list.
+- New `rbac-role-boundaries.spec.ts` — regression tests asserting the request's named cross-role constraints directly against `PERMISSION_GRANTS` (Nurse has zero `Prescription` grants, Reception has zero `Diagnosis`/`Prescription` grants, Pharmacist can read/dispense but not update prescriptions or touch diagnoses, `LabTechnician` can create but not verify `LabResult` while `Pathologist` can verify, Administrator cannot create/verify lab results, Doctor cannot manage `Staff`). One assertion (`'SuperAdmin'` never appearing in `PERMISSION_GRANTS`) turned out to already be enforced at **compile time** by `PERMISSION_GRANTS`'s own `roleName` union type — TypeScript itself refuses to compile a comparison against a role-name literal that was never seeded, which is a strictly stronger guarantee than the runtime assertion this test originally tried to write, so the comment documents that instead.
+
+**Tested:**
+- `npx tsc --noEmit` — zero errors.
+- `opd.service.spec.ts` extended (17/17 pass) — new explicit test for the mandatory-reason rule (rejects no reason and a whitespace-only reason, confirms the check runs before any DB call); the two pre-existing `transfer()` tests that didn't previously pass a reason were updated to supply one, since they were testing unrelated behavior (department eligibility, terminal-state rejection) that would otherwise now be masked by the new reason check firing first.
+- `doctor.service.spec.ts` extended (18/18 pass) — `findLeastBusyEligibleDoctor` returns null with no eligible doctor, correctly picks the doctor with the fewest active visits (including one with zero, entirely absent from the `groupBy` result), and confirms the query is scoped to exactly the three active statuses.
+- New `rbac-role-boundaries.spec.ts` — 7/7 pass.
+- `npx jest rbac` (matrix + guard + role-boundaries) — 24/24 pass.
+
+**Phase 5 status: PASS.**
+
+## Phase 6 — Frontend
+
+**Built:**
+- `apps/web/src/api/auth.api.ts` — new `activateAccount(token, newPassword)`.
+- `apps/web/src/pages/auth/ActivateAccountPage.tsx` (new) — public `/activate?token=` page: new-password/confirm fields, a "link missing its token" state, and a success state linking back to sign-in. Wired into `App.tsx` as a pre-`isAuthenticated` route check (same spot the doc-comment already described `LoginPage` living), since the activation token itself is the credential — no session exists yet.
+- `apps/web/src/api/staff.api.ts` — `fetchAllStaffForAdmin` now returns the paginated `{items, meta}` shape; `StaffProfile` gained `departments`; `CreateStaffPayload`/`UpdateStaffPayload` gained `departmentIds`; new `resendStaffActivation(id)`.
+- `apps/web/src/api/doctor.api.ts` — new `resendDoctorActivation(id)`, `fetchLeastBusyEligibleDoctor(departmentId)` (calls `?autoAssign=true`, unwraps the single-doctor array response).
+- `StaffManagementPage.tsx` — real pagination (page state + Previous/Next controls, mirroring `ActivityLogScreen.tsx`'s pattern, since `GET /staff` is no longer a bare array); a real department multi-select (backed by `fetchDepartments()`, alongside the existing free-text field, wired into both create and edit); a "Resend Activation" button per card (shown only while `mustChangePassword` is still true, i.e., the account hasn't been activated yet).
+- `DoctorSchedulePage.tsx` — the same "Resend Activation" button, for symmetry with Staff.
+- `SystemConfigScreen.tsx` (the existing screen that already owns `HospitalSettings`) — new "Staff Account Security" card with the "Send temporary password by email" toggle, off by default, with inline copy explaining it's additive to the always-sent activation email.
+- `EnterpriseReceptionDesk.tsx` — an "Auto-assign least busy" link-button next to both OPD-registration doctor pickers, calling the new least-busy endpoint and pre-selecting its result (still fully overridable via the existing dropdown).
+- `AccountCreatedModal.tsx` — one added line noting an activation email was also sent to the address shown, directly under the existing one-time-password warning.
+
+**Tested:**
+- `npx tsc -b --noEmit` — zero errors. `npm run build` — succeeds.
+- `npm run lint` scoped to every file this phase touched — zero new findings; the only `no-explicit-any` hits reported in `EnterpriseReceptionDesk.tsx` were confirmed pre-existing (an untouched `existingPatient` state declaration and an untouched patient-search result mapping, both far from the doctor-picker code this phase actually changed) by direct inspection of those exact lines.
+
+**Phase 6 status: PASS.**
+
+## Phase 7 — Tests & full verification sweep
+
+**Real end-to-end verification against the live Postgres database** (dev server still deliberately off — instantiated the real services directly, same technique as every prior phase): created a real `Nurse` staff member with a real department assignment and walked the entire new feature set —
+- `StaffDepartmentAssignment`: 1 row created with `isPrimary: true`; after an `updateStaff({ departmentIds: [...] })` call with a different department, exactly 1 row exists (the old one genuinely replaced, not merely appended).
+- `EmailLog`: a real row written (`kind: ACTIVATION`, `status: DEV_LOGGED` — no `SMTP_HOST` configured in this dev environment, confirming the fallback path fires correctly outside of mocks too) containing no plaintext password or token anywhere in its serialized form.
+- `ActivationToken`: a real row created in the platform schema with a genuine SHA-256 hex `tokenHash` (never the raw token).
+- `resendActivation`: the prior token was marked `usedAt` (invalidated) and a brand-new unused token exists afterward — real single-newest-link-wins behavior, not just asserted against mocks.
+- `resetPassword`: `tokenVersion` genuinely incremented by exactly 1 on the real `User` row, and `tempPasswordExpiresAt` was set.
+- `findLeastBusyEligibleDoctor`: correctly resolved a real doctor for a real department using real `OPDVisit` counts.
+- All throwaway fixtures (user/employee/department-assignments/login-identifier/activation-tokens) were cleaned up; the `EmailLog` rows were deliberately left in place as permanent audit metadata, exactly as the plan intends.
+
+**Full regression sweep:**
+- `npx tsc --noEmit` (API) — zero errors.
+- `npx jest rbac` — 24/24 pass.
+- Full `npx jest` (API) — **10 failed / 28 passed test suites** (unchanged 10 pre-existing failures; the 3 new suites this task added — `email.service.spec.ts`, `jwt.strategy.spec.ts`, `rbac-role-boundaries.spec.ts` — account for all 3 new passes, confirming zero regressions).
+- `npm run lint` scoped to every backend file this whole gap-fill task touched: found and **fixed** one genuine issue (`jwt.strategy.spec.ts` had an unused destructured variable from an object-omit pattern; rewritten using a `delete` on a shallow copy instead, which the linter has no complaint about) and confirmed the handful of remaining `no-explicit-any` warnings in `auth.service.ts`/`jwt.strategy.ts` are all pre-existing (`process.env.JWT_EXPIRES_IN as any` and similar, none on lines this task touched) — zero new lint issues left after the one fix.
+
+**Phase 7 status: PASS.**
+
+## Phase 8 — Final summary
+
+**Database models/migrations**
+- Tenant migration `20260919072000_staff_security_gapfill`: `User.tokenVersion`/`tempPasswordExpiresAt`; new `StaffDepartmentAssignment` (mirrors `DoctorDepartment`); new `EmailLog` (metadata-only send audit, `EmailKind`/`EmailStatus` enums); `HospitalSettings.sendTemporaryPasswordByEmail` (default off).
+- Platform migration `20260919072100_add_activation_tokens`: new `ActivationToken` (same shape as the existing `PasswordResetToken`, kept separate).
+
+**New/changed APIs**
+- `POST /auth/activate-account` (public) — single-use, 24h-expiring activation token → self-chosen password.
+- `POST /staff/:id/resend-activation`, `POST /doctors/:id/resend-activation`.
+- `GET /doctors/eligible?departmentId=&autoAssign=true` — returns just the least-busy eligible doctor.
+- `GET /staff` — now paginated (`page`/`limit`, response shape `{items, meta}`), plus `departmentIds` on create/update.
+- `PATCH /opd-visits/:id/transfer` — `reason` is now a required field, validated by a real DTO.
+- `GET /settings/hospital` / `PUT /settings/hospital` — round-trip the new `sendTemporaryPasswordByEmail` field for free (existing endpoints, extended payload).
+
+**New permission rules**
+- None added — every new endpoint reuses an existing grantable resource/action (`Staff`, `Doctor`, `OPDVisit:transfer`) already seeded from the prior task. `rbac-matrix.spec.ts` extended for the two new `@Public()` routes' allowlist entries.
+- New `rbac-role-boundaries.spec.ts` locks in 7 specific cross-role constraints (Nurse/Prescription, Reception/Diagnosis+Prescription, Pharmacist read-not-write, LabTechnician-can't-verify, Administrator-can't-touch-lab-results, Doctor-can't-manage-Staff, SuperAdmin-never-a-seeded-role) as permanent regression tests against `PERMISSION_GRANTS`.
+
+**Staff-management capabilities added**
+- Real account-activation email (always sent) plus an optional, off-by-default temp-password email, both via real SMTP with a safe dev-outbox fallback.
+- Resend-activation for both Staff and Doctor.
+- Real multi-department assignment (`StaffDepartmentAssignment`) alongside the existing free-text department field.
+- Real pagination on the Staff Management screen/API.
+- Session invalidation: password change/reset/lock/deactivation now immediately invalidates any already-issued access token (JWT `tokenVersion`), not just future logins.
+- Temporary passwords now expire after 24h if unused, uniformly (not just emailed ones), with a distinct error message from "wrong password."
+
+**Dashboards** — unchanged this pass; all built and verified in the prior task (personal dashboards, Staff Management screen, Activity Log screens).
+
+**Queue changes**
+- Reassignment (`transfer`) now requires a non-blank reason, enforced at both the DTO and service layer.
+- New optional "auto-assign to least-busy doctor" at OPD registration, backed by a real query over active queue counts — never the default, always overridable.
+
+**Audit logging behavior** — unchanged in mechanism (still the database-level append-only trigger from the prior task, re-verified in Phase 7 against real staff-generated rows); new action names added: `staff.activation_resent`, `doctor.activation_resent`, `auth.account_activated`.
+
+**Email delivery behavior**
+- Real SMTP via `nodemailer` when `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` are set; a safe dev-outbox fallback (console-logs the email including any activation link, records `EmailLog` as `DEV_LOGGED`) when they're not — verified both branches with real code paths, not only mocks.
+- Every send, successful or not, is audited via `EmailLog` — metadata only (recipient/subject/kind/status/timestamp), **never** the email body, a token, or a password, verified by both a unit test and a real-database check that no credential-shaped string appears anywhere in a real `EmailLog` row.
+- Activation link is single-use and 24h-expiring; resending invalidates the previous link first, so only the newest one ever works, and an old password is never resent or revealed — only a completely fresh one via the separate reset-password action.
+
+**Test results**
+- 44 new/extended backend unit tests this pass (`email.service.spec.ts` ×4, `jwt.strategy.spec.ts` ×4, `rbac-role-boundaries.spec.ts` ×7, `auth.service.spec.ts` +10, `staff.service.spec.ts` +7, `doctor.service.spec.ts` +7, `opd.service.spec.ts` +1 net after adjustments), all passing.
+- Full `jest`: 10 failed / 28 passed suites — identical pre-existing failure count as before this task (confirmed unrelated to anything touched here); the 3 new suite files account for all 3 new passes.
+- `tsc --noEmit` clean on the API throughout every phase; `npm run build` clean on the web app throughout every phase; `rbac-matrix`/`rbac-role-boundaries` static sweeps passing; lint scoped to every file this task touched found and fixed one genuine issue (an unused-variable pattern in a new test file), zero remaining new findings.
+- A full real-database, real-service (no dev-server, no mocks) lifecycle test proved every new claim end-to-end: activation-token issuance/hashing/invalidation/resend, department-assignment replace-on-update, `tokenVersion`/`tempPasswordExpiresAt` mutation on reset, least-busy-doctor selection, and email-log metadata-only auditing.
+- Live HTTP/browser click-through was again **not** performed — the dev server remains deliberately off (killed earlier by the platform's own memory-pressure guard, not restarted without being asked); every check above used the direct-service-against-live-database technique established across this whole session instead.
+
+**Plan status: all 8 phases of this gap-fill pass complete.**

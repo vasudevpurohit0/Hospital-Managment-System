@@ -13,6 +13,7 @@ export const DEFAULT_HOSPITAL_SETTINGS = {
   notifyOnAdmission: true,
   notifyOnDischarge: true,
   notifyOnLowStock: true,
+  sendTemporaryPasswordByEmail: false,
 };
 
 // The default settings singleton row is seeded per-tenant-schema by
@@ -51,6 +52,7 @@ export class HospitalSettingsController {
         notifyOnAdmission: body.notifyOnAdmission ?? DEFAULT_HOSPITAL_SETTINGS.notifyOnAdmission,
         notifyOnDischarge: body.notifyOnDischarge ?? DEFAULT_HOSPITAL_SETTINGS.notifyOnDischarge,
         notifyOnLowStock: body.notifyOnLowStock ?? DEFAULT_HOSPITAL_SETTINGS.notifyOnLowStock,
+        sendTemporaryPasswordByEmail: body.sendTemporaryPasswordByEmail ?? DEFAULT_HOSPITAL_SETTINGS.sendTemporaryPasswordByEmail,
       },
       update: {
         ...(body.workingHoursStart !== undefined && { workingHoursStart: body.workingHoursStart }),
@@ -62,6 +64,7 @@ export class HospitalSettingsController {
         ...(body.notifyOnAdmission !== undefined && { notifyOnAdmission: body.notifyOnAdmission }),
         ...(body.notifyOnDischarge !== undefined && { notifyOnDischarge: body.notifyOnDischarge }),
         ...(body.notifyOnLowStock !== undefined && { notifyOnLowStock: body.notifyOnLowStock }),
+        ...(body.sendTemporaryPasswordByEmail !== undefined && { sendTemporaryPasswordByEmail: body.sendTemporaryPasswordByEmail }),
       },
     });
 

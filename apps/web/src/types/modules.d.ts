@@ -163,6 +163,8 @@ declare module 'lucide-react' {
   export const PlayCircle: LucideIcon;
   export const Ban: LucideIcon;
   export const Edit2: LucideIcon;
+  export const ShieldQuestion: LucideIcon;
+  export const Unlock: LucideIcon;
 
   export type { LucideIcon, LucideProps };
 }

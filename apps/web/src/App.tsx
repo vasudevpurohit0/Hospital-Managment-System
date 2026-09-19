@@ -4,11 +4,19 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import { LoginPage } from './pages/LoginPage';
 import { AppShell } from './components/layout/AppShell';
 import { PlatformConsole } from './components/layout/PlatformConsole';
+import { ForcedChangePasswordScreen } from './pages/auth/ForcedChangePasswordScreen';
+import { ActivateAccountPage } from './pages/auth/ActivateAccountPage';
 
 /* ═══════════════════════════════════════════════════════════
    Main App Controller
    Auth Gate:
+     /activate?token=...          -> ActivateAccountPage (reachable with no
+                                      session at all -- the activation token
+                                      itself is the credential)
      not authenticated            -> LoginPage (one unified form for everyone)
+     hospital staff, must change
+       password (first login or
+       an admin-triggered reset)  -> ForcedChangePasswordScreen
      platform mode, no hospital   -> PlatformConsole
      otherwise (hospital staff,
        or platform mode with a
@@ -16,7 +24,13 @@ import { PlatformConsole } from './components/layout/PlatformConsole';
    ═══════════════════════════════════════════════════════════ */
 
 const AppContent: React.FC = () => {
-  const { isAuthenticated, isLoading, mode, activeHospital } = useAuth();
+  const { isAuthenticated, isLoading, mode, activeHospital, user } = useAuth();
+
+  // Reachable with no auth token at all -- the activation link's token is
+  // the credential, same reasoning as LoginPage needing no prior session.
+  if (window.location.pathname === '/activate') {
+    return <ActivateAccountPage />;
+  }
 
   if (isLoading) {
     return (
@@ -33,6 +47,10 @@ const AppContent: React.FC = () => {
 
   if (!isAuthenticated) {
     return <LoginPage />;
+  }
+
+  if (mode === 'hospital' && user?.mustChangePassword) {
+    return <ForcedChangePasswordScreen />;
   }
 
   if (mode === 'platform' && !activeHospital) {

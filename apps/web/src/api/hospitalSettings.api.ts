@@ -8,6 +8,7 @@ export interface HospitalSettingsRecord {
   notifyOnAdmission: boolean;
   notifyOnDischarge: boolean;
   notifyOnLowStock: boolean;
+  sendTemporaryPasswordByEmail: boolean;
   updatedAt: string;
 }
 
@@ -33,6 +34,7 @@ export interface UpdateHospitalSettingsPayload {
   notifyOnAdmission?: boolean;
   notifyOnDischarge?: boolean;
   notifyOnLowStock?: boolean;
+  sendTemporaryPasswordByEmail?: boolean;
 }
 
 export async function updateHospitalSettings(

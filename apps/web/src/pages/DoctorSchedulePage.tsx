@@ -1,7 +1,27 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Clock, Calendar, Stethoscope, Loader2, Plus, Pencil, Ban, RotateCcw, X, IndianRupee, Building2 } from 'lucide-react';
+import {
+  Clock,
+  Calendar,
+  Stethoscope,
+  Loader2,
+  Plus,
+  Pencil,
+  Ban,
+  RotateCcw,
+  X,
+  IndianRupee,
+  Building2,
+  KeyRound,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  ShieldQuestion,
+  Mail,
+} from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { AccountCreatedModal } from '../components/AccountCreatedModal';
+import { WeeklyScheduleEditor } from '../components/WeeklyScheduleEditor';
 import { useAuth } from '../hooks/useAuth';
 import {
   fetchDoctors,
@@ -9,88 +29,14 @@ import {
   createDoctor,
   updateDoctor,
   setDoctorActive,
+  resetDoctorPassword,
+  setDoctorLocked,
+  resendDoctorActivation,
   DoctorProfile,
   WeeklyScheduleEntry,
-  WeekDay,
-  WEEK_DAYS,
 } from '../api/doctor.api';
 import { fetchDepartments, Department } from '../api/opd.api';
-
-const DAY_LABELS: Record<WeekDay, string> = {
-  MON: 'Monday',
-  TUE: 'Tuesday',
-  WED: 'Wednesday',
-  THU: 'Thursday',
-  FRI: 'Friday',
-  SAT: 'Saturday',
-  SUN: 'Sunday',
-};
-
-function defaultSchedule(): WeeklyScheduleEntry[] {
-  return WEEK_DAYS.map((day) => ({
-    day,
-    startTime: '09:00',
-    endTime: '17:00',
-    available: day !== 'SAT' && day !== 'SUN',
-  }));
-}
-
-function scheduleSummary(schedule: WeeklyScheduleEntry[] | null): string {
-  if (!schedule || schedule.length === 0) return 'No schedule set';
-  const active = schedule.filter((e) => e.available);
-  if (active.length === 0) return 'Unavailable all week';
-  if (active.length === 7) return `Daily, ${active[0].startTime} - ${active[0].endTime}`;
-  return `${active.length} day${active.length === 1 ? '' : 's'}/week, ${active[0].startTime} - ${active[0].endTime}`;
-}
-
-interface WeeklyScheduleEditorProps {
-  value: WeeklyScheduleEntry[];
-  onChange: (next: WeeklyScheduleEntry[]) => void;
-}
-
-const WeeklyScheduleEditor: React.FC<WeeklyScheduleEditorProps> = ({ value, onChange }) => {
-  const update = (day: WeekDay, patch: Partial<WeeklyScheduleEntry>) => {
-    onChange(value.map((e) => (e.day === day ? { ...e, ...patch } : e)));
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Weekly Schedule</label>
-      <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
-        {value.map((entry) => (
-          <div
-            key={entry.day}
-            className="flex items-center gap-3 px-3 py-2 border-b border-[var(--color-border)] last:border-0 text-sm"
-          >
-            <label className="flex items-center gap-2 w-32 flex-shrink-0">
-              <input
-                type="checkbox"
-                checked={entry.available}
-                onChange={(e) => update(entry.day, { available: e.target.checked })}
-              />
-              <span className="font-medium text-[var(--color-text-primary)]">{DAY_LABELS[entry.day]}</span>
-            </label>
-            <input
-              type="time"
-              value={entry.startTime}
-              onChange={(e) => update(entry.day, { startTime: e.target.value })}
-              disabled={!entry.available}
-              className="input py-1 text-xs w-28 disabled:opacity-40"
-            />
-            <span className="text-[var(--color-text-tertiary)]">to</span>
-            <input
-              type="time"
-              value={entry.endTime}
-              onChange={(e) => update(entry.day, { endTime: e.target.value })}
-              disabled={!entry.available}
-              className="input py-1 text-xs w-28 disabled:opacity-40"
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+import { defaultSchedule, scheduleSummary, formatDate } from '../utils/weeklySchedule';
 
 interface DoctorFormState {
   name: string;
@@ -99,6 +45,7 @@ interface DoctorFormState {
   experience: string;
   departmentId: string;
   consultationFee: string;
+  verified: boolean;
   weeklySchedule: WeeklyScheduleEntry[];
 }
 
@@ -109,6 +56,7 @@ const emptyForm = (): DoctorFormState => ({
   experience: '',
   departmentId: '',
   consultationFee: '',
+  verified: false,
   weeklySchedule: defaultSchedule(),
 });
 
@@ -126,12 +74,40 @@ export const DoctorSchedulePage: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [createdPassword, setCreatedPassword] = useState<string | null>(null);
   const [form, setForm] = useState<DoctorFormState>(emptyForm());
+
+  /** The one-time-password modal, shared by "create" and "reset password". */
+  const [accountCreated, setAccountCreated] = useState<{ name: string; staffId?: string; email: string; password: string } | null>(
+    null,
+  );
 
   const [pendingToggle, setPendingToggle] = useState<DoctorProfile | null>(null);
   const [toggling, setToggling] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
+
+  const [pendingReset, setPendingReset] = useState<DoctorProfile | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const [pendingLock, setPendingLock] = useState<DoctorProfile | null>(null);
+  const [locking, setLocking] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
+
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resendMessage, setResendMessage] = useState<string | null>(null);
+
+  const handleResendActivation = async (id: string) => {
+    setResendingId(id);
+    setResendMessage(null);
+    try {
+      await resendDoctorActivation(id);
+      setResendMessage('Activation email resent.');
+    } catch (err: unknown) {
+      setLockError((err as Error).message || 'Failed to resend activation email');
+    } finally {
+      setResendingId(null);
+    }
+  };
 
   const loadDoctors = () => {
     setIsLoading(true);
@@ -154,7 +130,6 @@ export const DoctorSchedulePage: React.FC = () => {
     setEditingId(null);
     setForm(emptyForm());
     setSaveError(null);
-    setCreatedPassword(null);
     setShowModal(true);
   };
 
@@ -167,10 +142,10 @@ export const DoctorSchedulePage: React.FC = () => {
       experience: doc.experience,
       departmentId: doc.departmentId ?? '',
       consultationFee: String(doc.consultationFee ?? 0),
+      verified: doc.verified,
       weeklySchedule: doc.weeklySchedule && doc.weeklySchedule.length === 7 ? doc.weeklySchedule : defaultSchedule(),
     });
     setSaveError(null);
-    setCreatedPassword(null);
     setShowModal(true);
   };
 
@@ -183,10 +158,12 @@ export const DoctorSchedulePage: React.FC = () => {
       if (editingId) {
         await updateDoctor(editingId, {
           name: form.name,
+          email: form.email,
           specialty: form.specialty,
           experience: form.experience,
           departmentId: form.departmentId || null,
           consultationFee: fee,
+          verified: form.verified,
           weeklySchedule: form.weeklySchedule,
         });
         setShowModal(false);
@@ -201,7 +178,8 @@ export const DoctorSchedulePage: React.FC = () => {
           consultationFee: fee,
           weeklySchedule: form.weeklySchedule,
         });
-        setCreatedPassword(created.temporaryPassword);
+        setShowModal(false);
+        setAccountCreated({ name: created.name, staffId: created.staffId, email: created.email, password: created.temporaryPassword });
         loadDoctors();
       }
     } catch (err: unknown) {
@@ -223,6 +201,37 @@ export const DoctorSchedulePage: React.FC = () => {
       setToggleError((err as Error).message || 'Failed to update doctor');
     } finally {
       setToggling(false);
+    }
+  };
+
+  const confirmReset = async () => {
+    if (!pendingReset) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      const result = await resetDoctorPassword(pendingReset.id);
+      setPendingReset(null);
+      setAccountCreated({ name: pendingReset.name, email: result.email, password: result.temporaryPassword });
+      loadDoctors();
+    } catch (err: unknown) {
+      setResetError((err as Error).message || 'Failed to reset password');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const confirmLock = async () => {
+    if (!pendingLock) return;
+    setLocking(true);
+    setLockError(null);
+    try {
+      await setDoctorLocked(pendingLock.id, !pendingLock.locked);
+      setPendingLock(null);
+      loadDoctors();
+    } catch (err: unknown) {
+      setLockError((err as Error).message || 'Failed to update account lock');
+    } finally {
+      setLocking(false);
     }
   };
 
@@ -291,6 +300,9 @@ export const DoctorSchedulePage: React.FC = () => {
       </div>
 
       {toggleError && <div className="alert-danger">{toggleError}</div>}
+      {resetError && <div className="alert-danger">{resetError}</div>}
+      {lockError && <div className="alert-danger">{lockError}</div>}
+      {resendMessage && <div className="alert-success">{resendMessage}</div>}
 
       <div className="space-y-8">
         {Object.entries(groupedDoctors).map(([specialty, docs]) => (
@@ -317,7 +329,12 @@ export const DoctorSchedulePage: React.FC = () => {
                     </div>
                     <div className="flex flex-col items-end gap-1">
                       <Badge variant="neutral">{doc.experience}</Badge>
-                      {!doc.active && <Badge variant="neutral">INACTIVE</Badge>}
+                      {isAdmin && (
+                        <Badge variant={doc.locked ? 'danger' : doc.active ? 'success' : 'neutral'}>
+                          {doc.locked ? 'LOCKED' : doc.active ? 'ACTIVE' : 'INACTIVE'}
+                        </Badge>
+                      )}
+                      {!isAdmin && !doc.active && <Badge variant="neutral">INACTIVE</Badge>}
                     </div>
                   </div>
 
@@ -343,15 +360,47 @@ export const DoctorSchedulePage: React.FC = () => {
                   </div>
 
                   {isAdmin && (
-                    <div className="flex items-center gap-1.5 pt-3 mt-1 border-t border-[var(--color-border)]">
-                      <button onClick={() => openEdit(doc)} className="btn btn-secondary btn-sm gap-1">
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                      <button onClick={() => setPendingToggle(doc)} className="btn btn-secondary btn-sm gap-1">
-                        {doc.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                        {doc.active ? 'Deactivate' : 'Reactivate'}
-                      </button>
+                    <div className="pt-3 mt-1 border-t border-[var(--color-border)] space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-[var(--color-text-tertiary)]">
+                        <span className="flex items-center gap-1">
+                          {doc.verified ? (
+                            <ShieldCheck className="w-3.5 h-3.5 text-success-600" />
+                          ) : (
+                            <ShieldQuestion className="w-3.5 h-3.5 text-warning-600" />
+                          )}
+                          {doc.verified ? 'Verified' : 'Pending verification'}
+                        </span>
+                        <span>Password changed: {formatDate(doc.passwordChangedAt)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button onClick={() => openEdit(doc)} className="btn btn-secondary btn-sm gap-1">
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                        <button onClick={() => setPendingReset(doc)} className="btn btn-secondary btn-sm gap-1">
+                          <KeyRound className="w-3.5 h-3.5" />
+                          Reset Password
+                        </button>
+                        <button onClick={() => setPendingLock(doc)} className="btn btn-secondary btn-sm gap-1">
+                          {doc.locked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                          {doc.locked ? 'Unlock' : 'Lock'}
+                        </button>
+                        <button onClick={() => setPendingToggle(doc)} className="btn btn-secondary btn-sm gap-1">
+                          {doc.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                          {doc.active ? 'Deactivate' : 'Reactivate'}
+                        </button>
+                        {doc.mustChangePassword && (
+                          <button
+                            onClick={() => handleResendActivation(doc.id)}
+                            disabled={resendingId === doc.id}
+                            className="btn btn-secondary btn-sm gap-1"
+                            title="Resend the account-activation email"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                            {resendingId === doc.id ? 'Sending...' : 'Resend Activation'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -377,117 +426,126 @@ export const DoctorSchedulePage: React.FC = () => {
               </button>
             </div>
 
-            {createdPassword ? (
-              <div className="space-y-4">
-                <div className="alert-success">
-                  Doctor created. One-time temporary password (shown once, not recoverable — hand it to the doctor
-                  now):
-                  <div className="font-mono text-sm mt-2 p-2 bg-[var(--color-surface-secondary)] rounded">
-                    {createdPassword}
-                  </div>
+            <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Name</label>
+                  <input
+                    required
+                    type="text"
+                    className="input w-full"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Dr. John Doe"
+                  />
                 </div>
-                <div className="flex justify-end">
-                  <button onClick={() => setShowModal(false)} className="btn btn-primary">
-                    Done
-                  </button>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Email (login identifier)</label>
+                  <input
+                    required
+                    type="email"
+                    className="input w-full"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="john.doe@esic.gov.in"
+                  />
+                  {editingId && (
+                    <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1">
+                      Changing this updates their login identifier immediately.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Specialty</label>
+                  <input
+                    required
+                    type="text"
+                    className="input w-full"
+                    value={form.specialty}
+                    onChange={(e) => setForm({ ...form, specialty: e.target.value })}
+                    placeholder="Cardiologist"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Experience</label>
+                  <input
+                    required
+                    type="text"
+                    className="input w-full"
+                    value={form.experience}
+                    onChange={(e) => setForm({ ...form, experience: e.target.value })}
+                    placeholder="10 Years"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Department</label>
+                  <select
+                    className="input w-full"
+                    value={form.departmentId}
+                    onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
+                  >
+                    <option value="">No department</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1">Consultation Fee (₹)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="input w-full"
+                    value={form.consultationFee}
+                    onChange={(e) => setForm({ ...form, consultationFee: e.target.value })}
+                    placeholder="0"
+                  />
                 </div>
               </div>
-            ) : (
-              <form onSubmit={handleSave} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Name</label>
-                    <input
-                      required
-                      type="text"
-                      className="input w-full"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      placeholder="Dr. John Doe"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Email</label>
-                    <input
-                      required
-                      type="email"
-                      disabled={!!editingId}
-                      className="input w-full disabled:opacity-60"
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      placeholder="john.doe@esic.gov.in"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Specialty</label>
-                    <input
-                      required
-                      type="text"
-                      className="input w-full"
-                      value={form.specialty}
-                      onChange={(e) => setForm({ ...form, specialty: e.target.value })}
-                      placeholder="Cardiologist"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Experience</label>
-                    <input
-                      required
-                      type="text"
-                      className="input w-full"
-                      value={form.experience}
-                      onChange={(e) => setForm({ ...form, experience: e.target.value })}
-                      placeholder="10 Years"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Department</label>
-                    <select
-                      className="input w-full"
-                      value={form.departmentId}
-                      onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-                    >
-                      <option value="">No department</option>
-                      {departments.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold mb-1">Consultation Fee (₹)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="input w-full"
-                      value={form.consultationFee}
-                      onChange={(e) => setForm({ ...form, consultationFee: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
 
-                <WeeklyScheduleEditor
-                  value={form.weeklySchedule}
-                  onChange={(next) => setForm({ ...form, weeklySchedule: next })}
-                />
+              {editingId && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.verified}
+                    onChange={(e) => setForm({ ...form, verified: e.target.checked })}
+                  />
+                  <span className="text-[var(--color-text-secondary)]">Profile verified</span>
+                </label>
+              )}
 
-                {saveError && <div className="alert-danger">{saveError}</div>}
+              <WeeklyScheduleEditor
+                value={form.weeklySchedule}
+                onChange={(next) => setForm({ ...form, weeklySchedule: next })}
+              />
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-[var(--color-border)] mt-4">
-                  <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary">
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={saving} className="btn btn-primary">
-                    {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Doctor'}
-                  </button>
-                </div>
-              </form>
-            )}
+              {saveError && <div className="alert-danger">{saveError}</div>}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-[var(--color-border)] mt-4">
+                <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving} className="btn btn-primary">
+                  {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Doctor'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
+
+      {accountCreated && (
+        <AccountCreatedModal
+          name={accountCreated.name}
+          staffId={accountCreated.staffId}
+          role="Doctor"
+          email={accountCreated.email}
+          password={accountCreated.password}
+          onClose={() => setAccountCreated(null)}
+        />
       )}
 
       {pendingToggle && (
@@ -503,6 +561,34 @@ export const DoctorSchedulePage: React.FC = () => {
           busy={toggling}
           onConfirm={confirmToggle}
           onCancel={() => setPendingToggle(null)}
+        />
+      )}
+
+      {pendingReset && (
+        <ConfirmModal
+          title={`Reset ${pendingReset.name}'s password?`}
+          message="A new one-time password will be generated and shown once. Their current password stops working immediately, and they'll be required to change it at next login."
+          confirmLabel="Reset Password"
+          danger
+          busy={resetting}
+          onConfirm={confirmReset}
+          onCancel={() => setPendingReset(null)}
+        />
+      )}
+
+      {pendingLock && (
+        <ConfirmModal
+          title={pendingLock.locked ? `Unlock ${pendingLock.name}'s account?` : `Lock ${pendingLock.name}'s account?`}
+          message={
+            pendingLock.locked
+              ? 'They will be able to sign in again immediately, and any automatic failed-attempt lockout is cleared too.'
+              : "They will be unable to sign in until an administrator unlocks the account again, regardless of their password."
+          }
+          confirmLabel={pendingLock.locked ? 'Unlock' : 'Lock'}
+          danger={!pendingLock.locked}
+          busy={locking}
+          onConfirm={confirmLock}
+          onCancel={() => setPendingLock(null)}
         />
       )}
     </div>

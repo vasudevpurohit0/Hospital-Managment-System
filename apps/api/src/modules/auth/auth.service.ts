@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ServiceUnavailableException,
   InternalServerErrorException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -10,12 +11,19 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto, ResetPasswordWithTokenDto } from './dto/forgot-password.dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { PlatformJwtPayload } from './strategies/platform-jwt.strategy';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
 import { runWithTenant } from '../../common/tenant/tenant-context';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { generateResetToken, hashResetToken } from '../../common/security/password.util';
+import { EmailService } from '../../common/email/email.service';
+import { ActivateAccountDto } from './dto/activate-account.dto';
+import { activationEmailBody, ACTIVATION_EMAIL_SUBJECT } from '../../common/email/templates';
 
 interface RefreshPayload {
   sub: string;
@@ -49,6 +57,7 @@ export class AuthService {
     private platformPrisma: PlatformPrismaService,
     private tenantClients: TenantClientFactory,
     private loginDirectory: LoginDirectoryService,
+    private emailService: EmailService,
   ) {}
 
   async validateUser(identifier: string, pass: string) {
@@ -100,10 +109,24 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    // A temporary password (never one the user chose themselves) stops
+    // working after 24h if never used to actually change it -- applies
+    // uniformly to every temp password, not only ones sent by email.
+    if (user.mustChangePassword && user.tempPasswordExpiresAt && user.tempPasswordExpiresAt < new Date()) {
+      throw new UnauthorizedException(
+        'This temporary password has expired. Ask your administrator to reset your password or resend your activation email.',
+      );
+    }
+
     return user;
   }
 
   async login(loginDto: LoginDto, meta: RequestMeta = {}) {
+    // Normalized once, here, so every downstream lookup (directory, tenant
+    // User row, activity records, JWT payload) agrees on the same identifier
+    // regardless of how the caller capitalized/spaced it.
+    loginDto = { ...loginDto, identifier: loginDto.identifier.trim().toLowerCase() };
+
     await this.loginDirectory.checkLock(loginDto.identifier);
 
     const resolved = await this.loginDirectory.resolve(loginDto.identifier);
@@ -161,6 +184,7 @@ export class AuthService {
       .create({ data: { userId: user.id, identifier: loginDto.identifier, success: true, ipAddress: meta.ip, userAgent: meta.userAgent } })
       .catch(() => undefined);
     await this.loginDirectory.recordSuccess(loginDto.identifier);
+    await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => undefined);
 
     const roleName = user.role?.name || 'Doctor';
 
@@ -171,6 +195,7 @@ export class AuthService {
       roleName,
       hospitalId,
       schemaName,
+      tokenVersion: user.tokenVersion,
       type: 'access',
     };
 
@@ -197,6 +222,7 @@ export class AuthService {
         accessToken,
         refreshToken,
         mode: 'hospital' as const,
+        mustChangePassword: user.mustChangePassword,
         user: {
           id: user.id,
           identifier: user.identifier,
@@ -283,6 +309,230 @@ export class AuthService {
     );
   }
 
+  /** Self-service password change -- the mustChangePassword flow and any voluntary change both go through this. */
+  async changePassword(user: AuthenticatedUser, dto: ChangePasswordDto) {
+    if (user.type !== 'hospital') {
+      throw new BadRequestException('Self-service password change is only available for hospital-staff accounts.');
+    }
+
+    const record = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    const isMatch = await bcrypt.compare(dto.currentPassword, record.passwordHash);
+    if (!isMatch) {
+      throw new UnauthorizedException('Current password is incorrect.');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          passwordChangedAt: new Date(),
+          tempPasswordExpiresAt: null,
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: user.id,
+          actorRole: user.roleName,
+          action: 'auth.password_changed',
+          entityType: 'User',
+          entityId: user.id,
+        },
+      });
+    });
+
+    return { status: 'success', message: 'Password changed successfully.' };
+  }
+
+  /**
+   * Always returns the same generic message regardless of whether the
+   * identifier resolves to anything -- never lets a caller enumerate valid
+   * accounts. The token itself is returned nowhere: there is no email/SMS
+   * service anywhere in this codebase to deliver it, so for now the
+   * practical path to a new password stays the existing admin-triggered
+   * reset (DoctorService.resetPassword), which shows the new password once
+   * exactly like account creation. This endpoint is real, working
+   * infrastructure for a future delivery channel, not wired to one yet.
+   */
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ status: 'success'; message: string }> {
+    const generic = {
+      status: 'success' as const,
+      message: 'If that account exists, a password reset has been initiated. Contact your administrator for assistance.',
+    };
+
+    const resolved = await this.loginDirectory.resolve(dto.identifier);
+    if (!resolved || !resolved.hospitalId) {
+      return generic; // unknown identifier, or a platform account (not supported by this flow) -- same response either way
+    }
+
+    const token = generateResetToken();
+    const tokenHash = hashResetToken(token);
+    await this.platformPrisma.passwordResetToken.create({
+      data: {
+        identifier: dto.identifier.trim().toLowerCase(),
+        tokenHash,
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      },
+    });
+
+    return generic;
+  }
+
+  async resetPasswordWithToken(dto: ResetPasswordWithTokenDto) {
+    const tokenHash = hashResetToken(dto.token);
+    const record = await this.platformPrisma.passwordResetToken.findUnique({ where: { tokenHash } });
+
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('This reset link is invalid or has expired.');
+    }
+
+    const resolved = await this.loginDirectory.resolve(record.identifier);
+    if (!resolved || !resolved.hospitalId) {
+      throw new UnauthorizedException('This reset link is invalid or has expired.');
+    }
+
+    const hospital = await this.platformPrisma.hospital.findUnique({ where: { id: resolved.hospitalId } });
+    if (!hospital || hospital.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This reset link is invalid or has expired.');
+    }
+
+    const client = await this.tenantClients.getClient(hospital.schemaName);
+    await runWithTenant({ hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client }, async () => {
+      const user = await this.prisma.user.findUniqueOrThrow({ where: { identifier: record.identifier } });
+      const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash,
+            mustChangePassword: false,
+            passwordChangedAt: new Date(),
+            tempPasswordExpiresAt: null,
+            tokenVersion: { increment: 1 },
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorUserId: user.id,
+            actorRole: 'System/ForgotPassword',
+            action: 'auth.password_reset_via_token',
+            entityType: 'User',
+            entityId: user.id,
+          },
+        });
+      });
+    });
+
+    await this.platformPrisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+
+    return { status: 'success', message: 'Password reset successfully. You can now log in with your new password.' };
+  }
+
+  /**
+   * Generates a fresh 24h single-use activation token and emails it.
+   * Called right after a staff/doctor creation transaction COMMITS, never
+   * from inside it -- a failed or slow email send must never roll back a
+   * successful account creation. Any previously-outstanding, unused token
+   * for this identifier is invalidated first, so only the newest link ever
+   * works (also used for "resend activation").
+   */
+  async sendActivationEmail(params: {
+    identifier: string;
+    staffName: string;
+    staffId: string | null;
+    role: string;
+    hospitalId: string;
+    actorUserId?: string;
+  }): Promise<void> {
+    const identifier = params.identifier.trim().toLowerCase();
+
+    await this.platformPrisma.activationToken.updateMany({
+      where: { identifier, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const token = generateResetToken();
+    const tokenHash = hashResetToken(token);
+    await this.platformPrisma.activationToken.create({
+      data: { identifier, tokenHash, expiresAt: new Date(Date.now() + 24 * 60 * 60_000) },
+    });
+
+    const hospital = await this.platformPrisma.hospital.findUnique({ where: { id: params.hospitalId } });
+    const activationLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/activate?token=${token}`;
+
+    const { html, text } = activationEmailBody({
+      staffName: params.staffName,
+      staffId: params.staffId,
+      role: params.role,
+      hospitalName: hospital?.name || 'your hospital',
+      loginEmail: identifier,
+      activationLink,
+      supportContact: process.env.SUPPORT_CONTACT_EMAIL || 'your hospital administrator',
+    });
+
+    await this.emailService.sendMail({
+      to: identifier,
+      subject: ACTIVATION_EMAIL_SUBJECT,
+      html,
+      text,
+      kind: 'ACTIVATION',
+      sentByUserId: params.actorUserId,
+    });
+  }
+
+  async activateAccount(dto: ActivateAccountDto) {
+    const tokenHash = hashResetToken(dto.token);
+    const record = await this.platformPrisma.activationToken.findUnique({ where: { tokenHash } });
+
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('This activation link is invalid or has expired.');
+    }
+
+    const resolved = await this.loginDirectory.resolve(record.identifier);
+    if (!resolved || !resolved.hospitalId) {
+      throw new UnauthorizedException('This activation link is invalid or has expired.');
+    }
+
+    const hospital = await this.platformPrisma.hospital.findUnique({ where: { id: resolved.hospitalId } });
+    if (!hospital || hospital.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This activation link is invalid or has expired.');
+    }
+
+    const client = await this.tenantClients.getClient(hospital.schemaName);
+    await runWithTenant({ hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client }, async () => {
+      const user = await this.prisma.user.findUniqueOrThrow({ where: { identifier: record.identifier } });
+      const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            passwordHash,
+            mustChangePassword: false,
+            passwordChangedAt: new Date(),
+            tempPasswordExpiresAt: null,
+            tokenVersion: { increment: 1 },
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            actorUserId: user.id,
+            actorRole: 'System/Activation',
+            action: 'auth.account_activated',
+            entityType: 'User',
+            entityId: user.id,
+          },
+        });
+      });
+    });
+
+    await this.platformPrisma.activationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+
+    return { status: 'success', message: 'Account activated. You can now log in with your new password.' };
+  }
+
   private async issueAccessTokenFromRefresh(payload: RefreshPayload) {
     try {
       const user = await this.prisma.user.findUnique({
@@ -303,6 +553,7 @@ export class AuthService {
         roleName,
         hospitalId: payload.hospitalId,
         schemaName: payload.schemaName,
+        tokenVersion: user.tokenVersion,
         type: 'access',
       };
 

@@ -1,11 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { OpdService } from '../opd/services/opd.service';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @Injectable()
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private opdService: OpdService,
+  ) {}
 
   /**
    * Strictly read-only aggregate metrics for executive admin dashboard.
@@ -156,5 +161,166 @@ export class DashboardService {
         employeesAddedToday,
       },
     };
+  }
+
+  /**
+   * A lean, role-keyed personal summary -- a handful of real counts plus
+   * quick-link targets into the role's existing full workspace screen, never
+   * a re-implementation of that screen's own logic. Reuses OpdService for
+   * the doctor's queue (the same ACTIVE_STATUSES semantics that service
+   * already owns) and plain counts for everything else, since a count has
+   * no business logic worth centralizing a second time.
+   */
+  async getMySummary(user: AuthenticatedUser) {
+    const startOfToday = new Date(new Date().toDateString());
+
+    switch (user.roleName) {
+      case 'Doctor': {
+        const [queue, pendingPrescriptionDrafts] = await Promise.all([
+          this.opdService.getMyQueue(user.id),
+          this.prisma.prescription.count({ where: { doctorId: user.id, status: 'DRAFT' } }),
+        ]);
+        return {
+          role: 'Doctor',
+          waitingCount: queue.filter((v) => v.status === 'WAITING').length,
+          calledCount: queue.filter((v) => v.status === 'CALLED' || v.status === 'IN_CONSULTATION').length,
+          pendingPrescriptionDrafts,
+        };
+      }
+
+      case 'Nurse': {
+        const [assignedAdmissions, recentNotes] = await Promise.all([
+          this.prisma.admission.count({ where: { assignedNurseId: user.id, status: 'UNDER_TREATMENT' } }),
+          this.prisma.admissionNote.count({
+            where: { admission: { assignedNurseId: user.id }, createdAt: { gte: startOfToday } },
+          }),
+        ]);
+        return { role: 'Nurse', assignedAdmissions, notesToday: recentNotes };
+      }
+
+      case 'Reception': {
+        const [todayOpdVisits, waitingQueue] = await Promise.all([
+          this.prisma.visit.count({ where: { type: 'OPD', createdAt: { gte: startOfToday } } }),
+          this.prisma.visit.count({ where: { type: 'OPD', status: 'OPEN' } }),
+        ]);
+        return { role: 'Reception', todayOpdVisits, waitingQueue };
+      }
+
+      case 'Pharmacist': {
+        const [pendingQueue, lowStock] = await Promise.all([
+          this.prisma.prescription.count({ where: { status: { in: ['SIGNED', 'PARTIALLY_DISPENSED'] } } }),
+          this.countLowStockBatches(),
+        ]);
+        return { role: 'Pharmacist', pendingQueue, lowStock };
+      }
+
+      case 'LabTechnician': {
+        const pendingCounts = await this.prisma.labOrder.groupBy({
+          by: ['status'],
+          where: { status: { in: ['ORDERED', 'SAMPLE_COLLECTED', 'PROCESSING'] } },
+          _count: { _all: true },
+        });
+        return {
+          role: 'LabTechnician',
+          pendingCollection: pendingCounts.find((g) => g.status === 'ORDERED')?._count._all ?? 0,
+          inProgress: pendingCounts
+            .filter((g) => g.status === 'SAMPLE_COLLECTED' || g.status === 'PROCESSING')
+            .reduce((sum, g) => sum + g._count._all, 0),
+        };
+      }
+
+      case 'Pathologist': {
+        const [awaitingVerification, criticalUnverified] = await Promise.all([
+          this.prisma.labOrder.count({ where: { status: 'RESULT_ENTERED' } }),
+          this.prisma.labResult.count({
+            where: {
+              flag: 'CRITICAL',
+              labOrderItem: { labOrder: { status: { notIn: ['VERIFIED', 'REPORTED', 'CANCELLED'] } } },
+            },
+          }),
+        ]);
+        return { role: 'Pathologist', awaitingVerification, criticalUnverified };
+      }
+
+      case 'AdmissionDesk': {
+        const [pendingRequests, availableBeds] = await Promise.all([
+          this.prisma.admission.count({ where: { status: { in: ['REQUESTED', 'ELIGIBILITY_CHECKED'] } } }),
+          this.prisma.bed.count({ where: { status: 'AVAILABLE' } }),
+        ]);
+        return { role: 'AdmissionDesk', pendingRequests, availableBeds };
+      }
+
+      case 'QueueManager': {
+        const waiting = await this.prisma.oPDVisit.count({ where: { status: 'WAITING' } });
+        return { role: 'QueueManager', waitingAcrossDepartments: waiting };
+      }
+
+      case 'StoreManager': {
+        const [lowStock, openRequisitions] = await Promise.all([
+          this.countLowStockBatches(),
+          this.prisma.purchaseRequisition.count({ where: { status: 'PENDING' } }),
+        ]);
+        return { role: 'StoreManager', lowStock, openRequisitions };
+      }
+
+      case 'ProcurementOfficer': {
+        const [awaitingApproval, openPOsAwaitingGRN] = await Promise.all([
+          this.prisma.purchaseRequisition.count({ where: { status: 'PENDING' } }),
+          this.prisma.purchaseOrder.count({ where: { status: { in: ['ISSUED', 'DISPATCHED'] } } }),
+        ]);
+        return { role: 'ProcurementOfficer', awaitingApproval, openPOsAwaitingGRN };
+      }
+
+      case 'DataEntryOperator': {
+        const employeesAddedToday = await this.prisma.employee.count({
+          where: { registrationDate: { gte: startOfToday } },
+        });
+        return { role: 'DataEntryOperator', employeesAddedToday };
+      }
+
+      case 'Administrator': {
+        const [
+          staffByRole,
+          activeStaff,
+          inactiveStaff,
+          recentAuditLogs,
+          failedLoginRelatedToday,
+          passwordResetsToday,
+        ] = await Promise.all([
+          this.prisma.user.groupBy({ by: ['roleId'], _count: { _all: true } }),
+          this.prisma.user.count({ where: { active: true } }),
+          this.prisma.user.count({ where: { active: false } }),
+          this.prisma.auditLog.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+            select: { id: true, action: true, actorRole: true, entityType: true, entityId: true, createdAt: true },
+          }),
+          this.prisma.auditLog.count({
+            where: { action: { in: ['auth.password_changed', 'auth.password_reset_via_token'] }, createdAt: { gte: startOfToday } },
+          }),
+          this.prisma.auditLog.count({
+            where: { action: { in: ['doctor.password_reset', 'staff.password_reset'] }, createdAt: { gte: startOfToday } },
+          }),
+        ]);
+        return {
+          role: 'Administrator',
+          totalStaff: activeStaff + inactiveStaff,
+          activeStaff,
+          inactiveStaff,
+          staffRoleGroupCount: staffByRole.length,
+          recentActivity: recentAuditLogs,
+          securityEventsToday: failedLoginRelatedToday + passwordResetsToday,
+        };
+      }
+
+      default:
+        return { role: user.roleName };
+    }
+  }
+
+  /** Prisma has no field-to-field comparison in a plain `where`, so this is counted in application code rather than reached for `$queryRaw` for one small table. */
+  private async countLowStockBatches(): Promise<number> {
+    const batches = await this.prisma.medicineBatch.findMany({ select: { currentStock: true, reorderLevel: true } });
+    return batches.filter((b) => b.currentStock <= b.reorderLevel).length;
   }
 }

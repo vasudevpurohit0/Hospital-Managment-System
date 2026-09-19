@@ -3,6 +3,7 @@ import { RequirePermission } from '../../common/decorators/permissions.decorator
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { hasTenantContext } from '../../common/tenant/tenant-context';
 
 export const DEFAULT_BRANDING = {
   hospitalName: 'ESIC Model Hospital & ODC',
@@ -23,6 +24,14 @@ export class BrandingController {
   @Get()
   @Public()
   async getBranding() {
+    // Pre-login callers (the login page fetches branding before anyone has a
+    // token) carry no JWT, so TenantResolutionMiddleware has no hospital to
+    // resolve and sets no tenant context. Fall back to the platform defaults
+    // rather than reading through PrismaService, which throws without a
+    // tenant. Authenticated callers still get their own hospital's row.
+    if (!hasTenantContext()) {
+      return DEFAULT_BRANDING;
+    }
     return this.prisma.brandingConfig.findUnique({ where: { id: 'singleton' } });
   }
 

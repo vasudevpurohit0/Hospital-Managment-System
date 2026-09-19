@@ -32,6 +32,8 @@ import { ReportsScreen } from '../../screens/reports/ReportsScreen';
 import { RbacManagementScreen } from '../../screens/admin/RbacManagementScreen';
 import { DepartmentManagementScreen } from '../../screens/admin/DepartmentManagementScreen';
 import { EmployeeDirectoryScreen } from '../../screens/employee/EmployeeDirectoryScreen';
+import { StaffManagementPage } from '../../pages/StaffManagementPage';
+import { ActivityLogScreen } from '../../screens/admin/ActivityLogScreen';
 
 import { useAuth } from '../../hooks/useAuth';
 
@@ -66,6 +68,8 @@ const PAGE_LABELS: Record<PageId, string> = {
   reports: 'Reports',
   'rbac-management': 'Roles & Permissions',
   'system-config': 'System Config',
+  'staff-management': 'Staff Management',
+  'activity-log': 'Activity Log',
 };
 
 /**
@@ -109,6 +113,8 @@ const PAGE_GROUP: Record<PageId, string> = {
   reports: 'Administration',
   'rbac-management': 'Administration',
   'system-config': 'Administration',
+  'staff-management': 'Administration',
+  'activity-log': 'Administration',
 };
 
 export const AppShell: React.FC = () => {
@@ -263,6 +269,10 @@ export const AppShell: React.FC = () => {
         return <RbacManagementScreen authToken={authToken} />;
       case 'system-config':
         return <SystemConfigScreen authToken={authToken} />;
+      case 'staff-management':
+        return <StaffManagementPage />;
+      case 'activity-log':
+        return <ActivityLogScreen authToken={authToken} />;
       default:
         return <DashboardPage />;
     }
@@ -484,6 +494,18 @@ const SEARCHABLE_PAGES: { id: PageId; label: string; group: string; keywords: st
     label: 'System Config',
     group: 'Admin',
     keywords: ['settings', 'configuration', 'system'],
+  },
+  {
+    id: 'staff-management',
+    label: 'Staff Management',
+    group: 'Admin',
+    keywords: ['staff', 'employees', 'accounts', 'nurse', 'reception', 'create user'],
+  },
+  {
+    id: 'activity-log',
+    label: 'Activity Log',
+    group: 'Admin',
+    keywords: ['audit', 'activity', 'log', 'history', 'security'],
   },
 ];
 

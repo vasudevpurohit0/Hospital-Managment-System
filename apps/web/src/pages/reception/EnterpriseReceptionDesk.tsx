@@ -50,6 +50,7 @@ import {
   OPDVisitRecord,
 } from '../../api/opd.api';
 import { fetchDashboardMetrics, DashboardMetrics } from '../../api/dashboard.api';
+import { fetchEligibleDoctors, fetchLeastBusyEligibleDoctor, DoctorProfile } from '../../api/doctor.api';
 import { fetchServices, ServiceListItem } from '../../api/catalog.api';
 import { openTherapyCourse, scheduleTherapySession } from '../../api/therapy.api';
 import { PatientWorkspace } from '../PatientWorkspace';
@@ -94,6 +95,22 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
   const [selectedDeptId, setSelectedDeptId] = useState('');
   const [liveQueue, setLiveQueue] = useState<OPDVisitRecord[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [eligibleDoctors, setEligibleDoctors] = useState<DoctorProfile[]>([]);
+  const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  const [autoAssigning, setAutoAssigning] = useState(false);
+
+  const handleAutoAssignDoctor = async () => {
+    if (!selectedDeptId) return;
+    setAutoAssigning(true);
+    try {
+      const doctor = await fetchLeastBusyEligibleDoctor(selectedDeptId);
+      if (doctor) setSelectedDoctorId(doctor.id);
+    } catch {
+      // Non-fatal: the doctor dropdown stays usable for a manual pick.
+    } finally {
+      setAutoAssigning(false);
+    }
+  };
 
   useEffect(() => {
     fetchDepartments(authToken)
@@ -103,6 +120,25 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
       })
       .catch(() => {});
   }, [authToken]);
+
+  useEffect(() => {
+    if (!selectedDeptId) {
+      setEligibleDoctors([]);
+      setSelectedDoctorId('');
+      return;
+    }
+    fetchEligibleDoctors(selectedDeptId)
+      .then((doctors) => {
+        setEligibleDoctors(doctors);
+        setSelectedDoctorId((prev) =>
+          doctors.some((d) => d.id === prev) ? prev : doctors[0]?.id || '',
+        );
+      })
+      .catch(() => {
+        setEligibleDoctors([]);
+        setSelectedDoctorId('');
+      });
+  }, [selectedDeptId]);
 
   const loadQueue = useCallback(async () => {
     if (!selectedDeptId) return;
@@ -332,9 +368,9 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
         );
 
         if (visitRes.status === 'CREATED' && visitRes.visit) {
-          if (careType === 'OPD' && selectedDeptId) {
+          if (careType === 'OPD' && selectedDeptId && selectedDoctorId) {
             const opdRes = await createOpdVisit(
-              { visitId: visitRes.visit.id, departmentId: selectedDeptId },
+              { visitId: visitRes.visit.id, departmentId: selectedDeptId, doctorId: selectedDoctorId },
               authToken,
             );
             setIssuedToken(opdRes.tokenNumber);
@@ -425,9 +461,9 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
             authToken,
           );
           if (visitRes.status === 'CREATED' && visitRes.visit) {
-            if (careType === 'OPD' && selectedDeptId) {
+            if (careType === 'OPD' && selectedDeptId && selectedDoctorId) {
               const opdRes = await createOpdVisit(
-                { visitId: visitRes.visit.id, departmentId: selectedDeptId },
+                { visitId: visitRes.visit.id, departmentId: selectedDeptId, doctorId: selectedDoctorId },
                 authToken,
               );
               setIssuedToken(opdRes.tokenNumber);
@@ -552,9 +588,9 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
       } else if (res.status === 'CREATED' && res.visit) {
         setOpenVisitWarning(null);
 
-        if (visitType === 'OPD' && selectedDeptId) {
+        if (visitType === 'OPD' && selectedDeptId && selectedDoctorId) {
           const opdRes = await createOpdVisit(
-            { visitId: res.visit.id, departmentId: selectedDeptId },
+            { visitId: res.visit.id, departmentId: selectedDeptId, doctorId: selectedDoctorId },
             authToken,
           );
           setVisitSuccessMessage(`New OPD Visit Created! Queue Token issued: ${opdRes.tokenNumber}`);
@@ -1153,6 +1189,40 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                               </div>
                             )}
 
+                            {careType === 'OPD' && (
+                              <div>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="font-semibold text-[var(--color-text-secondary)]">
+                                    Assigned Doctor *
+                                  </label>
+                                  <button
+                                    type="button"
+                                    onClick={handleAutoAssignDoctor}
+                                    disabled={autoAssigning || eligibleDoctors.length === 0}
+                                    className="text-[10px] font-semibold text-primary-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                                    title="Assign the doctor with the fewest patients currently waiting"
+                                  >
+                                    {autoAssigning ? 'Assigning...' : 'Auto-assign least busy'}
+                                  </button>
+                                </div>
+                                <select
+                                  value={selectedDoctorId}
+                                  onChange={(e) => setSelectedDoctorId(e.target.value)}
+                                  className="input text-xs font-semibold py-2 w-full"
+                                  required
+                                >
+                                  {eligibleDoctors.length === 0 && (
+                                    <option value="">No doctors available in this department</option>
+                                  )}
+                                  {eligibleDoctors.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                      {d.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+
                             <div>
                               <label className="font-semibold text-[var(--color-text-secondary)] block mb-1">
                                 Date of Birth
@@ -1683,11 +1753,43 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                             </select>
                           </div>
                         )}
+                        {visitType === 'OPD' && (
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                                Assigned Doctor
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleAutoAssignDoctor}
+                                disabled={autoAssigning || eligibleDoctors.length === 0}
+                                className="text-[10px] font-semibold text-primary-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                                title="Assign the doctor with the fewest patients currently waiting"
+                              >
+                                {autoAssigning ? 'Assigning...' : 'Auto-assign'}
+                              </button>
+                            </div>
+                            <select
+                              value={selectedDoctorId}
+                              onChange={(e) => setSelectedDoctorId(e.target.value)}
+                              className="input text-xs py-2"
+                            >
+                              {eligibleDoctors.length === 0 && (
+                                <option value="">No doctors available</option>
+                              )}
+                              {eligibleDoctors.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                         <div className="flex items-end">
                           <button
                             type="button"
                             onClick={() => handleCreateVisit(false)}
-                            disabled={creatingVisit}
+                            disabled={creatingVisit || (visitType === 'OPD' && !selectedDoctorId)}
                             className="btn btn-primary btn-md w-full gap-2"
                           >
                             <Ticket className="w-4 h-4" />

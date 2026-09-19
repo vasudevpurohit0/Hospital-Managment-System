@@ -1,67 +1,126 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { DashboardService } from './dashboard.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
-describe('DashboardService (Phase 14 — Admin Dashboard & Analytics)', () => {
+function user(overrides: Partial<AuthenticatedUser>): AuthenticatedUser {
+  return {
+    id: 'user-1',
+    identifier: 'someone@esic.gov.in',
+    roleId: 'role-1',
+    roleName: 'Doctor',
+    permissions: [],
+    type: 'hospital',
+    ...overrides,
+  };
+}
+
+describe('DashboardService.getMySummary()', () => {
   let service: DashboardService;
 
-  const mockPrisma: any = {
-    visit: { count: jest.fn().mockResolvedValue(142) },
-    admission: {
-      count: jest.fn().mockResolvedValue(28),
-      groupBy: jest.fn().mockResolvedValue([
-        { eligibleCategory: 'A', _count: { _all: 3 } },
-        { eligibleCategory: 'C', _count: { _all: 9 } },
-      ]),
-    },
-    bed: { count: jest.fn().mockResolvedValue(50) },
-    medicineBatch: { count: jest.fn().mockResolvedValue(4) },
-    purchaseRequisition: { count: jest.fn().mockResolvedValue(2) },
-    purchaseOrder: { count: jest.fn().mockResolvedValue(3) },
-    // As of P7, billing metrics read ChargeItem (the live ledger) rather than
-    // the retired BillingTransaction table — see the comment in
-    // dashboard.service.ts on why counting the old table would have frozen
-    // this section at its pre-P2 values.
-    chargeItem: {
-      count: jest
-        .fn()
-        .mockResolvedValueOnce(86) // totalCharges
-        .mockResolvedValueOnce(24) // paidCharges
-        .mockResolvedValueOnce(65) // permanentChargeCount
-        .mockResolvedValueOnce(35), // contractualChargeCount
-    },
-    auditLog: {
-      count: jest.fn().mockResolvedValue(12),
-      findMany: jest.fn().mockResolvedValue([
-        { id: 'log-1', action: 'DISPENSE', entityType: 'Prescription', entityId: 'rx-1' },
-      ]),
-    },
+  const mockPrisma = {
+    prescription: { count: jest.fn() },
+    admission: { count: jest.fn() },
+    admissionNote: { count: jest.fn() },
+    visit: { count: jest.fn() },
+    medicineBatch: { findMany: jest.fn() },
+    labOrder: { count: jest.fn(), groupBy: jest.fn() },
+    labResult: { count: jest.fn() },
+    bed: { count: jest.fn() },
+    oPDVisit: { count: jest.fn() },
+    purchaseRequisition: { count: jest.fn() },
+    purchaseOrder: { count: jest.fn() },
+    employee: { count: jest.fn() },
+    user: { groupBy: jest.fn(), count: jest.fn() },
+    auditLog: { findMany: jest.fn(), count: jest.fn() },
   };
 
-  beforeEach(async () => {
+  const mockOpdService = {
+    getMyQueue: jest.fn(),
+  };
+
+  beforeEach(() => {
     jest.clearAllMocks();
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [DashboardService, { provide: PrismaService, useValue: mockPrisma }],
-    }).compile();
-
-    service = module.get<DashboardService>(DashboardService);
+    service = new DashboardService(mockPrisma as never, mockOpdService as never);
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  it('Doctor: breaks its own queue into waiting/called counts and counts its own draft prescriptions', async () => {
+    mockOpdService.getMyQueue.mockResolvedValue([
+      { status: 'WAITING' },
+      { status: 'WAITING' },
+      { status: 'CALLED' },
+    ]);
+    mockPrisma.prescription.count.mockResolvedValue(2);
+
+    const result = await service.getMySummary(user({ roleName: 'Doctor' }));
+
+    expect(mockOpdService.getMyQueue).toHaveBeenCalledWith('user-1');
+    expect(mockPrisma.prescription.count).toHaveBeenCalledWith({ where: { doctorId: 'user-1', status: 'DRAFT' } });
+    expect(result).toEqual({ role: 'Doctor', waitingCount: 2, calledCount: 1, pendingPrescriptionDrafts: 2 });
   });
 
-  it('getMetrics should return read-only aggregate metrics for all 11 widget areas', async () => {
-    const res = await service.getMetrics();
-    expect(res.opd).toBeDefined();
-    expect(res.ipd).toBeDefined();
-    expect(res.inventory).toBeDefined();
-    expect(res.procurement).toBeDefined();
-    expect(res.billing).toBeDefined();
-    expect(res.auditExceptions).toBeDefined();
+  it("Nurse: scopes admissions and notes to the caller's own assignedNurseId, never another nurse's", async () => {
+    mockPrisma.admission.count.mockResolvedValue(3);
+    mockPrisma.admissionNote.count.mockResolvedValue(1);
 
-    expect(res.ipd.totalBeds).toBe(50);
-    expect(res.billing.permanentUtilizationPct).toBe(65);
+    await service.getMySummary(user({ id: 'nurse-1', roleName: 'Nurse' }));
+
+    expect(mockPrisma.admission.count).toHaveBeenCalledWith({
+      where: { assignedNurseId: 'nurse-1', status: 'UNDER_TREATMENT' },
+    });
+    expect(mockPrisma.admissionNote.count).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ admission: { assignedNurseId: 'nurse-1' } }) }),
+    );
+  });
+
+  it('Pharmacist: counts the real SIGNED/PARTIALLY_DISPENSED queue and low-stock batches via the reorderLevel comparison', async () => {
+    mockPrisma.prescription.count.mockResolvedValue(4);
+    mockPrisma.medicineBatch.findMany.mockResolvedValue([
+      { currentStock: 5, reorderLevel: 100 },
+      { currentStock: 500, reorderLevel: 100 },
+    ]);
+
+    const result = await service.getMySummary(user({ roleName: 'Pharmacist' }));
+
+    expect(result).toEqual({ role: 'Pharmacist', pendingQueue: 4, lowStock: 1 });
+  });
+
+  it('Pathologist: awaiting-verification and critical-unverified counts are two distinct, correctly-scoped queries', async () => {
+    mockPrisma.labOrder.count.mockResolvedValue(7);
+    mockPrisma.labResult.count.mockResolvedValue(2);
+
+    const result = await service.getMySummary(user({ roleName: 'Pathologist' }));
+
+    expect(mockPrisma.labOrder.count).toHaveBeenCalledWith({ where: { status: 'RESULT_ENTERED' } });
+    expect(mockPrisma.labResult.count).toHaveBeenCalledWith({
+      where: {
+        flag: 'CRITICAL',
+        labOrderItem: { labOrder: { status: { notIn: ['VERIFIED', 'REPORTED', 'CANCELLED'] } } },
+      },
+    });
+    expect(result).toEqual({ role: 'Pathologist', awaitingVerification: 7, criticalUnverified: 2 });
+  });
+
+  it('QueueManager: one aggregate WAITING count across all departments', async () => {
+    mockPrisma.oPDVisit.count.mockResolvedValue(12);
+    const result = await service.getMySummary(user({ roleName: 'QueueManager' }));
+    expect(mockPrisma.oPDVisit.count).toHaveBeenCalledWith({ where: { status: 'WAITING' } });
+    expect(result).toEqual({ role: 'QueueManager', waitingAcrossDepartments: 12 });
+  });
+
+  it('Administrator: aggregates staff totals and recent security events', async () => {
+    mockPrisma.user.groupBy.mockResolvedValue([{ roleId: 'r1', _count: { _all: 5 } }]);
+    mockPrisma.user.count.mockResolvedValueOnce(10).mockResolvedValueOnce(2);
+    mockPrisma.auditLog.findMany.mockResolvedValue([]);
+    mockPrisma.auditLog.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+
+    const result = await service.getMySummary(user({ roleName: 'Administrator' }));
+
+    expect(result).toEqual(
+      expect.objectContaining({ role: 'Administrator', totalStaff: 12, activeStaff: 10, inactiveStaff: 2, securityEventsToday: 2 }),
+    );
+  });
+
+  it('falls back to a bare role tag for a role with no dashboard tile defined', async () => {
+    const result = await service.getMySummary(user({ roleName: 'SomeUnhandledRole' }));
+    expect(result).toEqual({ role: 'SomeUnhandledRole' });
   });
 });

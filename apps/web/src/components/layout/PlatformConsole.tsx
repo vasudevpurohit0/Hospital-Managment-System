@@ -8,6 +8,7 @@ import { HospitalsListScreen } from '../../screens/platform/HospitalsListScreen'
 import { CreateHospitalScreen } from '../../screens/platform/CreateHospitalScreen';
 import { PlatformAdminsScreen } from '../../screens/platform/PlatformAdminsScreen';
 import { PlatformAuditLogScreen } from '../../screens/platform/PlatformAuditLogScreen';
+import { PlatformStaffAuditLogScreen } from '../../screens/platform/PlatformStaffAuditLogScreen';
 
 const PAGE_LABELS: Record<PlatformPageId, string> = {
   dashboard: 'Dashboard',
@@ -15,6 +16,7 @@ const PAGE_LABELS: Record<PlatformPageId, string> = {
   'create-hospital': 'Onboard Hospital',
   admins: 'Platform Admins',
   'audit-log': 'Audit Log',
+  'staff-audit-log': 'Staff Activity Log',
 };
 
 const PAGE_GROUP: Record<PlatformPageId, string> = {
@@ -23,6 +25,7 @@ const PAGE_GROUP: Record<PlatformPageId, string> = {
   'create-hospital': 'Hospitals',
   admins: 'Hospitals',
   'audit-log': 'Security',
+  'staff-audit-log': 'Security',
 };
 
 /**
@@ -88,6 +91,8 @@ export const PlatformConsole: React.FC = () => {
         return <PlatformAdminsScreen />;
       case 'audit-log':
         return <PlatformAuditLogScreen />;
+      case 'staff-audit-log':
+        return <PlatformStaffAuditLogScreen />;
       default:
         return <PlatformDashboardScreen />;
     }

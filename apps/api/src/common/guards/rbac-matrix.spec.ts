@@ -137,12 +137,26 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
     reason: 'GET /auth/me returns the caller\'s own token claims — any authenticated user, by definition.',
   },
   {
+    file: 'modules/auth/auth.controller.ts',
+    method: 'changePassword',
+    reason:
+      'Self-service password change on the caller\'s own account — any authenticated user, by definition. Also in ' +
+      'RbacGuard\'s MUST_CHANGE_PASSWORD_ALLOWLIST so a forced first-login change can reach it before anything else.',
+  },
+  {
     file: 'modules/dashboard/dashboard.controller.ts',
     method: 'getMetrics',
     reason:
       'Hospital-wide aggregate counts only (visits/beds/stock/requisitions/charges), never an individual ' +
       'record — every role with Dashboard in its sidebar needs this, including roles with no Employee ' +
       'permission, so JwtAuthGuard alone is the correct bar (see the class-level comment on DashboardController).',
+  },
+  {
+    file: 'modules/dashboard/dashboard.controller.ts',
+    method: 'getMySummary',
+    reason:
+      'Same aggregate-counts reasoning as getMetrics, just scoped to the caller\'s own id/role from the JWT ' +
+      '(never a query param) — every role with Dashboard in its sidebar needs this to render its personal tile set.',
   },
   {
     file: 'modules/platform/hospitals.controller.ts',
@@ -222,6 +236,11 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
     method: 'getSummary',
     reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
   },
+  {
+    file: 'modules/platform/platform-staff-audit.controller.ts',
+    method: 'findAll',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level — the cross-hospital counterpart to the hospital-scoped /audit-log, which is Administrator:AuditLog:read-guarded instead.',
+  },
 ];
 
 /**
@@ -249,6 +268,21 @@ const ALLOWED_PUBLIC: { file: string; method: string; reason: string }[] = [
     file: 'modules/auth/auth.controller.ts',
     method: 'refreshTokens',
     reason: 'Access-token renewal from a refresh token — the access token may already be expired.',
+  },
+  {
+    file: 'modules/auth/auth.controller.ts',
+    method: 'forgotPassword',
+    reason: 'The caller has no token yet by definition — always returns the same generic response regardless of whether the identifier resolves, so it never leaks account existence.',
+  },
+  {
+    file: 'modules/auth/auth.controller.ts',
+    method: 'resetPasswordWithToken',
+    reason: 'The caller has no token yet by definition — authenticated by the single-use reset token itself, not a JWT.',
+  },
+  {
+    file: 'modules/auth/auth.controller.ts',
+    method: 'activateAccount',
+    reason: 'A brand-new account has never logged in and has no JWT yet — authenticated by the single-use activation token itself, same as resetPasswordWithToken.',
   },
   {
     file: 'modules/auth/branding.controller.ts',

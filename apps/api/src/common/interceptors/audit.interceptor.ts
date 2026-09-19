@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../decorators/current-user.decorator';
+import { hasTenantContext } from '../tenant/tenant-context';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -41,6 +42,17 @@ export class AuditInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         next: async (responseBody: unknown) => {
+          // Platform-scoped mutations (e.g. POST /platform/hospitals,
+          // PATCH /platform/admins/:id/active) deliberately carry no hospital,
+          // so TenantResolutionMiddleware never sets a tenant context for
+          // them. The tenant-aware PrismaService proxy throws without one, so
+          // there is no schema to record into: skip rather than reporting a
+          // failure for every platform action.
+          if (!hasTenantContext()) {
+            this.logger.debug(`Skipped AuditLog (no tenant context): ${action} on ${entityType}`);
+            return;
+          }
+
           try {
             const bodyObj = responseBody as Record<string, unknown> | null;
             const entityId =

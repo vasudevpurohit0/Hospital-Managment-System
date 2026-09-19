@@ -31,8 +31,8 @@ model Hospital {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  auditLogs         PlatformAuditLog[]
-  loginIdentifiers  LoginIdentifier[]
+  auditLogs        PlatformAuditLog[]
+  loginIdentifiers LoginIdentifier[]
 
   @@map("hospitals")
 }
@@ -44,18 +44,54 @@ model Hospital {
 /// hospital-code field. Also the only place lockout state lives, since it's
 /// the one table reachable before any tenant schema is known.
 model LoginIdentifier {
-  id             String    @id @default(uuid()) @db.Uuid
-  identifier     String    @unique
-  hospitalId     String?   @map("hospital_id") @db.Uuid
-  hospital       Hospital? @relation(fields: [hospitalId], references: [id])
-  failedAttempts Int       @default(0) @map("failed_attempts")
-  lockedUntil    DateTime? @map("locked_until")
-  lastAttemptAt  DateTime? @map("last_attempt_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  id               String    @id @default(uuid()) @db.Uuid
+  identifier       String    @unique
+  hospitalId       String?   @map("hospital_id") @db.Uuid
+  hospital         Hospital? @relation(fields: [hospitalId], references: [id])
+  failedAttempts   Int       @default(0) @map("failed_attempts")
+  lockedUntil      DateTime? @map("locked_until")
+  /// Admin-triggered lock (Lock/Unlock Account button) -- distinct from the
+  /// automatic `lockedUntil` set after repeated failed attempts. `checkLock`
+  /// rejects on either being set; `unlock` clears both together.
+  manuallyLockedAt DateTime? @map("manually_locked_at")
+  lastAttemptAt    DateTime? @map("last_attempt_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   @@index([hospitalId])
   @@map("login_identifiers")
+}
+
+/// Forgot-password token. Only the SHA-256 hash is stored -- the raw token
+/// exists only in the response of `POST /auth/forgot-password` and is never
+/// persisted anywhere.
+model PasswordResetToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  identifier String
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([identifier])
+  @@map("password_reset_tokens")
+}
+
+/// Same shape as PasswordResetToken, kept as its own table so activation and
+/// forgot-password stay independently auditable. Resolvable by bare
+/// identifier before any tenant/JWT context exists, exactly like
+/// PasswordResetToken already is -- required for a brand-new account that
+/// has never logged in.
+model ActivationToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  identifier String
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([identifier])
+  @@map("activation_tokens")
 }
 
 /// Login attempts that never resolved to any hospital (unknown identifier),

@@ -6,6 +6,7 @@ import {
   SequenceDefinition,
   SequenceKey,
   queueTokenSequence,
+  staffIdSequence,
 } from './sequence.definitions';
 
 /**
@@ -34,6 +35,11 @@ export class DocumentSequenceService {
   /** Allocates the next daily queue token for a department, e.g. CARDIO-001. */
   async nextQueueToken(departmentCode: string, tx?: PrismaClientLike): Promise<string> {
     return this.allocate(queueTokenSequence(departmentCode), tx);
+  }
+
+  /** Allocates the next staff ID for a role prefix, e.g. NUR-0001. Never resets. */
+  async nextStaffId(rolePrefix: string, tx?: PrismaClientLike): Promise<string> {
+    return this.allocate(staffIdSequence(rolePrefix), tx);
   }
 
   /**

@@ -6,6 +6,7 @@ import {
   Building2,
   ShieldCheck,
   FileClock,
+  ScrollText,
   LogOut,
   ChevronLeft,
   ChevronDown,
@@ -21,7 +22,7 @@ import {
    filtering to do.
    ═══════════════════════════════════════════════════════════ */
 
-export type PlatformPageId = 'dashboard' | 'hospitals' | 'create-hospital' | 'admins' | 'audit-log';
+export type PlatformPageId = 'dashboard' | 'hospitals' | 'create-hospital' | 'admins' | 'audit-log' | 'staff-audit-log';
 
 interface MenuItem {
   id: PlatformPageId;
@@ -48,7 +49,10 @@ const MENU_GROUPS: MenuGroup[] = [
   },
   {
     title: 'Security',
-    items: [{ id: 'audit-log', label: 'Audit Log', icon: FileClock }],
+    items: [
+      { id: 'audit-log', label: 'Audit Log', icon: FileClock },
+      { id: 'staff-audit-log', label: 'Staff Activity Log', icon: ScrollText },
+    ],
   },
 ];
 

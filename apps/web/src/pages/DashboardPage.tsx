@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { StatCard } from '../components/ui/StatCard';
 import { Badge } from '../components/ui/Badge';
-import { fetchDashboardMetrics, DashboardMetrics } from '../api/dashboard.api';
+import { fetchDashboardMetrics, fetchMyDashboardSummary, DashboardMetrics, MyDashboardSummary } from '../api/dashboard.api';
 import {
+  ArrowRight,
   Users,
   AlertTriangle,
   Clock,
@@ -26,10 +28,109 @@ import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const CATEGORY_COLORS = ['#0F4C81', '#0D9488', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
 
+/** Where each role's "Go to my workspace" quick-link should land -- reuses existing pages/screens, never a new route. */
+const WORKSPACE_PATH: Record<string, string> = {
+  Doctor: '/consultations',
+  Nurse: '/ward-console',
+  Reception: '/registration',
+  Pharmacist: '/pharmacy',
+  LabTechnician: '/laboratory',
+  Pathologist: '/laboratory',
+  AdmissionDesk: '/ipd-admissions',
+  QueueManager: '/opd-queue',
+  StoreManager: '/inventory',
+  ProcurementOfficer: '/supply-chain',
+  DataEntryOperator: '/employee-directory',
+  Administrator: '/staff-management',
+};
+
+/** A lean "my work today" tile row, sourced from GET /dashboard/my-summary -- a handful of real counts plus a shortcut into the role's existing full workspace, never a re-implementation of it. */
+const MyWorkPanel: React.FC<{ summary: MyDashboardSummary | null; role: string }> = ({ summary, role }) => {
+  const navigate = useNavigate();
+  const workspacePath = WORKSPACE_PATH[role];
+
+  const tiles: { label: string; value: React.ReactNode }[] = [];
+  if (summary) {
+    switch (summary.role) {
+      case 'Doctor':
+        tiles.push({ label: 'Waiting', value: summary.waitingCount as number });
+        tiles.push({ label: 'In Consultation', value: summary.calledCount as number });
+        tiles.push({ label: 'Draft Prescriptions', value: summary.pendingPrescriptionDrafts as number });
+        break;
+      case 'Nurse':
+        tiles.push({ label: 'Assigned Patients', value: summary.assignedAdmissions as number });
+        tiles.push({ label: 'Notes Today', value: summary.notesToday as number });
+        break;
+      case 'Reception':
+        tiles.push({ label: "Today's OPD Visits", value: summary.todayOpdVisits as number });
+        tiles.push({ label: 'Waiting Queue', value: summary.waitingQueue as number });
+        break;
+      case 'Pharmacist':
+        tiles.push({ label: 'Pending Dispense Queue', value: summary.pendingQueue as number });
+        tiles.push({ label: 'Low Stock Items', value: summary.lowStock as number });
+        break;
+      case 'LabTechnician':
+        tiles.push({ label: 'Pending Collection', value: summary.pendingCollection as number });
+        tiles.push({ label: 'In Progress', value: summary.inProgress as number });
+        break;
+      case 'Pathologist':
+        tiles.push({ label: 'Awaiting Verification', value: summary.awaitingVerification as number });
+        tiles.push({ label: 'Critical Unverified', value: summary.criticalUnverified as number });
+        break;
+      case 'AdmissionDesk':
+        tiles.push({ label: 'Pending Requests', value: summary.pendingRequests as number });
+        tiles.push({ label: 'Available Beds', value: summary.availableBeds as number });
+        break;
+      case 'QueueManager':
+        tiles.push({ label: 'Waiting Across Departments', value: summary.waitingAcrossDepartments as number });
+        break;
+      case 'StoreManager':
+        tiles.push({ label: 'Low Stock', value: summary.lowStock as number });
+        tiles.push({ label: 'Open Requisitions', value: summary.openRequisitions as number });
+        break;
+      case 'ProcurementOfficer':
+        tiles.push({ label: 'Awaiting Approval', value: summary.awaitingApproval as number });
+        tiles.push({ label: 'Open POs', value: summary.openPOsAwaitingGRN as number });
+        break;
+      case 'DataEntryOperator':
+        tiles.push({ label: 'Employees Added Today', value: summary.employeesAddedToday as number });
+        break;
+      case 'Administrator':
+        tiles.push({ label: 'Active Staff', value: summary.activeStaff as number });
+        tiles.push({ label: 'Inactive Staff', value: summary.inactiveStaff as number });
+        tiles.push({ label: 'Security Events Today', value: summary.securityEventsToday as number });
+        break;
+      default:
+        break;
+    }
+  }
+
+  if (tiles.length === 0 && !workspacePath) return null;
+
+  return (
+    <div className="card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-wrap gap-6">
+        {tiles.map((t) => (
+          <div key={t.label}>
+            <p className="text-2xl font-bold text-[var(--color-text-primary)]">{t.value ?? '—'}</p>
+            <p className="text-xs text-[var(--color-text-secondary)]">{t.label}</p>
+          </div>
+        ))}
+      </div>
+      {workspacePath && (
+        <button onClick={() => navigate(workspacePath)} className="btn btn-primary btn-sm gap-2 whitespace-nowrap">
+          Go to My Workspace <ArrowRight className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+};
+
 export const DashboardPage: React.FC = () => {
   const { user, token } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [mySummary, setMySummary] = useState<MyDashboardSummary | null>(null);
 
   useEffect(() => {
     fetchDashboardMetrics(token || '')
@@ -37,6 +138,9 @@ export const DashboardPage: React.FC = () => {
       .catch((err: unknown) => {
         setMetricsError(err instanceof Error ? err.message : 'Failed to load dashboard metrics');
       });
+    fetchMyDashboardSummary(token || '')
+      .then(setMySummary)
+      .catch(() => undefined); // non-fatal: the rest of the dashboard still renders from the aggregate metrics
   }, [token]);
 
   const role = user?.role || 'Doctor';
@@ -100,6 +204,8 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {metricsError && <div className="alert alert-danger">{metricsError}</div>}
+
+      <MyWorkPanel summary={mySummary} role={role} />
 
       {/* Role-Specific Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -8,17 +8,21 @@ import { PlatformAdminsService } from './platform-admins.service';
 import { PlatformAuditLogController } from './platform-audit-log.controller';
 import { PlatformDashboardController } from './platform-dashboard.controller';
 import { PlatformDashboardService } from './platform-dashboard.service';
+import { PlatformStaffAuditController } from './platform-staff-audit.controller';
+import { PlatformStaffAuditService } from './platform-staff-audit.service';
 import { DashboardModule } from '../dashboard/dashboard.module';
+import { AuditLogModule } from '../audit/audit-log.module';
 
 @Module({
-  imports: [DashboardModule],
+  imports: [DashboardModule, AuditLogModule],
   controllers: [
     HospitalsController,
     HospitalAdminsController,
     PlatformAdminsController,
     PlatformAuditLogController,
     PlatformDashboardController,
+    PlatformStaffAuditController,
   ],
-  providers: [HospitalsService, HospitalAdminsService, PlatformAdminsService, PlatformDashboardService],
+  providers: [HospitalsService, HospitalAdminsService, PlatformAdminsService, PlatformDashboardService, PlatformStaffAuditService],
 })
 export class PlatformModule {}

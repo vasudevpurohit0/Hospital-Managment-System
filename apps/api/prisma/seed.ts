@@ -78,6 +78,11 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Reception', resource: 'Visit', action: 'read' },
   { roleName: 'Reception', resource: 'OPDVisit', action: 'create' },
   { roleName: 'Reception', resource: 'OPDVisit', action: 'read' },
+  // Front desk resolves queue issues (a patient in the wrong doctor's line,
+  // a no-show that needs cancelling) without needing to call/start/complete
+  // a consultation themselves.
+  { roleName: 'Reception', resource: 'OPDVisit', action: 'cancel' },
+  { roleName: 'Reception', resource: 'OPDVisit', action: 'transfer' },
   { roleName: 'Reception', resource: 'Charge', action: 'read' },
   { roleName: 'Reception', resource: 'Receipt', action: 'create' },
   { roleName: 'Reception', resource: 'Receipt', action: 'read' },
@@ -100,6 +105,11 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   // Reception first just to get a token.
   { roleName: 'Doctor', resource: 'Visit', action: 'create' },
   { roleName: 'Doctor', resource: 'OPDVisit', action: 'read' },
+  // Own queue only -- OpdService.assertOwnership rejects any of these
+  // against a visit assigned to a different doctor, regardless of this grant.
+  { roleName: 'Doctor', resource: 'OPDVisit', action: 'call' },
+  { roleName: 'Doctor', resource: 'OPDVisit', action: 'update' },
+  { roleName: 'Doctor', resource: 'OPDVisit', action: 'transfer' },
   { roleName: 'Doctor', resource: 'Diagnosis', action: 'create' },
   { roleName: 'Doctor', resource: 'Diagnosis', action: 'read' },
   { roleName: 'Doctor', resource: 'Prescription', action: 'create' },
@@ -193,6 +203,13 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Administrator', resource: 'Doctor', action: 'create' },
   { roleName: 'Administrator', resource: 'Doctor', action: 'update' },
   { roleName: 'Administrator', resource: 'Doctor', action: 'delete' },
+  // Generic staff management (every role except Doctor, which is the
+  // dedicated Doctor grant above) -- creating/locking/resetting a staff
+  // login account, same reasoning as Doctor:create being Administrator-only.
+  { roleName: 'Administrator', resource: 'Staff', action: 'create' },
+  { roleName: 'Administrator', resource: 'Staff', action: 'read' },
+  { roleName: 'Administrator', resource: 'Staff', action: 'update' },
+  { roleName: 'Administrator', resource: 'Staff', action: 'delete' },
   { roleName: 'Administrator', resource: 'HospitalUID', action: 'create' },
   { roleName: 'Administrator', resource: 'HospitalUID', action: 'read' },
   { roleName: 'Administrator', resource: 'Inventory', action: 'create' },
@@ -216,6 +233,10 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Administrator', resource: 'Visit', action: 'update' },
   { roleName: 'Administrator', resource: 'OPDVisit', action: 'create' },
   { roleName: 'Administrator', resource: 'OPDVisit', action: 'read' },
+  { roleName: 'Administrator', resource: 'OPDVisit', action: 'call' },
+  { roleName: 'Administrator', resource: 'OPDVisit', action: 'update' },
+  { roleName: 'Administrator', resource: 'OPDVisit', action: 'cancel' },
+  { roleName: 'Administrator', resource: 'OPDVisit', action: 'transfer' },
   { roleName: 'Administrator', resource: 'Diagnosis', action: 'create' },
   { roleName: 'Administrator', resource: 'Diagnosis', action: 'read' },
   { roleName: 'Administrator', resource: 'Diagnosis', action: 'update' },
@@ -334,6 +355,10 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'QueueManager', resource: 'Doctor', action: 'read' },
   { roleName: 'QueueManager', resource: 'Visit', action: 'read' },
   { roleName: 'QueueManager', resource: 'OPDVisit', action: 'read' },
+  { roleName: 'QueueManager', resource: 'OPDVisit', action: 'call' },
+  { roleName: 'QueueManager', resource: 'OPDVisit', action: 'update' },
+  { roleName: 'QueueManager', resource: 'OPDVisit', action: 'cancel' },
+  { roleName: 'QueueManager', resource: 'OPDVisit', action: 'transfer' },
 
   // --- Accountant (billing read/create, limited employee/visit read -- no
   // clinical, pharmacy, inventory or admin access) ---

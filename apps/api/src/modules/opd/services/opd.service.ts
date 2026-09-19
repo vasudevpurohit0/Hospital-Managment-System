@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { OpdTokenGeneratorService } from './opd-token-generator.service';
 import { DepartmentService } from './department.service';
@@ -9,6 +9,14 @@ import { DocumentSequenceService } from '../../../common/sequence/document-seque
 
 /** The consultation service auto-charged on every OPD visit, once priced. */
 const OPD_CONSULTATION_SERVICE_CODE = 'CONSULT-GEN';
+
+/** Still-active states; a shared/department queue and a doctor's own queue both mean "not yet resolved one way or another." */
+const ACTIVE_STATUSES = ['WAITING', 'CALLED', 'IN_CONSULTATION'] as const;
+
+export interface QueueActor {
+  id: string;
+  roleName: string;
+}
 
 @Injectable()
 export class OpdService {
@@ -23,14 +31,46 @@ export class OpdService {
     private sequences: DocumentSequenceService,
   ) {}
 
+  /** A Doctor caller may only ever act on their own visit; every other role is unrestricted (existing permission grants already gate who can reach these endpoints at all). */
+  private assertOwnership(visit: { doctorId: string | null }, actor?: QueueActor) {
+    if (actor?.roleName === 'Doctor' && visit.doctorId !== actor.id) {
+      // Same as every other doctor-scoping check in this codebase (Admission,
+      // PatientService): a 404, not a 403 -- doesn't confirm to a doctor that
+      // another doctor's visit even exists.
+      throw new NotFoundException('OPD visit not found.');
+    }
+  }
+
+  private async assertDoctorEligibleForDepartment(doctorId: string, departmentId: string): Promise<void> {
+    const doctor = await this.prisma.user.findUnique({
+      where: { id: doctorId },
+      include: { role: true, doctorProfile: { include: { departments: true } } },
+    });
+    if (!doctor || !doctor.active || doctor.role.name !== 'Doctor' || !doctor.doctorProfile) {
+      throw new BadRequestException('Selected doctor is not an active doctor with a profile.');
+    }
+    const eligible =
+      doctor.doctorProfile.departmentId === departmentId ||
+      doctor.doctorProfile.departments.some((d) => d.departmentId === departmentId);
+    if (!eligible) {
+      throw new BadRequestException('Selected doctor does not belong to this department.');
+    }
+  }
+
   /**
-   * Create an OPD Visit record and issue an atomic daily queue token
+   * Create an OPD Visit record and issue an atomic daily queue token. The
+   * doctor is assigned now (not just at call-time) -- required, and
+   * validated against the same eligibility rule the registration picker
+   * itself uses (active, Doctor role, has a profile, belongs to this
+   * department), so a client can't smuggle in an ineligible doctor id.
    */
   async createOpdVisit(dto: CreateOpdVisitDto) {
     const dept = await this.departmentService.findById(dto.departmentId);
     if (!dept) {
       throw new NotFoundException(`Department not found for ID: ${dto.departmentId}`);
     }
+
+    await this.assertDoctorEligibleForDepartment(dto.doctorId, dept.id);
 
     // Token, visit and (if priced) the consultation charge are written
     // together: if any step fails, the token is rolled back instead of
@@ -43,15 +83,24 @@ export class OpdService {
       // 11 searches by both as separate identifiers.
       const opdNumber = await this.sequences.next('OPD_NUMBER', tx);
 
+      const now = new Date();
+      const queuePosition = (await tx.oPDVisit.count({ where: { doctorId: dto.doctorId, status: 'WAITING' } })) + 1;
+
       const created = await tx.oPDVisit.create({
         data: {
           visitId: dto.visitId,
           departmentId: dept.id,
+          doctorId: dto.doctorId,
           tokenNumber: issuedToken,
           opdNumber,
+          status: 'WAITING',
+          assignedAt: now,
+          checkedInAt: now,
+          queuePosition,
         },
         include: {
           department: true,
+          doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } },
           visit: {
             include: {
               employee: { include: { employmentType: true } },
@@ -84,7 +133,7 @@ export class OpdService {
       return { opdVisit: created, tokenNumber: issuedToken };
     });
 
-    this.logger.log(`✅ Created OPDVisit ${opdVisit.id} with token ${tokenNumber}`);
+    this.logger.log(`Created OPDVisit ${opdVisit.id} with token ${tokenNumber}, assigned to doctor ${dto.doctorId}`);
     return {
       status: 'CREATED',
       opdVisit,
@@ -93,63 +142,271 @@ export class OpdService {
   }
 
   /**
-   * Fetch current queue for a department (waiting & called tokens)
+   * Fetch the active queue for a department (waiting/called/in-consultation),
+   * optionally narrowed to one doctor -- the Reception/QueueManager
+   * department view with a doctor filter.
    */
-  async getQueue(departmentId: string) {
+  async getQueue(departmentId: string, doctorId?: string) {
     const dept = await this.departmentService.findById(departmentId);
     const targetDeptId = dept?.id || departmentId;
 
     return this.prisma.oPDVisit.findMany({
       where: {
         departmentId: targetDeptId,
-        closedAt: null,
+        status: { in: [...ACTIVE_STATUSES] },
+        ...(doctorId ? { doctorId } : {}),
       },
       include: {
         department: true,
+        doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } },
         visit: {
           include: {
             employee: true,
           },
         },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ priority: 'desc' }, { queuePosition: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  /** A doctor's own active queue (waiting/called/in-consultation) -- doctorId is always the caller's own id from the JWT, never client-supplied. */
+  async getMyQueue(doctorId: string) {
+    return this.prisma.oPDVisit.findMany({
+      where: { doctorId, status: { in: [...ACTIVE_STATUSES] } },
+      include: { department: true, visit: { include: { employee: true } } },
+      orderBy: [{ priority: 'desc' }, { queuePosition: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
   /**
-   * Mark token called by attending doctor. Records which doctor called it
-   * (OPDVisit.doctorId existed in the schema but was never written by any
-   * code path before this) -- the precondition row-level scoping elsewhere
-   * (PatientService.searchPatients, OpdService.getMyPatients) depends on.
+   * Safely claims the first eligible WAITING patient assigned to this
+   * doctor. Guarded by a status-conditioned `updateMany` inside a
+   * transaction: Postgres serializes concurrent UPDATEs against the same
+   * row, so if two "call next" requests race for the same candidate, the
+   * loser's WHERE clause re-evaluates against the now-CALLED row once it
+   * gets the lock and matches zero rows -- exactly one caller ever wins.
+   * Refuses to run while the doctor already has a CALLED/IN_CONSULTATION
+   * visit open, rather than silently auto-closing it as the old single-id
+   * `callToken` used to -- the doctor must explicitly finish/skip/no-show
+   * their current patient first.
    */
-  async callToken(id: string, doctorId: string) {
-    const calledAt = new Date();
+  async callNext(doctorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const inProgress = await tx.oPDVisit.findFirst({
+        where: { doctorId, status: { in: ['CALLED', 'IN_CONSULTATION'] } },
+      });
+      if (inProgress) {
+        throw new BadRequestException(
+          'Finish, skip, or mark no-show for your current patient before calling the next one.',
+        );
+      }
 
+      const candidate = await tx.oPDVisit.findFirst({
+        where: { doctorId, status: 'WAITING' },
+        orderBy: [{ priority: 'desc' }, { queuePosition: 'asc' }, { createdAt: 'asc' }],
+      });
+      if (!candidate) {
+        throw new NotFoundException('No waiting patients in your queue.');
+      }
+
+      const claim = await tx.oPDVisit.updateMany({
+        where: { id: candidate.id, status: 'WAITING' },
+        data: { status: 'CALLED', calledAt: new Date() },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException('This patient was just claimed by another action. Try again.');
+      }
+
+      return tx.oPDVisit.findUniqueOrThrow({
+        where: { id: candidate.id },
+        include: { department: true, doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } }, visit: { include: { employee: true } } },
+      });
+    });
+  }
+
+  /**
+   * Mark a specific token called (Reception/QueueManager/Admin manual
+   * override, or a doctor re-calling a patient who stepped away). A Doctor
+   * caller may only call their own already-assigned visit -- ownership is
+   * checked, never overwritten, since the doctor is now assigned at
+   * registration rather than by whoever happens to call the token.
+   */
+  async callToken(id: string, actor?: QueueActor) {
     const targetVisit = await this.prisma.oPDVisit.findUnique({ where: { id } });
     if (!targetVisit) {
       throw new NotFoundException(`OPDVisit not found for ID: ${id}`);
     }
+    this.assertOwnership(targetVisit, actor);
+    if (targetVisit.status !== 'WAITING') {
+      throw new BadRequestException(`Cannot call a visit in status ${targetVisit.status}.`);
+    }
 
+    const calledAt = new Date();
     await this.prisma.oPDVisit.updateMany({
       where: {
         departmentId: targetVisit.departmentId,
-        calledAt: { not: null },
-        closedAt: null,
+        doctorId: targetVisit.doctorId,
+        status: { in: ['CALLED', 'IN_CONSULTATION'] },
         id: { not: id },
       },
-      data: {
-        closedAt: calledAt,
-      },
+      data: { status: 'COMPLETED', closedAt: calledAt, completedAt: calledAt },
     });
 
     return this.prisma.oPDVisit.update({
       where: { id },
-      data: { calledAt, doctorId },
-      include: { department: true, visit: { include: { employee: true } } },
+      data: { status: 'CALLED', calledAt },
+      include: { department: true, doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } }, visit: { include: { employee: true } } },
     });
   }
 
-  /** A doctor's own called/seen OPD patients -- the shared queue (getQueue) stays unscoped since Reception/QueueManager need to see everyone waiting. */
+  /** CALLED → IN_CONSULTATION. */
+  async startConsultation(id: string, actor?: QueueActor) {
+    const visit = await this.prisma.oPDVisit.findUnique({ where: { id } });
+    if (!visit) throw new NotFoundException(`OPDVisit not found for ID: ${id}`);
+    this.assertOwnership(visit, actor);
+    if (visit.status !== 'CALLED') {
+      throw new BadRequestException(`Cannot start a consultation from status ${visit.status}.`);
+    }
+    return this.prisma.oPDVisit.update({
+      where: { id },
+      data: { status: 'IN_CONSULTATION', consultationStartedAt: new Date() },
+      include: { department: true, doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } }, visit: { include: { employee: true } } },
+    });
+  }
+
+  /**
+   * IN_CONSULTATION → COMPLETED, closing the underlying Visit exactly the
+   * same way the older `closeOpdVisit` does (kept below, unmodified, for
+   * any existing caller) -- this is the richer version that also updates
+   * the new queue-state fields.
+   */
+  async completeConsultation(id: string, actor?: QueueActor) {
+    const visit = await this.prisma.oPDVisit.findUnique({ where: { id } });
+    if (!visit) throw new NotFoundException(`OPDVisit not found for ID: ${id}`);
+    this.assertOwnership(visit, actor);
+    if (visit.status !== 'IN_CONSULTATION' && visit.status !== 'CALLED') {
+      throw new BadRequestException(`Cannot complete a visit from status ${visit.status}.`);
+    }
+    const completedAt = new Date();
+    const updated = await this.prisma.oPDVisit.update({
+      where: { id },
+      data: {
+        status: 'COMPLETED',
+        completedAt,
+        closedAt: completedAt,
+        visit: { update: { status: 'CLOSED', closedAt: completedAt } },
+      },
+      include: { department: true, doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } }, visit: true },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: actor?.id ?? null,
+        actorRole: actor?.roleName ?? 'System',
+        action: 'opdvisit.completed',
+        entityType: 'OPDVisit',
+        entityId: id,
+      },
+    });
+    return updated;
+  }
+
+  async markNoShow(id: string, actor?: QueueActor, reason?: string) {
+    return this.terminalTransition(id, 'NO_SHOW', 'opdvisit.no_show', actor, reason);
+  }
+
+  async skip(id: string, actor?: QueueActor, reason?: string) {
+    return this.terminalTransition(id, 'SKIPPED', 'opdvisit.skipped', actor, reason);
+  }
+
+  async cancel(id: string, actor?: QueueActor, reason?: string) {
+    return this.terminalTransition(id, 'CANCELLED', 'opdvisit.cancelled', actor, reason);
+  }
+
+  private async terminalTransition(
+    id: string,
+    status: 'NO_SHOW' | 'SKIPPED' | 'CANCELLED',
+    action: string,
+    actor?: QueueActor,
+    reason?: string,
+  ) {
+    const visit = await this.prisma.oPDVisit.findUnique({ where: { id } });
+    if (!visit) throw new NotFoundException(`OPDVisit not found for ID: ${id}`);
+    this.assertOwnership(visit, actor);
+    if (!(ACTIVE_STATUSES as readonly string[]).includes(visit.status)) {
+      throw new BadRequestException(`Cannot transition a visit from status ${visit.status}.`);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.oPDVisit.update({
+        where: { id },
+        data: { status, skipReason: reason ?? null },
+        include: { department: true, doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } }, visit: { include: { employee: true } } },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor?.id ?? null,
+          actorRole: actor?.roleName ?? 'System',
+          action,
+          entityType: 'OPDVisit',
+          entityId: id,
+          beforeSnapshot: { status: visit.status },
+          afterSnapshot: { status },
+          reason: reason ?? null,
+        },
+      });
+      return updated;
+    });
+  }
+
+  /**
+   * Reassigns a waiting/called visit to a different eligible doctor.
+   * `TRANSFERRED` exists as a real audit-log action name, but the visit
+   * itself resolves straight back to WAITING under the new doctor --
+   * resting in a dead terminal state would make it invisible to every
+   * queue, which defeats the point of a transfer.
+   */
+  async transfer(id: string, newDoctorId: string, actor?: QueueActor, reason?: string) {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A reason is required to reassign a patient.');
+    }
+    const visit = await this.prisma.oPDVisit.findUnique({ where: { id } });
+    if (!visit) throw new NotFoundException(`OPDVisit not found for ID: ${id}`);
+    this.assertOwnership(visit, actor);
+    if (!(ACTIVE_STATUSES as readonly string[]).includes(visit.status)) {
+      throw new BadRequestException(`Cannot transfer a visit from status ${visit.status}.`);
+    }
+    await this.assertDoctorEligibleForDepartment(newDoctorId, visit.departmentId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const queuePosition = (await tx.oPDVisit.count({ where: { doctorId: newDoctorId, status: 'WAITING' } })) + 1;
+      const updated = await tx.oPDVisit.update({
+        where: { id },
+        data: {
+          doctorId: newDoctorId,
+          status: 'WAITING',
+          queuePosition,
+          transferReason: reason ?? null,
+          calledAt: null,
+          consultationStartedAt: null,
+        },
+        include: { department: true, doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } }, visit: { include: { employee: true } } },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor?.id ?? null,
+          actorRole: actor?.roleName ?? 'System',
+          action: 'opdvisit.transferred',
+          entityType: 'OPDVisit',
+          entityId: id,
+          beforeSnapshot: { doctorId: visit.doctorId },
+          afterSnapshot: { doctorId: newDoctorId },
+          reason: reason ?? null,
+        },
+      });
+      return updated;
+    });
+  }
+
+  /** A doctor's own called/seen OPD patients (any status, historical) -- kept exactly as Phase 10 built it. `getMyQueue` above is the new "still active" view. */
   async getMyPatients(doctorId: string) {
     return this.prisma.oPDVisit.findMany({
       where: { doctorId },
@@ -159,7 +416,8 @@ export class OpdService {
   }
 
   /**
-   * Mark visit closed
+   * Mark visit closed. Kept exactly as-is for any existing caller;
+   * `completeConsultation` above is the new richer status-tracking version.
    */
   async closeOpdVisit(id: string) {
     const closedAt = new Date();
@@ -172,6 +430,8 @@ export class OpdService {
     return this.prisma.oPDVisit.update({
       where: { id },
       data: {
+        status: 'COMPLETED',
+        completedAt: closedAt,
         closedAt,
         visit: {
           update: {

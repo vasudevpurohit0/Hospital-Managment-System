@@ -46,6 +46,7 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
   const [notifyOnAdmission, setNotifyOnAdmission] = useState(true);
   const [notifyOnDischarge, setNotifyOnDischarge] = useState(true);
   const [notifyOnLowStock, setNotifyOnLowStock] = useState(true);
+  const [sendTemporaryPasswordByEmail, setSendTemporaryPasswordByEmail] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -77,6 +78,7 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
       setNotifyOnAdmission(data.notifyOnAdmission);
       setNotifyOnDischarge(data.notifyOnDischarge);
       setNotifyOnLowStock(data.notifyOnLowStock);
+      setSendTemporaryPasswordByEmail(data.sendTemporaryPasswordByEmail);
     } catch (err: unknown) {
       setSettingsError((err as Error).message || 'Failed to load hospital settings');
     } finally {
@@ -127,6 +129,7 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
           notifyOnAdmission,
           notifyOnDischarge,
           notifyOnLowStock,
+          sendTemporaryPasswordByEmail,
         },
         activeToken,
       );
@@ -479,6 +482,28 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
                 type="checkbox"
                 checked={notifyOnLowStock}
                 onChange={(e) => setNotifyOnLowStock(e.target.checked)}
+              />
+            </label>
+          </div>
+
+          <div className="card p-6 space-y-4">
+            <h3 className="text-sm font-bold text-[var(--color-text-primary)] flex items-center gap-2 border-b border-[var(--color-border)] pb-3">
+              <Bell className="w-4 h-4 text-primary-500" />
+              Staff Account Security
+            </h3>
+            <label className="flex items-start justify-between gap-3 text-sm">
+              <span className="text-[var(--color-text-secondary)]">
+                Send temporary password by email
+                <span className="block text-[11px] text-[var(--color-text-tertiary)] mt-0.5">
+                  Off by default. An account-activation email is always sent regardless of this setting; enabling this
+                  also emails the one-time temporary password directly, with a 24-hour expiry warning.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={sendTemporaryPasswordByEmail}
+                onChange={(e) => setSendTemporaryPasswordByEmail(e.target.checked)}
+                className="mt-1"
               />
             </label>
           </div>
