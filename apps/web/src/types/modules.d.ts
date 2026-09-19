@@ -169,6 +169,8 @@ declare module 'lucide-react' {
   export const Smartphone: LucideIcon;
   export const ListTree: LucideIcon;
   export const Table2: LucideIcon;
+  export const Coffee: LucideIcon;
+  export const ArrowLeftRight: LucideIcon;
 
   export type { LucideIcon, LucideProps };
 }
