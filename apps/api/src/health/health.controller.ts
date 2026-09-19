@@ -1,4 +1,5 @@
 import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
 
 /**
@@ -16,7 +17,11 @@ export class HealthController {
    *
    * @returns Health status payload with metadata
    */
+  // Load balancers/Docker healthchecks poll this frequently from a fixed
+  // address -- rate-limiting it would eventually make infrastructure
+  // monitoring indistinguishable from an outage.
   @Public()
+  @SkipThrottle()
   @Get()
   @HttpCode(HttpStatus.OK)
   check(): {

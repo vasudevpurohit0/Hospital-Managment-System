@@ -12,6 +12,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { LabOrderStatus } from '@prisma/client';
 import { LabService } from './lab.service';
@@ -102,6 +103,7 @@ export class LabController {
 
   @Get('orders/:id/report/pdf')
   @RequirePermission('LabReport', 'read')
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Header('Content-Type', 'application/pdf')
   async getReportPdf(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
     const report = await this.lab.getReport(id);

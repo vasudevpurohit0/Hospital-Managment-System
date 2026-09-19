@@ -1,4 +1,5 @@
 import { Controller, Post, Body, Get, HttpCode, HttpStatus, Req } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshTokenDto } from './dto/login.dto';
@@ -12,7 +13,12 @@ import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // V-04: an IP-wide backstop on top of LoginDirectoryService's existing
+  // per-identifier lockout (5 failed attempts/15min) -- that lockout alone
+  // does nothing against a distributed/low-and-slow attempt spread across
+  // many different identifiers from the same source.
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
@@ -20,6 +26,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refreshTokens(@Body() refreshTokenDto: RefreshTokenDto) {
@@ -48,6 +55,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
@@ -55,6 +63,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('reset-password-with-token')
   @HttpCode(HttpStatus.OK)
   async resetPasswordWithToken(@Body() dto: ResetPasswordWithTokenDto) {
@@ -62,6 +71,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('activate-account')
   @HttpCode(HttpStatus.OK)
   async activateAccount(@Body() dto: ActivateAccountDto) {
