@@ -1437,6 +1437,15 @@ model DoctorProfile {
   // exactly as-is (existing rows untouched, still readable) but is no longer
   // the write target for new schedule edits.
   weeklySchedule              Json?                  @map("weekly_schedule")
+  // Live shift/attendance state -- distinct from `available` above, which is
+  // a static "does this doctor generally take appointments" profile flag set
+  // by an admin. Defaults to AVAILABLE (not OFF_DUTY) so existing seeded
+  // doctors and every OPD flow that predates this field keep working exactly
+  // as before without requiring an explicit check-in first.
+  dutyStatus                  DoctorDutyStatus       @default(AVAILABLE) @map("duty_status")
+  dutyStatusChangedAt         DateTime?              @map("duty_status_changed_at")
+  checkedInAt                 DateTime?              @map("checked_in_at")
+  checkedOutAt                DateTime?              @map("checked_out_at")
   user                        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   department                  Department?            @relation(fields: [departmentId], references: [id])
   credentials                 DoctorCredential[]
@@ -1447,6 +1456,18 @@ model DoctorProfile {
   substituteFor               DoctorLeave[]          @relation("DoctorLeaveSubstitute")
 
   @@map("doctor_profiles")
+}
+
+/// A doctor's live shift/attendance state, distinct from the static
+/// `DoctorProfile.available` eligibility flag. AVAILABLE means checked in and
+/// not on a break -- the only state `OpdService.callNext` will pull a new
+/// patient forward in. ON_BREAK and OFF_DUTY both pause that, and existing
+/// waiting/called patients stay exactly where they are (still visible, still
+/// transferable to another doctor) rather than being auto-reassigned.
+enum DoctorDutyStatus {
+  OFF_DUTY
+  AVAILABLE
+  ON_BREAK
 }
 
 /// A registration/license number or a qualification entry. Modeled as its

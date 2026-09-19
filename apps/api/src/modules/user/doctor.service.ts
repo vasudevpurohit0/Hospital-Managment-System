@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
@@ -88,6 +88,10 @@ export class DoctorService {
         departmentId: true,
         consultationFee: true,
         weeklySchedule: true,
+        dutyStatus: true,
+        dutyStatusChangedAt: true,
+        checkedInAt: true,
+        checkedOutAt: true,
         department: { select: { id: true, name: true, code: true } },
       },
     },
@@ -113,6 +117,10 @@ export class DoctorService {
       departmentId: string | null;
       consultationFee: unknown;
       weeklySchedule: unknown;
+      dutyStatus: string;
+      dutyStatusChangedAt: Date | null;
+      checkedInAt: Date | null;
+      checkedOutAt: Date | null;
       department: { id: string; name: string; code: string } | null;
     } | null;
     employee: { name: string; department: string; consultationRoom: string | null; contactPhone: string | null } | null;
@@ -137,6 +145,10 @@ export class DoctorService {
       assignedDepartment: u.doctorProfile?.department ?? null,
       consultationFee: u.doctorProfile?.consultationFee != null ? Number(u.doctorProfile.consultationFee) : 0,
       weeklySchedule: u.doctorProfile?.weeklySchedule ?? null,
+      dutyStatus: u.doctorProfile?.dutyStatus ?? 'OFF_DUTY',
+      dutyStatusChangedAt: u.doctorProfile?.dutyStatusChangedAt ?? null,
+      checkedInAt: u.doctorProfile?.checkedInAt ?? null,
+      checkedOutAt: u.doctorProfile?.checkedOutAt ?? null,
     };
   }
 
@@ -540,5 +552,97 @@ export class DoctorService {
     });
 
     return { status: 'success', message: 'Activation email resent.' };
+  }
+
+  /**
+   * Self-service duty status (check-in/check-out/break) -- always acts on
+   * the calling doctor's own profile (`userId` comes from the JWT, never a
+   * client-supplied id), unlike every other method in this service which is
+   * admin-only. Returns just the four status fields, not the full DTO.
+   */
+  async getDutyStatus(userId: string) {
+    const profile = await this.prisma.doctorProfile.findUniqueOrThrow({
+      where: { userId },
+      select: { dutyStatus: true, dutyStatusChangedAt: true, checkedInAt: true, checkedOutAt: true },
+    });
+    return profile;
+  }
+
+  private async assertNoActiveVisit(userId: string, action: string) {
+    const activeVisit = await this.prisma.oPDVisit.findFirst({
+      where: { doctorId: userId, status: { in: ['CALLED', 'IN_CONSULTATION'] } },
+    });
+    if (activeVisit) {
+      throw new BadRequestException(`Complete, skip, or transfer your current patient before ${action}.`);
+    }
+  }
+
+  async checkIn(userId: string, actor?: Actor) {
+    const user = await this.requireDoctorUser(userId);
+    if (user.doctorProfile!.dutyStatus !== 'OFF_DUTY') {
+      throw new BadRequestException('You are already checked in.');
+    }
+    const now = new Date();
+    await this.prisma.doctorProfile.update({
+      where: { userId },
+      data: { dutyStatus: 'AVAILABLE', checkedInAt: now, dutyStatusChangedAt: now },
+    });
+    await this.prisma.auditLog.create({
+      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_in', entityType: 'User', entityId: userId },
+    });
+    return this.getDutyStatus(userId);
+  }
+
+  async checkOut(userId: string, actor?: Actor) {
+    const user = await this.requireDoctorUser(userId);
+    if (user.doctorProfile!.dutyStatus === 'OFF_DUTY') {
+      throw new BadRequestException('You are already checked out.');
+    }
+    await this.assertNoActiveVisit(userId, 'checking out');
+    const now = new Date();
+    await this.prisma.doctorProfile.update({
+      where: { userId },
+      data: { dutyStatus: 'OFF_DUTY', checkedOutAt: now, dutyStatusChangedAt: now },
+    });
+    await this.prisma.auditLog.create({
+      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_out', entityType: 'User', entityId: userId },
+    });
+    return this.getDutyStatus(userId);
+  }
+
+  async startBreak(userId: string, actor?: Actor) {
+    const user = await this.requireDoctorUser(userId);
+    if (user.doctorProfile!.dutyStatus === 'OFF_DUTY') {
+      throw new BadRequestException('Check in before starting a break.');
+    }
+    if (user.doctorProfile!.dutyStatus === 'ON_BREAK') {
+      throw new BadRequestException('You are already on a break.');
+    }
+    await this.assertNoActiveVisit(userId, 'going on a break');
+    const now = new Date();
+    await this.prisma.doctorProfile.update({
+      where: { userId },
+      data: { dutyStatus: 'ON_BREAK', dutyStatusChangedAt: now },
+    });
+    await this.prisma.auditLog.create({
+      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_started', entityType: 'User', entityId: userId },
+    });
+    return this.getDutyStatus(userId);
+  }
+
+  async endBreak(userId: string, actor?: Actor) {
+    const user = await this.requireDoctorUser(userId);
+    if (user.doctorProfile!.dutyStatus !== 'ON_BREAK') {
+      throw new BadRequestException('You are not currently on a break.');
+    }
+    const now = new Date();
+    await this.prisma.doctorProfile.update({
+      where: { userId },
+      data: { dutyStatus: 'AVAILABLE', dutyStatusChangedAt: now },
+    });
+    await this.prisma.auditLog.create({
+      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_ended', entityType: 'User', entityId: userId },
+    });
+    return this.getDutyStatus(userId);
   }
 }

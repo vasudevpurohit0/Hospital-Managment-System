@@ -127,6 +127,13 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   // A doctor orders/schedules therapy (Feature 7); a nurse marks it performed.
   { roleName: 'Doctor', resource: 'TherapySession', action: 'create' },
   { roleName: 'Doctor', resource: 'TherapySession', action: 'read' },
+  // Self-service check-in/check-out/break toggle on the doctor's own
+  // profile -- deliberately its own resource, not folded into Doctor:update
+  // (admin-only, used for editing another doctor's profile), so a doctor can
+  // toggle their own duty status without ever being granted the ability to
+  // edit doctor profiles.
+  { roleName: 'Doctor', resource: 'DoctorDuty', action: 'read' },
+  { roleName: 'Doctor', resource: 'DoctorDuty', action: 'update' },
 
   // --- AdmissionDesk ---
   { roleName: 'AdmissionDesk', resource: 'Employee', action: 'read' },

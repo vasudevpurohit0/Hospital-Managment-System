@@ -16,6 +16,7 @@ import {
   completeOpdConsultation,
   markOpdNoShow,
   skipOpdVisit,
+  transferOpdVisit,
   OPDVisitRecord,
 } from '../../api/opd.api';
 import { fetchBranding } from '../../api/security.api';
@@ -31,6 +32,16 @@ import {
   TherapyCourseRecord,
 } from '../../api/therapy.api';
 import {
+  fetchEligibleDoctors,
+  fetchMyDutyStatus,
+  checkInDoctor,
+  checkOutDoctor,
+  startDoctorBreak,
+  endDoctorBreak,
+  DoctorProfile,
+  DoctorDutyStatus,
+} from '../../api/doctor.api';
+import {
   User,
   Stethoscope,
   Plus,
@@ -44,8 +55,13 @@ import {
   Microscope,
   Activity,
   Volume2,
+  LogIn,
+  LogOut,
+  Coffee,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { Badge } from '../../components/ui/Badge';
+import { useAuth } from '../../hooks/useAuth';
 
 interface DoctorWorkspaceProps {
   authToken: string;
@@ -55,7 +71,55 @@ interface RxItemState extends PrescriptionItemPayload {
   mode: 'SELECT' | 'CUSTOM';
 }
 
+/** Inline doctor-picker + reason box shown under a queue row while transferring it -- shared by the currently-called patient and every waiting row. */
+const TransferPanel: React.FC<{
+  doctors: DoctorProfile[];
+  doctorId: string;
+  reason: string;
+  busy: boolean;
+  onDoctorChange: (id: string) => void;
+  onReasonChange: (reason: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ doctors, doctorId, reason, busy, onDoctorChange, onReasonChange, onConfirm, onCancel }) => (
+  <div className="p-2.5 rounded-lg border border-primary-200 bg-primary-50/50 dark:bg-primary-950/10 dark:border-primary-900 space-y-2">
+    <select
+      value={doctorId}
+      onChange={(e) => onDoctorChange(e.target.value)}
+      className="input py-1 px-2 text-xs w-full"
+    >
+      <option value="">-- Transfer to which doctor? --</option>
+      {doctors.map((d) => (
+        <option key={d.id} value={d.id}>
+          Dr. {d.name} ({d.specialty})
+        </option>
+      ))}
+    </select>
+    <input
+      type="text"
+      value={reason}
+      onChange={(e) => onReasonChange(e.target.value)}
+      placeholder="Reason for transfer (required)..."
+      className="input py-1 px-2 text-xs w-full"
+    />
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onConfirm}
+        disabled={busy || !doctorId || !reason.trim()}
+        className="btn btn-primary btn-sm text-xs"
+      >
+        {busy ? 'Transferring…' : 'Confirm Transfer'}
+      </button>
+      <button type="button" onClick={onCancel} disabled={busy} className="btn btn-ghost btn-sm text-xs">
+        Cancel
+      </button>
+    </div>
+  </div>
+);
+
 export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) => {
+  const { user } = useAuth();
   const [visitIdInput, setVisitIdInput] = useState('');
   const [visit, setVisit] = useState<VisitDetail | null>(null);
   const [visitLoading, setVisitLoading] = useState(false);
@@ -249,11 +313,65 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       });
   }, [authToken]);
 
+  /* ── Duty status — Check In / Check Out / Break ──
+   * Live shift state, distinct from the queue itself: while ON_BREAK or
+   * OFF_DUTY the backend refuses "Call Next" so no new patient is pulled
+   * forward, but the doctor's existing waiting/called patients stay exactly
+   * where they are (still visible below, still transferable to a colleague
+   * via the Transfer action on each row). */
+  const [dutyStatus, setDutyStatus] = useState<DoctorDutyStatus>('AVAILABLE');
+  const [dutyLoading, setDutyLoading] = useState(true);
+  const [dutyBusy, setDutyBusy] = useState(false);
+  const [dutyError, setDutyError] = useState<string | null>(null);
+
+  const loadDutyStatus = useCallback(async () => {
+    try {
+      const res = await fetchMyDutyStatus();
+      setDutyStatus(res.dutyStatus);
+    } catch (err) {
+      // Non-fatal: the queue itself still loads and works; only the
+      // check-in/break controls stay in their last-known state.
+      console.error('Failed to load duty status', err);
+    } finally {
+      setDutyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDutyStatus();
+  }, [loadDutyStatus]);
+
+  const runDutyAction = async (action: () => Promise<{ dutyStatus: DoctorDutyStatus }>) => {
+    setDutyBusy(true);
+    setDutyError(null);
+    try {
+      const res = await action();
+      setDutyStatus(res.dutyStatus);
+    } catch (err) {
+      setDutyError(err instanceof Error ? err.message : 'Failed to update duty status');
+    } finally {
+      setDutyBusy(false);
+    }
+  };
+
+  const handleCheckIn = () => runDutyAction(checkInDoctor);
+  const handleCheckOut = () => runDutyAction(checkOutDoctor);
+  const handleStartBreak = () => runDutyAction(startDoctorBreak);
+  const handleEndBreak = () => runDutyAction(endDoctorBreak);
+
   /* ── Doctor's own OPD queue — Call Next / Complete / No-show / Skip ── */
   const [myQueue, setMyQueue] = useState<OPDVisitRecord[]>([]);
   const [queueLoading, setQueueLoading] = useState(false);
   const [queueActionBusy, setQueueActionBusy] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
+
+  /* ── Transfer a queued patient to another eligible doctor in the same department ── */
+  const [transferOpenFor, setTransferOpenFor] = useState<string | null>(null);
+  const [transferDoctors, setTransferDoctors] = useState<DoctorProfile[]>([]);
+  const [transferDoctorId, setTransferDoctorId] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   const loadMyQueue = useCallback(async () => {
     setQueueLoading(true);
@@ -332,6 +450,46 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
       setQueueError(err instanceof Error ? err.message : 'Failed to skip patient');
     } finally {
       setQueueActionBusy(false);
+    }
+  };
+
+  const handleOpenTransfer = async (opdVisit: OPDVisitRecord) => {
+    setTransferOpenFor(opdVisit.id);
+    setTransferDoctorId('');
+    setTransferReason('');
+    setTransferError(null);
+    try {
+      const eligible = await fetchEligibleDoctors(opdVisit.departmentId);
+      setTransferDoctors(eligible.filter((d) => d.id !== user?.id));
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : 'Failed to load doctors to transfer to');
+    }
+  };
+
+  const handleCancelTransfer = () => {
+    setTransferOpenFor(null);
+    setTransferDoctors([]);
+    setTransferDoctorId('');
+    setTransferReason('');
+    setTransferError(null);
+  };
+
+  const handleConfirmTransfer = async () => {
+    if (!transferOpenFor || !transferDoctorId) return;
+    if (!transferReason.trim()) {
+      setTransferError('A reason is required to transfer this patient.');
+      return;
+    }
+    setTransferBusy(true);
+    setTransferError(null);
+    try {
+      await transferOpdVisit(transferOpenFor, transferDoctorId, transferReason.trim(), authToken);
+      handleCancelTransfer();
+      await loadMyQueue();
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : 'Failed to transfer patient');
+    } finally {
+      setTransferBusy(false);
     }
   };
 
@@ -741,6 +899,82 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         {error && <div className="alert alert-danger">{error}</div>}
         {successMessage && <div className="alert alert-success">{successMessage}</div>}
         {queueError && <div className="alert alert-danger">{queueError}</div>}
+        {dutyError && <div className="alert alert-danger">{dutyError}</div>}
+        {transferError && <div className="alert alert-danger">{transferError}</div>}
+
+        {/* Duty Status — Check In / Check Out / Break */}
+        <div className="card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {dutyStatus === 'AVAILABLE' && (
+              <Badge variant="success" dot className="px-3 py-1 text-xs">CHECKED IN</Badge>
+            )}
+            {dutyStatus === 'ON_BREAK' && (
+              <Badge variant="warning" dot className="px-3 py-1 text-xs">ON BREAK</Badge>
+            )}
+            {dutyStatus === 'OFF_DUTY' && (
+              <Badge variant="neutral" className="px-3 py-1 text-xs">CHECKED OUT</Badge>
+            )}
+            <span className="text-xs text-[var(--color-text-tertiary)]">
+              {dutyStatus === 'AVAILABLE' && 'You can call patients forward from your queue.'}
+              {dutyStatus === 'ON_BREAK' && 'Calling the next patient is paused until you end your break.'}
+              {dutyStatus === 'OFF_DUTY' && 'Check in to start calling patients from your queue.'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {dutyStatus === 'OFF_DUTY' && (
+              <button
+                type="button"
+                onClick={handleCheckIn}
+                disabled={dutyBusy || dutyLoading}
+                className="btn btn-primary btn-sm gap-1.5 text-xs"
+              >
+                <LogIn className="w-3.5 h-3.5" /> Check In
+              </button>
+            )}
+            {dutyStatus === 'AVAILABLE' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleStartBreak}
+                  disabled={dutyBusy}
+                  className="btn btn-secondary btn-sm gap-1.5 text-xs"
+                  title={currentQueuePatient ? 'Finish, skip, or transfer your current patient first' : undefined}
+                >
+                  <Coffee className="w-3.5 h-3.5" /> Go on Break
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCheckOut}
+                  disabled={dutyBusy}
+                  className="btn btn-ghost btn-sm gap-1.5 text-xs"
+                  title={currentQueuePatient ? 'Finish, skip, or transfer your current patient first' : undefined}
+                >
+                  <LogOut className="w-3.5 h-3.5" /> Check Out
+                </button>
+              </>
+            )}
+            {dutyStatus === 'ON_BREAK' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleEndBreak}
+                  disabled={dutyBusy}
+                  className="btn btn-primary btn-sm gap-1.5 text-xs"
+                >
+                  <Coffee className="w-3.5 h-3.5" /> End Break
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCheckOut}
+                  disabled={dutyBusy}
+                  className="btn btn-ghost btn-sm gap-1.5 text-xs"
+                >
+                  <LogOut className="w-3.5 h-3.5" /> Check Out
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* My OPD Queue — own queue only, JWT-scoped server-side */}
         <div className="card p-4 space-y-3">
@@ -752,9 +986,19 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             <button
               type="button"
               onClick={handleCallNext}
-              disabled={queueActionBusy || !!currentQueuePatient || waitingQueuePatients.length === 0}
+              disabled={
+                queueActionBusy || !!currentQueuePatient || waitingQueuePatients.length === 0 || dutyStatus !== 'AVAILABLE'
+              }
               className="btn btn-primary btn-sm gap-1.5 text-xs"
-              title={currentQueuePatient ? 'Finish or skip the current patient first' : undefined}
+              title={
+                dutyStatus === 'ON_BREAK'
+                  ? 'End your break before calling the next patient'
+                  : dutyStatus === 'OFF_DUTY'
+                    ? 'Check in before calling the next patient'
+                    : currentQueuePatient
+                      ? 'Finish or skip the current patient first'
+                      : undefined
+              }
             >
               <Volume2 className="w-3.5 h-3.5" />
               Call Next ({waitingQueuePatients.length} Waiting)
@@ -764,49 +1008,71 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
           {queueLoading && myQueue.length === 0 ? (
             <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">Loading queue…</p>
           ) : currentQueuePatient ? (
-            <div className="p-3 rounded-lg border border-primary-200 bg-primary-50/50 dark:bg-primary-950/10 dark:border-primary-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-primary-600 tracking-wide">
-                  {currentQueuePatient.status === 'IN_CONSULTATION' ? 'In Consultation' : 'Now Called'}
-                </span>
-                <p className="font-mono font-bold text-sm">{currentQueuePatient.tokenNumber}</p>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  {currentQueuePatient.visit?.employee?.name || 'Patient'}
-                </p>
+            <div className="p-3 rounded-lg border border-primary-200 bg-primary-50/50 dark:bg-primary-950/10 dark:border-primary-900 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-primary-600 tracking-wide">
+                    {currentQueuePatient.status === 'IN_CONSULTATION' ? 'In Consultation' : 'Now Called'}
+                  </span>
+                  <p className="font-mono font-bold text-sm">{currentQueuePatient.tokenNumber}</p>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    {currentQueuePatient.visit?.employee?.name || 'Patient'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleLoadVisit(currentQueuePatient.visitId)}
+                    className="btn btn-secondary btn-sm text-xs"
+                  >
+                    Open Chart
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTransfer(currentQueuePatient)}
+                    disabled={queueActionBusy}
+                    className="btn btn-ghost btn-sm text-xs text-primary-600 gap-1"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" /> Transfer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleNoShowCurrent}
+                    disabled={queueActionBusy}
+                    className="btn btn-ghost btn-sm text-xs text-amber-600"
+                  >
+                    No-show
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSkipCurrent}
+                    disabled={queueActionBusy}
+                    className="btn btn-ghost btn-sm text-xs text-amber-600"
+                  >
+                    Skip
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCompleteCurrent}
+                    disabled={queueActionBusy}
+                    className="btn btn-primary btn-sm text-xs"
+                  >
+                    Complete Consultation
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleLoadVisit(currentQueuePatient.visitId)}
-                  className="btn btn-secondary btn-sm text-xs"
-                >
-                  Open Chart
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNoShowCurrent}
-                  disabled={queueActionBusy}
-                  className="btn btn-ghost btn-sm text-xs text-amber-600"
-                >
-                  No-show
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSkipCurrent}
-                  disabled={queueActionBusy}
-                  className="btn btn-ghost btn-sm text-xs text-amber-600"
-                >
-                  Skip
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCompleteCurrent}
-                  disabled={queueActionBusy}
-                  className="btn btn-primary btn-sm text-xs"
-                >
-                  Complete Consultation
-                </button>
-              </div>
+              {transferOpenFor === currentQueuePatient.id && (
+                <TransferPanel
+                  doctors={transferDoctors}
+                  doctorId={transferDoctorId}
+                  reason={transferReason}
+                  busy={transferBusy}
+                  onDoctorChange={setTransferDoctorId}
+                  onReasonChange={setTransferReason}
+                  onConfirm={handleConfirmTransfer}
+                  onCancel={handleCancelTransfer}
+                />
+              )}
             </div>
           ) : (
             <p className="text-xs text-[var(--color-text-tertiary)] py-2 text-center">
@@ -815,14 +1081,34 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
           )}
 
           {waitingQueuePatients.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pt-1">
+            <div className="space-y-2 pt-1">
               {waitingQueuePatients.map((v, idx) => (
-                <div
-                  key={v.id}
-                  className="shrink-0 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] text-xs"
-                >
-                  <span className="font-mono font-bold block">#{idx + 1} {v.tokenNumber}</span>
-                  <span className="text-[var(--color-text-secondary)]">{v.visit?.employee?.name || 'Patient'}</span>
+                <div key={v.id} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-secondary)] text-xs">
+                    <div>
+                      <span className="font-mono font-bold block">#{idx + 1} {v.tokenNumber}</span>
+                      <span className="text-[var(--color-text-secondary)]">{v.visit?.employee?.name || 'Patient'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTransfer(v)}
+                      className="btn btn-ghost btn-sm text-[11px] text-primary-600 gap-1 shrink-0"
+                    >
+                      <ArrowLeftRight className="w-3 h-3" /> Transfer
+                    </button>
+                  </div>
+                  {transferOpenFor === v.id && (
+                    <TransferPanel
+                      doctors={transferDoctors}
+                      doctorId={transferDoctorId}
+                      reason={transferReason}
+                      busy={transferBusy}
+                      onDoctorChange={setTransferDoctorId}
+                      onReasonChange={setTransferReason}
+                      onConfirm={handleConfirmTransfer}
+                      onCancel={handleCancelTransfer}
+                    />
+                  )}
                 </div>
               ))}
             </div>

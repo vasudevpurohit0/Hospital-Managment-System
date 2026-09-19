@@ -738,7 +738,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                       <div>
                         <span className="text-gray-400 block">Attending Doctor</span>
                         <span className="font-medium text-gray-800">
-                          {adm.assignedDoctor?.identifier || 'Not assigned'}
+                          {adm.assignedDoctor?.employee?.name || adm.assignedDoctor?.identifier || 'Not assigned'}
                         </span>
                       </div>
                       <div>
@@ -1343,7 +1343,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                   <p className="mb-1"><span className="font-bold">Admission Date:</span> {recentlyDischarged.allocatedAt ? new Date(recentlyDischarged.allocatedAt).toLocaleDateString() : 'N/A'}</p>
                   <p className="mb-1"><span className="font-bold">Discharge Date:</span> {new Date().toLocaleDateString()}</p>
                   <p className="mb-1"><span className="font-bold">Ward/Bed:</span> Bed {recentlyDischarged.bed?.bedNumber || 'Unassigned'}</p>
-                  <p className="mb-1"><span className="font-bold">Attending Doctor:</span> {recentlyDischarged.assignedDoctor?.identifier || 'N/A'}</p>
+                  <p className="mb-1"><span className="font-bold">Attending Doctor:</span> {recentlyDischarged.assignedDoctor?.employee?.name || recentlyDischarged.assignedDoctor?.identifier || 'N/A'}</p>
                 </div>
               </div>
 
@@ -1825,7 +1825,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                         </div>
                         <div className="flex justify-between text-[10px] text-gray-400 pt-0.5">
                           <span>Ordered: {new Date(ord.createdAt).toLocaleString()}</span>
-                          {ord.orderingDoctor && <span>Doctor: {ord.orderingDoctor.identifier}</span>}
+                          {ord.orderingDoctor && <span>Doctor: {ord.orderingDoctor.employee?.name || ord.orderingDoctor.identifier}</span>}
                         </div>
                       </div>
                     ))}

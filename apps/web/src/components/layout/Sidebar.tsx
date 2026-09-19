@@ -122,7 +122,10 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'opd-queue',
         label: 'OPD Queue',
         icon: ClipboardList,
-        roles: ['Doctor', 'Reception', 'Nurse', 'SuperAdmin', 'Administrator', 'QueueManager'],
+        // Doctor deliberately excluded -- a doctor's own queue now lives
+        // entirely inside Consultations (DoctorWorkspace's "My OPD Queue"
+        // panel), not the shared cross-department queue screen.
+        roles: ['Reception', 'Nurse', 'SuperAdmin', 'Administrator', 'QueueManager'],
       },
       {
         id: 'consultations',

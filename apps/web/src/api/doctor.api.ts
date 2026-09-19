@@ -10,6 +10,20 @@ export interface WeeklyScheduleEntry {
   available: boolean;
 }
 
+/**
+ * Live shift/attendance state -- distinct from the static `available` field
+ * below (an admin-set "does this doctor generally take appointments" flag).
+ * AVAILABLE is the only state `callNext` will pull a new patient forward in.
+ */
+export type DoctorDutyStatus = 'OFF_DUTY' | 'AVAILABLE' | 'ON_BREAK';
+
+export interface DoctorDutyStatusRecord {
+  dutyStatus: DoctorDutyStatus;
+  dutyStatusChangedAt: string | null;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
+}
+
 export interface DoctorProfile {
   id: string;
   name: string;
@@ -30,6 +44,10 @@ export interface DoctorProfile {
   assignedDepartment: { id: string; name: string; code: string } | null;
   consultationFee: number;
   weeklySchedule: WeeklyScheduleEntry[] | null;
+  dutyStatus: DoctorDutyStatus;
+  dutyStatusChangedAt: string | null;
+  checkedInAt: string | null;
+  checkedOutAt: string | null;
   /** Only present on the admin roster (fetchAllDoctorsForAdmin), not the plain active-only list. */
   locked?: boolean;
   failedLoginAttempts?: number;
@@ -127,4 +145,30 @@ export async function fetchLeastBusyEligibleDoctor(departmentId: string): Promis
   const res = await apiFetch(`/api/doctors/eligible?departmentId=${encodeURIComponent(departmentId)}&autoAssign=true`);
   const doctors = await unwrap<DoctorProfile[]>(res, 'Failed to auto-assign a doctor');
   return doctors[0] ?? null;
+}
+
+/** Self-service duty status -- always the caller's own profile (server derives the id from the JWT). */
+export async function fetchMyDutyStatus(): Promise<DoctorDutyStatusRecord> {
+  const res = await apiFetch('/api/doctors/me/duty-status');
+  return unwrap(res, 'Failed to load your duty status');
+}
+
+export async function checkInDoctor(): Promise<DoctorDutyStatusRecord> {
+  const res = await apiFetch('/api/doctors/me/check-in', { method: 'POST' });
+  return unwrap(res, 'Failed to check in');
+}
+
+export async function checkOutDoctor(): Promise<DoctorDutyStatusRecord> {
+  const res = await apiFetch('/api/doctors/me/check-out', { method: 'POST' });
+  return unwrap(res, 'Failed to check out');
+}
+
+export async function startDoctorBreak(): Promise<DoctorDutyStatusRecord> {
+  const res = await apiFetch('/api/doctors/me/break/start', { method: 'POST' });
+  return unwrap(res, 'Failed to start your break');
+}
+
+export async function endDoctorBreak(): Promise<DoctorDutyStatusRecord> {
+  const res = await apiFetch('/api/doctors/me/break/end', { method: 'POST' });
+  return unwrap(res, 'Failed to end your break');
 }

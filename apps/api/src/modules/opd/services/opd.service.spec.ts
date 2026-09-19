@@ -16,6 +16,9 @@ describe('OpdService', () => {
     user: {
       findUnique: jest.fn(),
     },
+    doctorProfile: {
+      findUnique: jest.fn(),
+    },
     auditLog: {
       create: jest.fn().mockResolvedValue({}),
     },
@@ -35,6 +38,10 @@ describe('OpdService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(mockPrisma));
+    // Checked in and not on a break, by default -- the AVAILABLE state every
+    // pre-existing callNext test implicitly assumed before duty status
+    // existed. Tests that care about OFF_DUTY/ON_BREAK override this.
+    mockPrisma.doctorProfile.findUnique.mockResolvedValue({ dutyStatus: 'AVAILABLE' });
     service = new OpdService(
       mockPrisma as never,
       mockTokenGenerator as never,
@@ -122,6 +129,18 @@ describe('OpdService', () => {
   });
 
   describe('callNext() -- atomic claim', () => {
+    it('refuses to call next while the doctor is on a break', async () => {
+      mockPrisma.doctorProfile.findUnique.mockResolvedValue({ dutyStatus: 'ON_BREAK' });
+      await expect(service.callNext('doctor-1')).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.oPDVisit.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('refuses to call next while the doctor is checked out', async () => {
+      mockPrisma.doctorProfile.findUnique.mockResolvedValue({ dutyStatus: 'OFF_DUTY' });
+      await expect(service.callNext('doctor-1')).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.oPDVisit.findFirst).not.toHaveBeenCalled();
+    });
+
     it('refuses to call next while the doctor already has a CALLED/IN_CONSULTATION visit', async () => {
       mockPrisma.oPDVisit.findFirst.mockResolvedValueOnce({ id: 'in-progress' });
       await expect(service.callNext('doctor-1')).rejects.toThrow(BadRequestException);

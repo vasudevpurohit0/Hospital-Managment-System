@@ -22,12 +22,19 @@ interface OpdQueueScreenProps {
   authToken: string;
 }
 
-/** Roles whose grants (see prisma/seed.ts PERMISSION_GRANTS) let them call/start/complete/skip/no-show a visit directly by id, regardless of which doctor it's assigned to (ownership is still enforced server-side for a Doctor caller). */
-const CAN_OPERATE_QUEUE = ['Doctor', 'QueueManager', 'Administrator', 'SuperAdmin'];
+/**
+ * Doctor is deliberately absent from every constant below -- a doctor no
+ * longer reaches this shared cross-department screen at all (Sidebar hides
+ * the link and AppShell redirects away from it); their own queue, call/
+ * complete/no-show/skip/transfer actions all live in Consultations
+ * (DoctorWorkspace's "My OPD Queue" panel) instead.
+ */
+/** Roles whose grants (see prisma/seed.ts PERMISSION_GRANTS) let them call/start/complete/skip/no-show a visit directly by id. */
+const CAN_OPERATE_QUEUE = ['QueueManager', 'Administrator', 'SuperAdmin'];
 /** Roles granted OPDVisit:cancel. */
 const CAN_CANCEL = ['Reception', 'QueueManager', 'Administrator', 'SuperAdmin'];
 /** Roles granted OPDVisit:transfer. */
-const CAN_TRANSFER = ['Reception', 'Doctor', 'QueueManager', 'Administrator', 'SuperAdmin'];
+const CAN_TRANSFER = ['Reception', 'QueueManager', 'Administrator', 'SuperAdmin'];
 
 const STATUS_BADGE: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
   WAITING: 'warning',

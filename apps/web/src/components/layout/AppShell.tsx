@@ -171,6 +171,16 @@ export const AppShell: React.FC = () => {
     }
   }, [userRole, activePage, setActivePage]);
 
+  // A Doctor's own queue lives inside Consultations now, not the shared
+  // cross-department OPD Queue screen -- Sidebar already hides the link, but
+  // this closes the direct-URL / back-button path too. Same replace-not-push
+  // reasoning as the QueueManager redirect above.
+  useEffect(() => {
+    if (userRole === 'Doctor' && activePage === 'opd-queue') {
+      setActivePage('consultations', { replace: true });
+    }
+  }, [userRole, activePage, setActivePage]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -523,6 +533,9 @@ const CommandPaletteOverlay: React.FC<CommandPaletteOverlayProps> = ({ onClose, 
   const allowedPages = useMemo(() => {
     if (userRole === 'QueueManager') {
       return SEARCHABLE_PAGES.filter((page) => page.id === 'opd-queue');
+    }
+    if (userRole === 'Doctor') {
+      return SEARCHABLE_PAGES.filter((page) => page.id !== 'opd-queue');
     }
     return SEARCHABLE_PAGES;
   }, [userRole]);

@@ -135,7 +135,7 @@ export class LabService {
         items: { include: { labTest: true } },
         sample: true,
         visit: { include: { employee: { include: { hospitalUid: true } } } },
-        orderingDoctor: { select: { identifier: true } },
+        orderingDoctor: { select: { identifier: true, employee: { select: { name: true } } } },
       },
       orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
     });
@@ -155,7 +155,7 @@ export class LabService {
         sample: true,
         report: true,
         visit: { include: { employee: { include: { hospitalUid: true } } } },
-        orderingDoctor: { select: { identifier: true } },
+        orderingDoctor: { select: { identifier: true, employee: { select: { name: true } } } },
       },
     });
     if (!order) throw new NotFoundException(`Lab order not found: ${labOrderId}`);
@@ -395,7 +395,7 @@ export class LabService {
       include: {
         report: { include: { verifiedBy: { select: { identifier: true } } } },
         sample: { include: { collectedBy: { select: { identifier: true } } } },
-        orderingDoctor: { select: { identifier: true } },
+        orderingDoctor: { select: { identifier: true, employee: { select: { name: true } } } },
         visit: {
           include: {
             employee: { include: { hospitalUid: true, patientProfile: true } },
@@ -431,7 +431,7 @@ export class LabService {
         gender: emp.patientProfile?.gender ?? null,
       },
       opdOrIpdReference: order.visit.opdVisit?.tokenNumber ?? order.visit.admissions[0]?.id ?? null,
-      referringDoctor: order.orderingDoctor.identifier,
+      referringDoctor: order.orderingDoctor.employee?.name ?? order.orderingDoctor.identifier,
       sampleDate: order.sample?.collectedAt ?? null,
       reportDate: order.report.releasedAt,
       panels: order.items.map((item) => ({

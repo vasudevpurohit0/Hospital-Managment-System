@@ -192,6 +192,14 @@ export class OpdService {
    */
   async callNext(doctorId: string) {
     return this.prisma.$transaction(async (tx) => {
+      const profile = await tx.doctorProfile.findUnique({ where: { userId: doctorId }, select: { dutyStatus: true } });
+      if (profile?.dutyStatus === 'ON_BREAK') {
+        throw new BadRequestException('You are on a break. End your break before calling the next patient.');
+      }
+      if (profile?.dutyStatus === 'OFF_DUTY') {
+        throw new BadRequestException('You are checked out. Check in before calling the next patient.');
+      }
+
       const inProgress = await tx.oPDVisit.findFirst({
         where: { doctorId, status: { in: ['CALLED', 'IN_CONSULTATION'] } },
       });

@@ -54,7 +54,7 @@ export class AdmissionService {
         ward: true,
         room: true,
         bed: true,
-        assignedDoctor: true,
+        assignedDoctor: { select: { id: true, identifier: true, employee: { select: { name: true } } } },
         assignedNurse: true,
         notes: {
           include: { author: true },
@@ -82,7 +82,7 @@ export class AdmissionService {
         ward: true,
         room: true,
         bed: true,
-        assignedDoctor: true,
+        assignedDoctor: { select: { id: true, identifier: true, employee: { select: { name: true } } } },
         assignedNurse: true,
         notes: {
           include: { author: true },
@@ -426,7 +426,7 @@ export class AdmissionService {
             include: { employee: true },
           },
           bed: true,
-          assignedDoctor: true,
+          assignedDoctor: { select: { id: true, identifier: true, employee: { select: { name: true } } } },
           assignedNurse: true,
         },
       });
@@ -513,7 +513,7 @@ export class AdmissionService {
             include: { employee: true },
           },
           bed: true,
-          assignedDoctor: true,
+          assignedDoctor: { select: { id: true, identifier: true, employee: { select: { name: true } } } },
           assignedNurse: true,
           dischargeSummary: true,
         },

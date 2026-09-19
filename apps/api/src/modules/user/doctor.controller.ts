@@ -93,4 +93,40 @@ export class DoctorController {
   async resendActivation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.doctorService.resendActivation(id, { id: user.id, roleName: user.roleName });
   }
+
+  /**
+   * Self-service duty status -- always the caller's own profile (`user.id`
+   * from the JWT). Distinct from Doctor:update above, which is admin-only:
+   * a doctor cannot edit their own profile, but can check in/out and take a
+   * break on their own account.
+   */
+  @Get('me/duty-status')
+  @RequirePermission('DoctorDuty', 'read')
+  async getMyDutyStatus(@CurrentUser() user: AuthenticatedUser) {
+    return this.doctorService.getDutyStatus(user.id);
+  }
+
+  @Post('me/check-in')
+  @RequirePermission('DoctorDuty', 'update')
+  async checkIn(@CurrentUser() user: AuthenticatedUser) {
+    return this.doctorService.checkIn(user.id, { id: user.id, roleName: user.roleName });
+  }
+
+  @Post('me/check-out')
+  @RequirePermission('DoctorDuty', 'update')
+  async checkOut(@CurrentUser() user: AuthenticatedUser) {
+    return this.doctorService.checkOut(user.id, { id: user.id, roleName: user.roleName });
+  }
+
+  @Post('me/break/start')
+  @RequirePermission('DoctorDuty', 'update')
+  async startBreak(@CurrentUser() user: AuthenticatedUser) {
+    return this.doctorService.startBreak(user.id, { id: user.id, roleName: user.roleName });
+  }
+
+  @Post('me/break/end')
+  @RequirePermission('DoctorDuty', 'update')
+  async endBreak(@CurrentUser() user: AuthenticatedUser) {
+    return this.doctorService.endBreak(user.id, { id: user.id, roleName: user.roleName });
+  }
 }

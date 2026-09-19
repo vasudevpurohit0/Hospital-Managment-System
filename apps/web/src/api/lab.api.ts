@@ -62,7 +62,7 @@ export interface LabOrderRecord {
     id: string;
     employee: { name: string; employeeId: string; hospitalUid: { uidCode: string } | null };
   };
-  orderingDoctor?: { identifier: string };
+  orderingDoctor?: { identifier: string; employee?: { name: string } | null };
 }
 
 export interface LabReportView {

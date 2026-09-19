@@ -77,6 +77,7 @@ export interface AdmissionRecord {
   assignedDoctor?: {
     id: string;
     identifier: string;
+    employee?: { name: string } | null;
   } | null;
   assignedNurse?: {
     id: string;
