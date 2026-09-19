@@ -1626,3 +1626,15 @@ Done and verified this session (unit tests + `tsc --noEmit`, both green; full no
 - **V-12** (JWT/user profile in `localStorage`) -- deliberately excluded per the audit's own guidance (architectural change, not a quick patch); unchanged from earlier in this session.
 
 **Immediate next step once Postgres/Docker are confirmed healthy again:** re-run `npx jest --runInBand` (expect 428/428) and the full e2e suite, then pick V-21 back up first (it only needs the DB, not a new dependency or Docker rebuild), followed by V-04 once C: has headroom for `npm install`, then re-verify V-10/V-19/V-22 against a real `docker compose up`.
+
+## Docker/Postgres recovery (next session)
+
+Getting Docker healthy again took two separate incidents:
+1. Docker's WSL2 engine was stuck in a crash-loop (`/dev/sdd is apparently in use by the system; will not make a filesystem here!`) -- its virtual disk was locked from the original disk-exhaustion incident. Fixed with a full `wsl --shutdown` (only the `docker-desktop` distro exists, so nothing else on the system was affected) followed by relaunching Docker Desktop.
+2. Once healthy, `docker compose up -d` (rebuilding the api/web images to pick up this session's code changes) filled C: to **0 bytes free** during the image-layer-export step, which force-remounted the underlying WSL2 filesystem **read-only** -- `prisma migrate status` failed with `FATAL: could not open file "base/16384/2601": Read-only file system`. Paused all Docker/DB work at that point rather than risk touching Postgres's data files mid-incident, and flagged it to the user rather than attempting a fix blind.
+
+After the user freed space on C: (0 → 7.3 GB) and a second clean `wsl --shutdown` + relaunch, Docker came back healthy and **Postgres's data survived fully intact** -- both `prisma migrate status` (tenant schema) and `--schema=prisma/platform/schema.prisma` (platform schema) report all migrations applied, no drift. Re-ran the full suite against the live DB:
+- `npx jest --runInBand` → **428/428 passing** (the 8 suites that could only fail because Postgres was unreachable are now green too).
+- `npx jest --config ./test/jest-e2e.json --runInBand` → **15/15 suites, 51/51 tests passing.**
+
+**Still true going into next session:** C: is back down to **3.86 GB free** just from Docker Desktop's own restart overhead (no build attempted this time) -- the structural problem (this repo's Docker builds need more space than C: reliably has) is unresolved. The user chose "move Docker's disk to D:" (231 GB free) as the real fix when asked, but that migration was never attempted -- current free space is too tight to safely start it. Do **not** run `docker compose up -d`/`docker build` again until either (a) C: has significantly more headroom, or (b) Docker Desktop's disk image location has actually been moved to D: (Settings → Resources → Advanced → "Disk image location" in the GUI, or by editing `%APPDATA%\Docker\settings-store.json` and migrating the WSL vhdx). V-04 (`npm install @nestjs/throttler`) is lower-risk than a full Docker rebuild but should still wait for more than ~4 GB free, given npm's cache also lives on C:.
