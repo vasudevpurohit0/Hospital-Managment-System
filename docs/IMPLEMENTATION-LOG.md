@@ -1017,3 +1017,64 @@ New plan at `C:\Users\navne\.claude\plans\i-want-to-build-lively-crown.md`. This
 - Live HTTP/browser click-through was again **not** performed — the dev server remains deliberately off (killed earlier by the platform's own memory-pressure guard, not restarted without being asked); every check above used the direct-service-against-live-database technique established across this whole session instead.
 
 **Plan status: all 8 phases of this gap-fill pass complete.**
+
+---
+
+## Activity Log UI Redesign — Timeline view, stats, request/device detail
+
+User asked for the hospital-scoped Activity Log to look/behave like a reference screenshot: Timeline/Table toggle, 4 stat cards (Total Logs / Last 24 Hours / Critical / Failed Logins), a search bar + filters, timeline entries showing actor/action/module/success-or-fail/browser+OS/IP/"N field(s) changed", and a details modal (badges + User/Action Details/Request Info columns + description). This required real new data (IP, browser/OS/device, success/failure status, severity, a human description, changed-field list) that the existing `AuditLog` table did not capture at all before this pass.
+
+### Phase 1 — Schema
+
+**Built:**
+- `apps/api/prisma/schema.prisma` — `AuditLog` gained `changedFields String[]`, `description String?`, `status AuditStatus @default(SUCCESS)`, `severity AuditSeverity @default(LOW)`, `ipAddress`, `browser`, `os`, `device`; two new enums `AuditStatus {SUCCESS, FAILURE}` and `AuditSeverity {LOW, MEDIUM, HIGH, CRITICAL}`; two new indexes (`status`, `severity`).
+- Migration `apps/api/prisma/migrations/20260919090000_audit_log_enrichment/migration.sql`, generated via `prisma migrate diff` against the live `hospital_esic_model` schema and confirmed 100% additive (new nullable/defaulted columns only, no data loss).
+
+**Tested:**
+- Had to briefly stop the running API dev server (`nest start --watch` + `turbo run dev`, both already running from an earlier session) to release the Windows Prisma query-engine DLL lock (the established `EPERM` workaround) before `prisma generate` would succeed; the web dev server was left running throughout.
+- `npm run migrate:all-tenants` → both tenant schemas (`esic-model`, `demo-hospital-two`) migrated successfully.
+- Result: clean, additive migration applied to all tenants; API dev server intentionally left stopped (not restarted without being asked — user needs to restart it themselves via `pnpm dev`/`turbo dev` when ready to run the app).
+
+### Phase 2 — Backend capture (IP/device, severity, description, changed fields, failure logging, login events)
+
+**Built:**
+- `apps/api/src/common/audit/request-meta.util.ts` (new) — dependency-free `parseUserAgent()` (browser name+version, OS, device) and `extractClientIp()` (X-Forwarded-For aware).
+- `apps/api/src/common/audit/severity.util.ts` (new) — `classifySeverity({entityType, action, status})`: FAILURE→MEDIUM (login) or HIGH; DELETE on a sensitive entity (user/staff/doctor/role/administrator/hospital)→CRITICAL, otherwise HIGH; lock/deactivate/permission on a sensitive entity→HIGH; password/activation/login→MEDIUM; else LOW. Documented as a best-effort heuristic, not a formal taxonomy.
+- `apps/api/src/common/audit/describe.util.ts` (new) — `diffChangedFields()` (before/after key diff, ignores `id`) and `buildDescription()` (best-effort human sentence: "Created/Updated/Deleted {entity} \"{label}\" (N field(s) changed: ...)", falling back to a short id when no name/title/subject-like field exists).
+- `apps/api/src/common/interceptors/audit.interceptor.ts` — now captures `ipAddress`/`browser`/`os`/`device` on every mutating request; computes `changedFields`/`description`/`severity`/`status: SUCCESS` on the existing success path; **new** `error` handler on the same `tap()` writes a `status: FAILURE` audit row (with a description built from the thrown error's message) whenever a mutating request fails *and* a tenant context exists — previously, failed mutations were never audited at all.
+- `apps/api/src/modules/auth/auth.service.ts` — `loginWithinTenant()` now writes an `auth.login_success` (SUCCESS/LOW) or `auth.login_failed` (FAILURE/MEDIUM, actor left `null`/`'Unknown'` so a failed attempt never confirms which account it was) `AuditLog` row alongside the pre-existing `LoginActivity` row, both carrying the same parsed browser/os/device/ip. `LoginActivity`/`LoginDirectoryService` lockout mechanics are completely untouched — this only adds a second, timeline-visible record of the same event.
+
+**Tested:**
+- `audit.interceptor.spec.ts` — 3 new tests (success path captures ip/browser/os/device + a description containing the record's label; an update reports the correct `changedFields`; a thrown error produces a `FAILURE`/`HIGH` entry) plus 1 new test confirming failures are still skipped with no tenant context, alongside the 3 pre-existing tests. `npx jest src/common/interceptors/audit.interceptor.spec.ts src/common/audit` → **7/7 passing**.
+- `auth.service.spec.ts` — 2 new tests (`login_success` entry carries parsed `Chrome 120`/`Windows 10/11`/ip; `login_failed` entry never leaks which account, correct severity). `npx jest src/modules/auth/auth.service.spec.ts` → **27/27 passing** (fixed one bad assertion: `objectContaining` requires an omitted key to be omitted from the expectation too, not passed as `undefined`).
+- Result: **all backend capture tests passing**, no regressions in either spec file.
+
+### Phase 3 — API: search, status/severity filters, stats endpoint
+
+**Built:**
+- `apps/api/src/modules/audit/audit-log.service.ts` — `AuditLogFilters` gained `status`, `severity`, and `q` (free-text `OR` search across action, entity type, description, IP address, actor role, actor identifier, and actor employee name); `rowSelect` extended with all the new columns; new `getStats()` returning `{total, last24h, critical, failedLogins}` via 4 independent `count()` queries (`failedLogins` counts `action: 'auth.login_failed'` rows specifically); `exportCsv()` header/rows extended with Status/Severity/IP/Browser/OS/Description columns.
+- `apps/api/src/modules/audit/audit-log.controller.ts` — `GET /audit-log` and `GET /audit-log/export.csv` both accept the new `status`/`severity`/`q` query params; new `GET /audit-log/stats` (reuses the existing `AuditLog:read` permission grant, so no seed/RBAC change was needed).
+
+**Tested:**
+- `audit-log.service.spec.ts` — 4 new tests (status+severity filter, free-text `OR` search shape, `getStats()`'s four independent counts and call order) alongside the 5 pre-existing tests (one updated for the new CSV header). `npx jest src/modules/audit` → **9/9 passing**.
+- `rbac-matrix.spec.ts` + `rbac-role-boundaries.spec.ts` → **12/12 passing** — the new `stats` route needed no allowlist/grant change, confirming the reused-permission design worked as intended.
+- `npx tsc --noEmit` (API) → clean.
+- Full `npx jest` (API) → **10 failed / 28 passed** suites — identical to the established pre-existing baseline (the `charge_items` test-DB-schema-drift failures, unrelated to this change); no new regressions.
+- Real-database verification (direct `AuditLogService` instantiation against the live `hospital_esic_model` schema, no dev server, no mocks): wrote a real SUCCESS/LOW notice-creation row, a real FAILURE/MEDIUM login row, and a real SUCCESS/CRITICAL staff-deletion row, then called the actual service methods — `getStats()` correctly reported `critical: 1` and `failedLogins: 1` against real data; `findAll({q: 'PMVY'})` found exactly the 1 matching row by searching the description field; `findAll({status: 'FAILURE'})` and `findAll({severity: 'CRITICAL'})` each returned exactly 1 row with every new column (`ipAddress`, `browser`, `os`, `device`, `changedFields`) present and correctly populated. Attempting to delete the 3 test rows afterward was correctly **rejected by the pre-existing append-only database trigger** (`audit_logs is append-only: DELETE is not permitted`) — re-confirming that guarantee still holds with the new columns; the 3 clearly-labeled test rows remain permanently in the `esic-model` tenant's real activity log as a result (harmless, and consistent with this project's append-only-by-design audit trail).
+
+### Phase 4 — Frontend: Timeline/Table redesign, stat cards, search/filters, details modal
+
+**Built:**
+- `apps/web/src/api/audit-log.api.ts` — `AuditLogEntry` extended with `changedFields`, `description`, `status`, `severity`, `ipAddress`, `browser`, `os`, `device`; `AuditLogFilters` gained `status`/`severity`/`q`; new `AuditLogStats` type and `fetchAuditLogStats()`.
+- `apps/web/src/utils/auditLog.ts` (new) — shared display helpers: `actionVerb()`/`actionBadgeVariant()` (CREATE=green/UPDATE=blue/DELETE=red from the `{entity}.{method}` action shape), `severityBadgeVariant()`, `statusBadgeVariant()`, IST-forced timestamp formatters (`formatIST`, `formatISTShortTime`, `formatISTDateHeading` — all pass `timeZone: 'Asia/Kolkata'` explicitly regardless of the viewer's own locale/timezone), `actorDisplayName()`/`actorInitial()`.
+- `apps/web/src/components/AuditLogDetailsModal.tsx` (new) — badges row (action/severity/status) + close button; 3-column grid (User: avatar+name+identifier+role badge; Action Details: module/record id/changed fields; Request Info: IST timestamp, IP, browser+OS, device); a Description box at the bottom. Matches the reference screenshot's detail-view layout.
+- `apps/web/src/screens/admin/ActivityLogScreen.tsx` — full redesign: Timeline/Table view toggle; 4 stat cards (Total Logs / Last 24 Hours / Critical / Failed Logins) fed by `fetchAuditLogStats()`; a search bar wired to the new `q` filter plus a collapsible Filters panel (action/module/status/severity/date range); Timeline view groups entries by IST calendar day with a severity-colored dot, actor avatar, role/action/status badges, a browser+OS/IP meta row, a "field(s) changed" badge, and a "View Details" button opening the new modal; Table view keeps the previous layout with an added Status column and row-click-to-open-details; pagination unchanged.
+- `apps/web/src/types/modules.d.ts` — added `Globe2`, `Smartphone`, `ListTree`, `Table2` to this project's existing manual lucide-react type shim (the bundled `lucide-react@1.26.0` type declarations are broken for a large, seemingly arbitrary subset of icon names — confirmed via isolated repro against the real `.d.ts` — so this repo already maintains its own allowlist-style shim rather than fighting upstream; this pass only added the 4 new names it needed).
+
+**Tested:**
+- `npx tsc --noEmit` (web) → clean after adding the 4 icon names to the shim (root-caused via isolated single-file repros before touching the shim, rather than guessing at icon substitutions).
+- `npx eslint` on all 4 touched/new frontend files → 53 pretter-formatting findings, all auto-fixed via `--fix`, re-linted clean (0 remaining).
+- `npm run build` (web, `tsc -b && vite build`) → clean both before and after the lint autofix.
+- `npx vitest run` (web) → **16/16 passing**, no regressions (App/routing/permissions suites untouched by this change).
+
+**Plan status: Activity Log UI redesign complete (schema → backend capture → API → frontend), all phases tested against real data.** Not performed: a live browser click-through of the new Timeline view (the API dev server was intentionally left stopped after the Phase 1 migration work, per this session's standing "don't restart without being asked" instruction — the web dev server itself was left running throughout). Every functional claim above was instead verified via direct-service-against-live-database calls and the full type-check/lint/build/test pipeline.

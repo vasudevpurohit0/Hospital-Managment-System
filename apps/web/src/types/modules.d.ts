@@ -165,6 +165,10 @@ declare module 'lucide-react' {
   export const Edit2: LucideIcon;
   export const ShieldQuestion: LucideIcon;
   export const Unlock: LucideIcon;
+  export const Globe2: LucideIcon;
+  export const Smartphone: LucideIcon;
+  export const ListTree: LucideIcon;
+  export const Table2: LucideIcon;
 
   export type { LucideIcon, LucideProps };
 }

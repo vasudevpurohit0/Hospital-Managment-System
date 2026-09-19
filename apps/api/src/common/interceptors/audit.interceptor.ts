@@ -4,6 +4,9 @@ import { tap } from 'rxjs/operators';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../decorators/current-user.decorator';
 import { hasTenantContext } from '../tenant/tenant-context';
+import { parseUserAgent, extractClientIp } from '../audit/request-meta.util';
+import { classifySeverity } from '../audit/severity.util';
+import { diffChangedFields, buildDescription } from '../audit/describe.util';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -38,6 +41,8 @@ export class AuditInterceptor implements NestInterceptor {
 
     const action = `${entityType.toLowerCase()}.${method.toLowerCase()}`;
     const beforeSnapshot = method === 'PUT' || method === 'PATCH' ? request.body : null;
+    const ipAddress = extractClientIp(request);
+    const { browser, os, device } = parseUserAgent(request.headers?.['user-agent']);
 
     return next.handle().pipe(
       tap({
@@ -61,6 +66,18 @@ export class AuditInterceptor implements NestInterceptor {
               request.body?.id ||
               '00000000-0000-0000-0000-000000000000';
 
+            const changedFields = diffChangedFields(beforeSnapshot, responseBody);
+            const status = 'SUCCESS' as const;
+            const severity = classifySeverity({ entityType, action, status });
+            const description = buildDescription({
+              method,
+              entityType,
+              entityId,
+              requestBody: request.body,
+              responseBody,
+              changedFields,
+            });
+
             await this.prisma.auditLog.create({
               data: {
                 actorUserId: user?.id || null,
@@ -70,6 +87,14 @@ export class AuditInterceptor implements NestInterceptor {
                 entityId,
                 beforeSnapshot: beforeSnapshot ? JSON.parse(JSON.stringify(beforeSnapshot)) : null,
                 afterSnapshot: responseBody ? JSON.parse(JSON.stringify(responseBody)) : null,
+                changedFields,
+                status,
+                severity,
+                description,
+                ipAddress,
+                browser,
+                os,
+                device,
               },
             });
 
@@ -78,6 +103,36 @@ export class AuditInterceptor implements NestInterceptor {
             );
           } catch (err) {
             this.logger.error(`Failed to write AuditLog: ${err}`);
+          }
+        },
+        error: async (err: unknown) => {
+          if (!hasTenantContext()) return;
+
+          try {
+            const entityId = request.params?.id || request.body?.id || '00000000-0000-0000-0000-000000000000';
+            const errorMessage = err instanceof Error ? err.message : 'Request failed';
+            const status = 'FAILURE' as const;
+            const severity = classifySeverity({ entityType, action, status });
+
+            await this.prisma.auditLog.create({
+              data: {
+                actorUserId: user?.id || null,
+                actorRole: user?.roleName || 'Anonymous',
+                action,
+                entityType,
+                entityId,
+                beforeSnapshot: beforeSnapshot ? JSON.parse(JSON.stringify(beforeSnapshot)) : null,
+                status,
+                severity,
+                description: `Failed to ${method === 'DELETE' ? 'delete' : method === 'POST' ? 'create' : 'update'} ${entityType.toLowerCase()}: ${errorMessage}`,
+                ipAddress,
+                browser,
+                os,
+                device,
+              },
+            });
+          } catch (writeErr) {
+            this.logger.error(`Failed to write failure AuditLog: ${writeErr}`);
           }
         },
       }),

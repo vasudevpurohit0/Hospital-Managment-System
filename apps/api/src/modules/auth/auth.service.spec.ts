@@ -194,6 +194,45 @@ describe('AuthService', () => {
       if (result.mode !== 'hospital') throw new Error('expected a hospital-mode login result');
       expect(result.user.role).toBe('Doctor');
     });
+
+    it('writes a SUCCESS AuditLog entry with parsed browser/os/ip on success', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+
+      await service.login(
+        { identifier: 'doctor@esic.gov.in', password: 'DoctorPass123!' },
+        { ip: '10.0.0.5', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36' },
+      );
+
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'auth.login_success',
+            status: 'SUCCESS',
+            ipAddress: '10.0.0.5',
+            browser: 'Chrome 120',
+            os: 'Windows 10/11',
+          }),
+        }),
+      );
+    });
+
+    it('writes a FAILURE AuditLog entry on a bad password without leaking who the actor is', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
+
+      await expect(
+        service.login({ identifier: 'doctor@esic.gov.in', password: 'WrongPassword' }, { ip: '10.0.0.5' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'auth.login_failed',
+            status: 'FAILURE',
+            severity: 'MEDIUM',
+          }),
+        }),
+      );
+    });
   });
 
   describe('changePassword()', () => {

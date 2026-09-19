@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, AuditStatus, AuditSeverity } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { toCsv } from '../reports/csv.util';
 
@@ -7,8 +7,12 @@ export interface AuditLogFilters {
   actorUserId?: string;
   action?: string;
   entityType?: string;
+  status?: AuditStatus;
+  severity?: AuditSeverity;
   dateFrom?: string;
   dateTo?: string;
+  /** Free-text search across actor identifier/name, module, description, and IP address. */
+  q?: string;
   page?: number;
   limit?: number;
 }
@@ -25,6 +29,8 @@ export class AuditLogService {
       ...(filters.actorUserId ? { actorUserId: filters.actorUserId } : {}),
       ...(filters.action ? { action: { contains: filters.action, mode: 'insensitive' } } : {}),
       ...(filters.entityType ? { entityType: filters.entityType } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.severity ? { severity: filters.severity } : {}),
       ...(filters.dateFrom || filters.dateTo
         ? {
             createdAt: {
@@ -33,7 +39,20 @@ export class AuditLogService {
             },
           }
         : {}),
-    };
+      ...(filters.q
+        ? {
+            OR: [
+              { action: { contains: filters.q, mode: 'insensitive' } },
+              { entityType: { contains: filters.q, mode: 'insensitive' } },
+              { description: { contains: filters.q, mode: 'insensitive' } },
+              { ipAddress: { contains: filters.q, mode: 'insensitive' } },
+              { actorRole: { contains: filters.q, mode: 'insensitive' } },
+              { actorUser: { identifier: { contains: filters.q, mode: 'insensitive' } } },
+              { actorUser: { employee: { name: { contains: filters.q, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
+    } as Prisma.AuditLogWhereInput;
   }
 
   private readonly rowSelect = {
@@ -46,7 +65,15 @@ export class AuditLogService {
     entityId: true,
     beforeSnapshot: true,
     afterSnapshot: true,
+    changedFields: true,
     reason: true,
+    description: true,
+    status: true,
+    severity: true,
+    ipAddress: true,
+    browser: true,
+    os: true,
+    device: true,
     actorUser: {
       select: {
         identifier: true,
@@ -74,6 +101,19 @@ export class AuditLogService {
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
+  /** Backs the four stat cards on the Activity Log screen (Total / Last 24h / Critical / Failed Logins). */
+  async getStats() {
+    const last24h = new Date(Date.now() - 24 * 60 * 60_000);
+    const [total, recentCount, criticalCount, failedLoginCount] = await Promise.all([
+      this.prisma.auditLog.count(),
+      this.prisma.auditLog.count({ where: { createdAt: { gte: last24h } } }),
+      this.prisma.auditLog.count({ where: { severity: 'CRITICAL' } }),
+      this.prisma.auditLog.count({ where: { action: 'auth.login_failed' } }),
+    ]);
+
+    return { total, last24h: recentCount, critical: criticalCount, failedLogins: failedLoginCount };
+  }
+
   /** Same filters, no pagination cap beyond a hard ceiling -- an export is a deliberate one-off pull, not a paged UI. */
   async exportCsv(filters: Omit<AuditLogFilters, 'page' | 'limit'>): Promise<string> {
     const where = this.buildWhere(filters);
@@ -85,7 +125,7 @@ export class AuditLogService {
     });
 
     return toCsv(
-      ['Timestamp', 'Actor', 'Staff ID', 'Role', 'Action', 'Module', 'Record ID', 'Reason'],
+      ['Timestamp', 'Actor', 'Staff ID', 'Role', 'Action', 'Module', 'Record ID', 'Status', 'Severity', 'IP Address', 'Browser', 'OS', 'Description', 'Reason'],
       rows.map((r) => [
         r.createdAt.toISOString(),
         r.actorUser?.identifier ?? r.actorUser?.employee?.name ?? 'System',
@@ -94,6 +134,12 @@ export class AuditLogService {
         r.action,
         r.entityType,
         r.entityId,
+        r.status,
+        r.severity,
+        r.ipAddress ?? '',
+        r.browser ?? '',
+        r.os ?? '',
+        r.description ?? '',
         r.reason ?? '',
       ]),
     );

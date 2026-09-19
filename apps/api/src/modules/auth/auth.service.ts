@@ -24,6 +24,7 @@ import { generateResetToken, hashResetToken } from '../../common/security/passwo
 import { EmailService } from '../../common/email/email.service';
 import { ActivateAccountDto } from './dto/activate-account.dto';
 import { activationEmailBody, ACTIVATION_EMAIL_SUBJECT } from '../../common/email/templates';
+import { parseUserAgent } from '../../common/audit/request-meta.util';
 
 interface RefreshPayload {
   sub: string;
@@ -168,6 +169,8 @@ export class AuthService {
   }
 
   private async loginWithinTenant(loginDto: LoginDto, hospitalId: string, schemaName: string, meta: RequestMeta) {
+    const { browser, os, device } = parseUserAgent(meta.userAgent);
+
     let user;
     try {
       user = await this.validateUser(loginDto.identifier, loginDto.password);
@@ -177,6 +180,23 @@ export class AuthService {
         .create({ data: { identifier: loginDto.identifier, success: false, reason, ipAddress: meta.ip, userAgent: meta.userAgent } })
         .catch(() => undefined);
       await this.loginDirectory.recordFailure(loginDto.identifier);
+      await this.prisma.auditLog
+        .create({
+          data: {
+            actorRole: 'Unknown',
+            action: 'auth.login_failed',
+            entityType: 'Auth',
+            entityId: loginDto.identifier,
+            status: 'FAILURE',
+            severity: 'MEDIUM',
+            description: `Failed login attempt for "${loginDto.identifier}" (${reason})`,
+            ipAddress: meta.ip,
+            browser,
+            os,
+            device,
+          },
+        })
+        .catch(() => undefined);
       throw err;
     }
 
@@ -187,6 +207,24 @@ export class AuthService {
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => undefined);
 
     const roleName = user.role?.name || 'Doctor';
+    await this.prisma.auditLog
+      .create({
+        data: {
+          actorUserId: user.id,
+          actorRole: roleName,
+          action: 'auth.login_success',
+          entityType: 'Auth',
+          entityId: user.id,
+          status: 'SUCCESS',
+          severity: 'LOW',
+          description: `Successful login for "${loginDto.identifier}"`,
+          ipAddress: meta.ip,
+          browser,
+          os,
+          device,
+        },
+      })
+      .catch(() => undefined);
 
     const payload: JwtPayload = {
       sub: user.id,

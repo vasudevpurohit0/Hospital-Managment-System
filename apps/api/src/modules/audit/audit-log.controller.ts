@@ -1,5 +1,6 @@
 import { Controller, Get, Header, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
+import { AuditStatus, AuditSeverity } from '@prisma/client';
 import { AuditLogService } from './audit-log.service';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 
@@ -20,6 +21,9 @@ export class AuditLogController {
     @Query('actorUserId') actorUserId?: string,
     @Query('action') action?: string,
     @Query('entityType') entityType?: string,
+    @Query('status') status?: AuditStatus,
+    @Query('severity') severity?: AuditSeverity,
+    @Query('q') q?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('page') page?: string,
@@ -29,11 +33,20 @@ export class AuditLogController {
       actorUserId,
       action,
       entityType,
+      status,
+      severity,
+      q,
       dateFrom,
       dateTo,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
+  }
+
+  @Get('stats')
+  @RequirePermission('AuditLog', 'read')
+  async getStats() {
+    return this.auditLogService.getStats();
   }
 
   @Get('export.csv')
@@ -44,10 +57,13 @@ export class AuditLogController {
     @Query('actorUserId') actorUserId?: string,
     @Query('action') action?: string,
     @Query('entityType') entityType?: string,
+    @Query('status') status?: AuditStatus,
+    @Query('severity') severity?: AuditSeverity,
+    @Query('q') q?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
-    const csv = await this.auditLogService.exportCsv({ actorUserId, action, entityType, dateFrom, dateTo });
+    const csv = await this.auditLogService.exportCsv({ actorUserId, action, entityType, status, severity, q, dateFrom, dateTo });
     res.setHeader('Content-Disposition', 'attachment; filename="activity-log.csv"');
     res.send(csv);
   }

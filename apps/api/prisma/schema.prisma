@@ -665,23 +665,45 @@ model Admission {
   @@map("admissions")
 }
 
+enum AuditStatus {
+  SUCCESS
+  FAILURE
+}
+
+enum AuditSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
 model AuditLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  actorUserId    String?  @map("actor_user_id") @db.Uuid
-  actorRole      String   @map("actor_role")
+  id             String        @id @default(uuid()) @db.Uuid
+  actorUserId    String?       @map("actor_user_id") @db.Uuid
+  actorRole      String        @map("actor_role")
   action         String
-  entityType     String   @map("entity_type")
-  entityId       String   @map("entity_id")
-  beforeSnapshot Json?    @map("before_snapshot")
-  afterSnapshot  Json?    @map("after_snapshot")
+  entityType     String        @map("entity_type")
+  entityId       String        @map("entity_id")
+  beforeSnapshot Json?         @map("before_snapshot")
+  afterSnapshot  Json?         @map("after_snapshot")
+  changedFields  String[]      @default([]) @map("changed_fields")
   reason         String?
-  createdAt      DateTime @default(now()) @map("created_at")
-  actorUser      User?    @relation(fields: [actorUserId], references: [id])
+  description    String?
+  status         AuditStatus   @default(SUCCESS)
+  severity       AuditSeverity @default(LOW)
+  ipAddress      String?       @map("ip_address")
+  browser        String?
+  os             String?
+  device         String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  actorUser      User?         @relation(fields: [actorUserId], references: [id])
 
   @@index([createdAt])
   @@index([entityType, entityId])
   @@index([actorUserId])
   @@index([action])
+  @@index([status])
+  @@index([severity])
   @@map("audit_logs")
 }
 

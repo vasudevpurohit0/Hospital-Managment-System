@@ -1,5 +1,8 @@
 import { apiFetch } from './client';
 
+export type AuditStatus = 'SUCCESS' | 'FAILURE';
+export type AuditSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
 export interface AuditLogEntry {
   id: string;
   createdAt: string;
@@ -10,7 +13,15 @@ export interface AuditLogEntry {
   entityId: string;
   beforeSnapshot: unknown;
   afterSnapshot: unknown;
+  changedFields: string[];
   reason: string | null;
+  description: string | null;
+  status: AuditStatus;
+  severity: AuditSeverity;
+  ipAddress: string | null;
+  browser: string | null;
+  os: string | null;
+  device: string | null;
   actorUser: { identifier: string; employee: { name: string; employeeId: string } | null } | null;
   /** Only present on the cross-hospital platform endpoint. */
   hospitalId?: string;
@@ -21,6 +32,9 @@ export interface AuditLogFilters {
   actorUserId?: string;
   action?: string;
   entityType?: string;
+  status?: AuditStatus;
+  severity?: AuditSeverity;
+  q?: string;
   dateFrom?: string;
   dateTo?: string;
   page?: number;
@@ -30,6 +44,13 @@ export interface AuditLogFilters {
 export interface AuditLogPage {
   items: AuditLogEntry[];
   meta: { total: number; page?: number; limit?: number; totalPages?: number; note?: string };
+}
+
+export interface AuditLogStats {
+  total: number;
+  last24h: number;
+  critical: number;
+  failedLogins: number;
 }
 
 function buildParams(filters: AuditLogFilters & { hospitalId?: string }): string {
@@ -52,6 +73,12 @@ async function unwrap<T>(res: Response, fallback: string): Promise<T> {
 export async function fetchAuditLog(filters: AuditLogFilters = {}): Promise<AuditLogPage> {
   const res = await apiFetch(`/api/audit-log?${buildParams(filters)}`);
   return unwrap(res, 'Failed to fetch activity log');
+}
+
+/** Total / last-24h / critical / failed-login counts backing the stat cards. */
+export async function fetchAuditLogStats(): Promise<AuditLogStats> {
+  const res = await apiFetch('/api/audit-log/stats');
+  return unwrap(res, 'Failed to fetch activity log stats');
 }
 
 /** Fetches the CSV through the normal authenticated apiFetch (a plain <a href> can't carry the Bearer token) and returns it as a Blob ready to save. */

@@ -58,6 +58,39 @@ describe('AuditLogService', () => {
       const result = await service.findAll({ page: 1, limit: 50 });
       expect(result.meta).toEqual({ total: 101, page: 1, limit: 50, totalPages: 3 });
     });
+
+    it('filters by status and severity', async () => {
+      await service.findAll({ status: 'FAILURE', severity: 'CRITICAL' });
+      const whereArg = mockPrisma.auditLog.findMany.mock.calls[0][0].where;
+      expect(whereArg).toEqual({ status: 'FAILURE', severity: 'CRITICAL' });
+    });
+
+    it('builds an OR search across actor, module, description, and IP for the free-text query', async () => {
+      await service.findAll({ q: '49.43.6.216' });
+      const whereArg = mockPrisma.auditLog.findMany.mock.calls[0][0].where;
+      expect(whereArg.OR).toEqual(
+        expect.arrayContaining([
+          { ipAddress: { contains: '49.43.6.216', mode: 'insensitive' } },
+          { actorUser: { identifier: { contains: '49.43.6.216', mode: 'insensitive' } } },
+        ]),
+      );
+    });
+  });
+
+  describe('getStats()', () => {
+    it('returns total, last-24h, critical, and failed-login counts from four independent queries', async () => {
+      mockPrisma.auditLog.count
+        .mockResolvedValueOnce(4881) // total
+        .mockResolvedValueOnce(1) // last24h
+        .mockResolvedValueOnce(1472) // critical
+        .mockResolvedValueOnce(189); // failedLogins
+
+      const stats = await service.getStats();
+
+      expect(stats).toEqual({ total: 4881, last24h: 1, critical: 1472, failedLogins: 189 });
+      expect(mockPrisma.auditLog.count).toHaveBeenNthCalledWith(3, { where: { severity: 'CRITICAL' } });
+      expect(mockPrisma.auditLog.count).toHaveBeenNthCalledWith(4, { where: { action: 'auth.login_failed' } });
+    });
   });
 
   describe('exportCsv()', () => {
@@ -75,7 +108,7 @@ describe('AuditLogService', () => {
       ]);
 
       const csv = await service.exportCsv({});
-      expect(csv).toContain('Timestamp,Actor,Staff ID,Role,Action,Module,Record ID,Reason');
+      expect(csv).toContain('Timestamp,Actor,Staff ID,Role,Action,Module,Record ID,Status,Severity,IP Address,Browser,OS,Description,Reason');
       expect(csv).toContain('admin@esic.gov.in');
       expect(csv).toContain('ADX-0001');
       expect(csv).toContain('staff.locked');
