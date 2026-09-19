@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
+import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
 import { CreateHospitalAdminDto } from './dto/create-hospital-admin.dto';
 
 export interface HospitalAdminRecord {
@@ -72,7 +73,7 @@ export class HospitalAdminsService {
     return perHospital.flat();
   }
 
-  async create(hospitalId: string, dto: CreateHospitalAdminDto): Promise<HospitalAdminRecord> {
+  async create(hospitalId: string, dto: CreateHospitalAdminDto, platformUserId: string): Promise<HospitalAdminRecord> {
     const hospital = await this.requireOnboardedHospital(hospitalId);
     const user = await this.userProvisioning.provisionAdministrator(
       hospital.schemaName,
@@ -80,6 +81,13 @@ export class HospitalAdminsService {
       dto.identifier,
       dto.password,
     );
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: 'hospital_admin.create',
+      hospitalId: hospital.id,
+      resource: 'User',
+      metadata: { identifier: user.identifier },
+    });
     return {
       id: user.id,
       identifier: user.identifier,
@@ -97,7 +105,7 @@ export class HospitalAdminsService {
    * would lock out the one role that could otherwise fix it from inside the
    * hospital itself.
    */
-  async setActive(hospitalId: string, userId: string, active: boolean): Promise<HospitalAdminRecord> {
+  async setActive(hospitalId: string, userId: string, active: boolean, platformUserId: string): Promise<HospitalAdminRecord> {
     const hospital = await this.requireOnboardedHospital(hospitalId);
     const client = await this.tenantClients.getClient(hospital.schemaName);
 
@@ -119,6 +127,13 @@ export class HospitalAdminsService {
     }
 
     const user = await client.user.update({ where: { id: userId }, data: { active } });
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: active ? 'hospital_admin.activate' : 'hospital_admin.deactivate',
+      hospitalId: hospital.id,
+      resource: 'User',
+      metadata: { identifier: user.identifier },
+    });
     return {
       id: user.id,
       identifier: user.identifier,

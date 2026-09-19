@@ -1,9 +1,10 @@
 import {
   IsArray,
   IsBoolean,
+  IsInt,
   IsNotEmpty,
-  IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -14,8 +15,8 @@ export class RequisitionItemDto {
   @IsNotEmpty()
   medicineId!: string;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @IsPositive()
   quantity!: number;
 }
 

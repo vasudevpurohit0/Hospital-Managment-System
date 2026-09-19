@@ -199,6 +199,28 @@ describeWithDb('ReceiptService (integration)', () => {
     expect(new Set(numbers).size).toBe(5);
   });
 
+  it('allows only ONE of two concurrent issue() calls for the SAME chargeIds to succeed (regression: previously both could create a receipt)', async () => {
+    const visitId = await makeVisit();
+    const svc = await makePricedService(50);
+    const charge = await charges.postServiceCharge({ visitId, serviceId: svc.id }, BenefitOutcome.PAID);
+
+    const results = await Promise.allSettled([
+      receipts.issue({ chargeIds: [charge.id] }),
+      receipts.issue({ chargeIds: [charge.id] }),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+
+    // Confirm the charge itself ended up PAID against exactly one receipt,
+    // not silently re-receipted by the loser.
+    const finalCharge = await prisma.chargeItem.findUniqueOrThrow({ where: { id: charge.id } });
+    expect(finalCharge.status).toBe('PAID');
+    expect(finalCharge.receiptId).toBeTruthy();
+  });
+
   it('reads back correctly through the same client that wrote it (regression: read-your-own-write inside a transaction)', async () => {
     // This reproduces the exact shape of pharmacy.service.ts's call: issue()
     // invoked with an explicit transaction client, from inside a still-open

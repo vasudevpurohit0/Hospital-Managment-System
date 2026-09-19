@@ -1,10 +1,26 @@
-import { Controller, Get, Header, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Header, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 
+/**
+ * Rejects an invalid or reversed date range instead of silently passing
+ * `Invalid Date` through to Prisma (which previously matched nothing, with
+ * no indication to the caller why their report came back empty).
+ */
 function parseRange(from?: string, to?: string) {
-  return { from: from ? new Date(from) : undefined, to: to ? new Date(to) : undefined };
+  const parsedFrom = from ? new Date(from) : undefined;
+  const parsedTo = to ? new Date(to) : undefined;
+  if (parsedFrom && Number.isNaN(parsedFrom.getTime())) {
+    throw new BadRequestException(`Invalid "from" date: "${from}".`);
+  }
+  if (parsedTo && Number.isNaN(parsedTo.getTime())) {
+    throw new BadRequestException(`Invalid "to" date: "${to}".`);
+  }
+  if (parsedFrom && parsedTo && parsedFrom > parsedTo) {
+    throw new BadRequestException('"from" date must not be after "to" date.');
+  }
+  return { from: parsedFrom, to: parsedTo };
 }
 
 function sendCsv(res: Response, filename: string, csv: string) {

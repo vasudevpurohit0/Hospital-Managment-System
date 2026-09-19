@@ -124,3 +124,63 @@ describe('DashboardService.getMySummary()', () => {
     expect(result).toEqual({ role: 'SomeUnhandledRole' });
   });
 });
+
+describe('DashboardService.getMetrics() (regression: admin-tier fields leaked to every role)', () => {
+  let service: DashboardService;
+
+  const mockPrisma = {
+    visit: { count: jest.fn().mockResolvedValue(0) },
+    admission: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+    bed: { count: jest.fn().mockResolvedValue(0) },
+    medicineBatch: { count: jest.fn().mockResolvedValue(0) },
+    purchaseRequisition: { count: jest.fn().mockResolvedValue(0) },
+    purchaseOrder: { count: jest.fn().mockResolvedValue(0) },
+    chargeItem: { count: jest.fn().mockResolvedValue(0) },
+    auditLog: { count: jest.fn().mockResolvedValue(0), findMany: jest.fn().mockResolvedValue([]) },
+    employee: { count: jest.fn().mockResolvedValue(0) },
+  };
+
+  const mockOpdService = { getMyQueue: jest.fn() };
+
+  beforeEach(() => {
+    // clearAllMocks() only resets call history, not the mockResolvedValue(...)
+    // implementations set above -- those stay in place across tests, which is
+    // all these tests need (only the shape of the result matters here, not
+    // the specific counts).
+    jest.clearAllMocks();
+    service = new DashboardService(mockPrisma as never, mockOpdService as never);
+  });
+
+  it('omits billing/auditExceptions/staff for a role with no Analytics:read permission (e.g. Pharmacist)', async () => {
+    const result = await service.getMetrics(
+      { id: 'u1', identifier: 'x', roleId: 'r1', roleName: 'Pharmacist', type: 'hospital', permissions: [{ resource: 'StockTransaction', action: 'dispense' }] },
+    );
+
+    expect(result).toHaveProperty('opd');
+    expect(result).toHaveProperty('ipd');
+    expect(result).toHaveProperty('inventory');
+    expect(result).toHaveProperty('procurement');
+    expect(result).not.toHaveProperty('billing');
+    expect(result).not.toHaveProperty('auditExceptions');
+    expect(result).not.toHaveProperty('staff');
+  });
+
+  it('includes billing/auditExceptions/staff for a role holding Analytics:read (e.g. Administrator)', async () => {
+    const result = await service.getMetrics(
+      { id: 'u1', identifier: 'x', roleId: 'r1', roleName: 'Administrator', type: 'hospital', permissions: [{ resource: 'Analytics', action: 'read' }] },
+    );
+
+    expect(result).toHaveProperty('billing');
+    expect(result).toHaveProperty('auditExceptions');
+    expect(result).toHaveProperty('staff');
+  });
+
+  it('includes billing/auditExceptions/staff for a platform Super Admin regardless of permissions array', async () => {
+    const result = await service.getMetrics(
+      { id: 'platform', identifier: 'x', roleId: '', roleName: 'SuperAdmin', type: 'platform', permissions: [] },
+    );
+
+    expect(result).toHaveProperty('billing');
+    expect(result).toHaveProperty('staff');
+  });
+});

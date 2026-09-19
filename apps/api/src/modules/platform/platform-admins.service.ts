@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class PlatformAdminsService {
     });
   }
 
-  async create(dto: CreatePlatformAdminDto) {
+  async create(dto: CreatePlatformAdminDto, callerId: string) {
     const existing = await this.platformPrisma.platformUser.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException(`A platform admin with email "${dto.email}" already exists.`);
@@ -22,6 +23,12 @@ export class PlatformAdminsService {
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = await this.platformPrisma.platformUser.create({
       data: { email: dto.email, name: dto.name, passwordHash },
+    });
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId: callerId,
+      action: 'platform_admin.create',
+      resource: 'PlatformUser',
+      metadata: { email: user.email },
     });
     return { id: user.id, email: user.email, name: user.name, active: user.active, createdAt: user.createdAt };
   }
@@ -47,6 +54,12 @@ export class PlatformAdminsService {
     }
 
     const user = await this.platformPrisma.platformUser.update({ where: { id }, data: { active } });
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId: callerId,
+      action: active ? 'platform_admin.activate' : 'platform_admin.deactivate',
+      resource: 'PlatformUser',
+      metadata: { email: user.email },
+    });
     return { id: user.id, email: user.email, name: user.name, active: user.active };
   }
 }

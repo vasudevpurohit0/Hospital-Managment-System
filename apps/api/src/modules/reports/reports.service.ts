@@ -9,6 +9,16 @@ export interface ReportRange {
 }
 
 /**
+ * Caps every report export at this many rows. Without a cap, any of these
+ * endpoints could return the tenant's entire history of charges/employees in
+ * one response -- a real DoS/memory-pressure and bulk-data-exposure risk for
+ * a hospital with years of data. 10,000 rows comfortably covers a normal
+ * date-bounded report while still bounding the worst case; a caller needing
+ * more should narrow the date range rather than pull everything at once.
+ */
+const MAX_REPORT_ROWS = 10_000;
+
+/**
  * Feature 13's report centre. Every report is a real query with ESIC
  * branding, a title, the applied date range, and a totals row where a total
  * means something — never a hardcoded sample table.
@@ -33,6 +43,7 @@ export class ReportsService {
     const charges = await this.prisma.chargeItem.findMany({
       where: { status: { not: ChargeStatus.CANCELLED }, ...this.dateFilter(r) },
       orderBy: { createdAt: 'asc' },
+      take: MAX_REPORT_ROWS,
       include: {
         visit: { include: { employee: { include: { hospitalUid: true } } } },
         receipt: { select: { receiptNumber: true } },
@@ -64,6 +75,7 @@ export class ReportsService {
     const charges = await this.prisma.chargeItem.findMany({
       where: { status: ChargeStatus.PENDING },
       orderBy: { createdAt: 'asc' },
+      take: MAX_REPORT_ROWS,
       include: { visit: { include: { employee: { include: { hospitalUid: true } } } } },
     });
 
@@ -96,6 +108,7 @@ export class ReportsService {
         ? { registrationDate: { ...(r.from ? { gte: r.from } : {}), ...(r.to ? { lte: r.to } : {}) } }
         : undefined,
       orderBy: { registrationDate: 'asc' },
+      take: MAX_REPORT_ROWS,
       include: { hospitalUid: true, employmentType: true },
     });
 

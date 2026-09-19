@@ -13,6 +13,7 @@ import * as bcrypt from 'bcryptjs';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
+import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { UpdateHospitalStatusDto } from './dto/update-hospital-status.dto';
@@ -68,11 +69,11 @@ export class HospitalsService {
    * large tenant-migration history this could take a while, which is an
    * accepted tradeoff for now rather than building async job-status polling.
    */
-  async createHospital(dto: CreateHospitalDto) {
+  async createHospital(dto: CreateHospitalDto, platformUserId: string) {
     const existing = await this.platformPrisma.hospital.findUnique({ where: { slug: dto.slug } });
     if (existing) {
       if (existing.status === 'PROVISIONING') {
-        return this.resumeProvisioning(existing, dto);
+        return this.resumeProvisioning(existing, dto, platformUserId);
       }
       throw new ConflictException(`A hospital with slug "${dto.slug}" already exists.`);
     }
@@ -100,10 +101,18 @@ export class HospitalsService {
       await this.runSeed(schemaName);
       await this.userProvisioning.provisionAdministrator(schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
 
-      return await this.platformPrisma.hospital.update({
+      const activated = await this.platformPrisma.hospital.update({
         where: { id: hospital.id },
         data: { status: 'ACTIVE' },
       });
+      await recordPlatformAuditLog(this.platformPrisma, {
+        platformUserId,
+        action: 'hospital.create',
+        hospitalId: hospital.id,
+        resource: 'Hospital',
+        metadata: { name: dto.name, slug: dto.slug },
+      });
+      return activated;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Onboarding failed for hospital "${dto.slug}": ${message}`);
@@ -123,7 +132,7 @@ export class HospitalsService {
     id: string;
     slug: string;
     schemaName: string;
-  }, dto: CreateHospitalDto) {
+  }, dto: CreateHospitalDto, platformUserId: string) {
     if (!SCHEMA_NAME_RE.test(hospital.schemaName)) {
       throw new InternalServerErrorException('Invalid schema name on provisioning record -- refusing to run DDL.');
     }
@@ -134,10 +143,17 @@ export class HospitalsService {
       await this.runSeed(hospital.schemaName);
       await this.userProvisioning.provisionAdministrator(hospital.schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
 
-      return await this.platformPrisma.hospital.update({
+      const activated = await this.platformPrisma.hospital.update({
         where: { id: hospital.id },
         data: { status: 'ACTIVE' },
       });
+      await recordPlatformAuditLog(this.platformPrisma, {
+        platformUserId,
+        action: 'hospital.resume_provisioning',
+        hospitalId: hospital.id,
+        resource: 'Hospital',
+      });
+      return activated;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to resume hospital onboarding for "${hospital.slug}": ${message}`);
@@ -174,9 +190,9 @@ export class HospitalsService {
   }
 
   /** Edits a hospital's own details -- never its slug/schemaName, both fixed at onboarding. */
-  async update(id: string, dto: UpdateHospitalDto) {
+  async update(id: string, dto: UpdateHospitalDto, platformUserId: string) {
     await this.requireHospital(id);
-    return this.platformPrisma.hospital.update({
+    const updated = await this.platformPrisma.hospital.update({
       where: { id },
       data: {
         name: dto.name,
@@ -185,6 +201,13 @@ export class HospitalsService {
         address: dto.address,
       },
     });
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: 'hospital.update',
+      hospitalId: id,
+      resource: 'Hospital',
+    });
+    return updated;
   }
 
   /**
@@ -194,12 +217,20 @@ export class HospitalsService {
    * (TenantResolutionMiddleware) -- suspension blocks every path into the
    * tenant's data, not just one of them.
    */
-  async setStatus(id: string, dto: UpdateHospitalStatusDto) {
+  async setStatus(id: string, dto: UpdateHospitalStatusDto, platformUserId: string) {
     const hospital = await this.requireHospital(id);
     if (hospital.status === 'PROVISIONING') {
       throw new BadRequestException('Cannot change status of a hospital that is still provisioning.');
     }
-    return this.platformPrisma.hospital.update({ where: { id }, data: { status: dto.status } });
+    const updated = await this.platformPrisma.hospital.update({ where: { id }, data: { status: dto.status } });
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: 'hospital.set_status',
+      hospitalId: id,
+      resource: 'Hospital',
+      metadata: { from: hospital.status, to: dto.status },
+    });
+    return updated;
   }
 
   /**
@@ -209,15 +240,30 @@ export class HospitalsService {
    * and restricting this to "the first admin" specifically would be an
    * arbitrary and less useful restriction.
    */
-  async resetHospitalUserPassword(id: string, dto: ResetHospitalUserPasswordDto) {
+  async resetHospitalUserPassword(id: string, dto: ResetHospitalUserPasswordDto, platformUserId: string) {
     const hospital = await this.requireHospital(id);
     const client = await this.tenantClients.getClient(hospital.schemaName);
-    const user = await client.user.findUnique({ where: { identifier: dto.identifier } });
+    // Tenant User.identifier is always stored lowercased (see
+    // TenantUserProvisioningService) -- normalize the lookup the same way,
+    // or a case-mismatched identifier here would always 404 even for a real,
+    // existing user.
+    const normalizedIdentifier = dto.identifier.trim().toLowerCase();
+    const user = await client.user.findUnique({ where: { identifier: normalizedIdentifier } });
     if (!user) {
       throw new NotFoundException(`No user "${dto.identifier}" found in ${hospital.name}.`);
     }
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
     await client.user.update({ where: { id: user.id }, data: { passwordHash } });
+    // Never record the new password itself -- only that a reset happened and
+    // for whom, matching the lesson from the plaintext-temp-password-in-audit-log
+    // issue found elsewhere in this codebase.
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: 'hospital.reset_user_password',
+      hospitalId: id,
+      resource: 'User',
+      metadata: { identifier: normalizedIdentifier },
+    });
     return { reset: true, identifier: dto.identifier };
   }
 
@@ -228,7 +274,7 @@ export class HospitalsService {
    * it's really the one you meant, then delete" flow, since this cannot be
    * undone.
    */
-  async remove(id: string) {
+  async remove(id: string, platformUserId: string) {
     const hospital = await this.requireHospital(id);
     if (hospital.status !== 'SUSPENDED') {
       throw new BadRequestException('Suspend a hospital before deleting it, to confirm this is intentional.');
@@ -241,6 +287,15 @@ export class HospitalsService {
     // hospital's emails stay permanently unusable on the whole platform.
     await this.platformPrisma.loginIdentifier.deleteMany({ where: { hospitalId: id } });
     await this.platformPrisma.hospital.delete({ where: { id } });
+    // The hospital row is gone (its FK is ON DELETE SET NULL, so this entry
+    // will show no hospital once queried) -- capture identifying details in
+    // metadata since there's no longer a row to join against for them.
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: 'hospital.delete',
+      resource: 'Hospital',
+      metadata: { name: hospital.name, slug: hospital.slug, hospitalId: id },
+    });
     return { deleted: true };
   }
 }

@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PlatformPrismaService } from '../../../common/tenant/platform-prisma.service';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
+import { JWT_PLATFORM_SECRET } from '../../../common/config/jwt-secrets';
 
 export interface PlatformJwtPayload {
   sub: string;
@@ -16,7 +17,7 @@ export class PlatformJwtStrategy extends PassportStrategy(Strategy, 'platform-jw
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_PLATFORM_SECRET || 'dev_jwt_platform_secret_key_platform',
+      secretOrKey: JWT_PLATFORM_SECRET,
     });
   }
 

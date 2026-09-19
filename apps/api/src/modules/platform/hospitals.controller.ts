@@ -18,6 +18,7 @@ import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { UpdateHospitalStatusDto } from './dto/update-hospital-status.dto';
 import { ResetHospitalUserPasswordDto } from './dto/reset-hospital-user-password.dto';
 import { PlatformOnlyGuard } from '../../common/guards/platform-only.guard';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('platform/hospitals')
 @UseGuards(PlatformOnlyGuard)
@@ -38,28 +39,40 @@ export class HospitalsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() dto: CreateHospitalDto) {
-    return this.hospitals.createHospital(dto);
+  async create(@Body() dto: CreateHospitalDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.hospitals.createHospital(dto, user.id);
   }
 
   @Patch(':id')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateHospitalDto) {
-    return this.hospitals.update(id, dto);
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateHospitalDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hospitals.update(id, dto, user.id);
   }
 
   @Patch(':id/status')
-  async setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateHospitalStatusDto) {
-    return this.hospitals.setStatus(id, dto);
+  async setStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateHospitalStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hospitals.setStatus(id, dto, user.id);
   }
 
   @Post(':id/reset-password')
   @HttpCode(HttpStatus.OK)
-  async resetPassword(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ResetHospitalUserPasswordDto) {
-    return this.hospitals.resetHospitalUserPassword(id, dto);
+  async resetPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResetHospitalUserPasswordDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hospitals.resetHospitalUserPassword(id, dto, user.id);
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.hospitals.remove(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.hospitals.remove(id, user.id);
   }
 }

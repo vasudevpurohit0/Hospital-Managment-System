@@ -17,8 +17,8 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('summary')
-  async getMetrics() {
-    return this.dashboardService.getMetrics();
+  async getMetrics(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.getMetrics(user);
   }
 
   /**

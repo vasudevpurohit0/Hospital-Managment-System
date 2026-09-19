@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Param, Put, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, HttpCode, HttpStatus, ForbiddenException } from '@nestjs/common';
 import { EmployeeService } from './employee.service';
 import { EmployeeVerificationService } from './services/employee-verification.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateEmployeeSimpleDto } from './dto/create-employee-simple.dto';
+import { UpdateEmployeeDto, EMPLOYEE_RECLASSIFICATION_FIELDS } from './dto/update-employee.dto';
 import { VerifyEmployeeReqDto } from './dto/verify-employee-req.dto';
 import { RegisterEmployeeReqDto } from './dto/register-employee-req.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -71,7 +72,30 @@ export class EmployeeController {
 
   @Put(':id')
   @RequirePermission('Employee', 'update')
-  async update(@Param('id') id: string, @Body() updateDto: Partial<CreateEmployeeDto>) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateEmployeeDto,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    // Reclassification (post/grade/employment type) feeds benefit
+    // eligibility and pay-grade-linked billing, so plain Employee:update
+    // (also held by Reception/DataEntryOperator for demographic-only edits)
+    // is not enough to change these fields -- requires Employee:reclassify.
+    const attemptsReclassification = EMPLOYEE_RECLASSIFICATION_FIELDS.some(
+      (field) => updateDto[field] !== undefined,
+    );
+    if (attemptsReclassification && user?.type !== 'platform') {
+      const canReclassify = user?.permissions?.some(
+        (p) =>
+          (p.resource === '*' || p.resource === 'Employee') &&
+          (p.action === '*' || p.action === 'reclassify'),
+      );
+      if (!canReclassify) {
+        throw new ForbiddenException(
+          'Changing post, grade, or employment type requires the Employee:reclassify permission.',
+        );
+      }
+    }
     return this.employeeService.update(id, updateDto);
   }
 }

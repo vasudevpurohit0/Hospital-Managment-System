@@ -7,6 +7,7 @@ import { hasTenantContext } from '../tenant/tenant-context';
 import { parseUserAgent, extractClientIp } from '../audit/request-meta.util';
 import { classifySeverity } from '../audit/severity.util';
 import { diffChangedFields, buildDescription } from '../audit/describe.util';
+import { redactSensitiveFields } from '../audit/redact.util';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -85,8 +86,12 @@ export class AuditInterceptor implements NestInterceptor {
                 action,
                 entityType,
                 entityId,
-                beforeSnapshot: beforeSnapshot ? JSON.parse(JSON.stringify(beforeSnapshot)) : null,
-                afterSnapshot: responseBody ? JSON.parse(JSON.stringify(responseBody)) : null,
+                // Redacted AFTER changedFields/description are computed above
+                // (from the real, unredacted data) so "temporaryPassword
+                // changed" still shows correctly as a field NAME -- only the
+                // stored snapshot's VALUES are ever replaced.
+                beforeSnapshot: beforeSnapshot ? redactSensitiveFields(JSON.parse(JSON.stringify(beforeSnapshot))) : null,
+                afterSnapshot: responseBody ? redactSensitiveFields(JSON.parse(JSON.stringify(responseBody))) : null,
                 changedFields,
                 status,
                 severity,
@@ -121,7 +126,7 @@ export class AuditInterceptor implements NestInterceptor {
                 action,
                 entityType,
                 entityId,
-                beforeSnapshot: beforeSnapshot ? JSON.parse(JSON.stringify(beforeSnapshot)) : null,
+                beforeSnapshot: beforeSnapshot ? redactSensitiveFields(JSON.parse(JSON.stringify(beforeSnapshot))) : null,
                 status,
                 severity,
                 description: `Failed to ${method === 'DELETE' ? 'delete' : method === 'POST' ? 'create' : 'update'} ${entityType.toLowerCase()}: ${errorMessage}`,

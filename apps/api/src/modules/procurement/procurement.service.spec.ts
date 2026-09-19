@@ -36,6 +36,7 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
       create: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     storeTransfer: {
       create: jest.fn(),
@@ -106,6 +107,40 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
         data: { status: RequisitionStatus.APPROVED },
       });
     });
+
+    it('rejects self-approval: the user who raised a requisition cannot approve/reject it (regression: StoreManager holds both permissions)', async () => {
+      mockPrisma.purchaseRequisition.findUnique.mockResolvedValue({
+        id: 'req-01',
+        raisedBy: 'user-storemanager',
+        status: RequisitionStatus.PENDING,
+      });
+
+      await expect(
+        service.approveRequisition(
+          'req-01',
+          { decision: ApprovalDecision.APPROVED },
+          'user-storemanager',
+        ),
+      ).rejects.toThrow();
+      expect(mockPrisma.approval.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects deciding a requisition a second time (regression: previously could flip status back and forth indefinitely)', async () => {
+      mockPrisma.purchaseRequisition.findUnique.mockResolvedValue({
+        id: 'req-01',
+        raisedBy: 'user-01',
+        status: RequisitionStatus.APPROVED,
+      });
+
+      await expect(
+        service.approveRequisition(
+          'req-01',
+          { decision: ApprovalDecision.REJECTED },
+          'user-manager',
+        ),
+      ).rejects.toThrow();
+      expect(mockPrisma.approval.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('createPurchaseOrder (Strict FR-SCM-03 Approval Check)', () => {
@@ -161,8 +196,11 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
     it('should create Goods Receipt Note, create new MedicineBatch rows, and add stock to CentralStore', async () => {
       mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
         id: 'po-01',
+        requisitionId: 'req-01',
         supplierId: 'sup-01',
         status: POStatus.ISSUED,
+        items: [{ medicineId: 'med-01', quantity: 500 }],
+        goodsReceiptNotes: [],
       });
 
       mockPrisma.goodsReceiptNote.create.mockResolvedValue({
@@ -217,6 +255,140 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
         data: { status: POStatus.RECEIVED },
       });
     });
+
+    it('rejects a GRN item for a medicine not on the Purchase Order (regression: previously no cross-check existed at all)', async () => {
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po-01',
+        requisitionId: 'req-01',
+        supplierId: 'sup-01',
+        status: POStatus.ISSUED,
+        items: [{ medicineId: 'med-01', quantity: 500 }],
+        goodsReceiptNotes: [],
+      });
+
+      await expect(
+        service.createGRN(
+          {
+            purchaseOrderId: 'po-01',
+            items: [
+              {
+                medicineId: 'med-NOT-ORDERED',
+                batchNumber: 'GRN-B1',
+                manufacturer: 'Sun Pharma',
+                quantity: 10,
+                manufacturingDate: '2026-01-01',
+                expiryDate: '2028-01-01',
+                purchasePrice: 10,
+                issuePrice: 15,
+              },
+            ],
+          },
+          'user-storemanager',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.medicineBatch.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects receiving more than was ordered (regression: previously unbounded)', async () => {
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po-01',
+        requisitionId: 'req-01',
+        supplierId: 'sup-01',
+        status: POStatus.ISSUED,
+        items: [{ medicineId: 'med-01', quantity: 500 }],
+        goodsReceiptNotes: [],
+      });
+
+      await expect(
+        service.createGRN(
+          {
+            purchaseOrderId: 'po-01',
+            items: [
+              {
+                medicineId: 'med-01',
+                batchNumber: 'GRN-B1',
+                manufacturer: 'Sun Pharma',
+                quantity: 600, // exceeds the 500 ordered
+                manufacturingDate: '2026-01-01',
+                expiryDate: '2028-01-01',
+                purchasePrice: 10,
+                issuePrice: 15,
+              },
+            ],
+          },
+          'user-storemanager',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a GRN against a Purchase Order that has already been fully received (regression: previously accepted repeatedly)', async () => {
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po-01',
+        requisitionId: 'req-01',
+        supplierId: 'sup-01',
+        status: POStatus.RECEIVED,
+        items: [{ medicineId: 'med-01', quantity: 500 }],
+        goodsReceiptNotes: [{ items: [{ medicineId: 'med-01', quantity: 500 }] }],
+      });
+
+      await expect(
+        service.createGRN(
+          {
+            purchaseOrderId: 'po-01',
+            items: [
+              {
+                medicineId: 'med-01',
+                batchNumber: 'GRN-B2',
+                manufacturer: 'Sun Pharma',
+                quantity: 50,
+                manufacturingDate: '2026-01-01',
+                expiryDate: '2028-01-01',
+                purchasePrice: 10,
+                issuePrice: 15,
+              },
+            ],
+          },
+          'user-storemanager',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('leaves the PO as ISSUED (not RECEIVED) and the requisition un-fulfilled after only a partial receipt', async () => {
+      mockPrisma.purchaseOrder.findUnique.mockResolvedValue({
+        id: 'po-01',
+        requisitionId: 'req-01',
+        supplierId: 'sup-01',
+        status: POStatus.ISSUED,
+        items: [{ medicineId: 'med-01', quantity: 500 }],
+        goodsReceiptNotes: [],
+      });
+      mockPrisma.goodsReceiptNote.create.mockResolvedValue({ id: 'grn-partial', items: [] });
+      mockPrisma.medicineBatch.create.mockResolvedValue({ id: 'batch-partial' });
+
+      await service.createGRN(
+        {
+          purchaseOrderId: 'po-01',
+          items: [
+            {
+              medicineId: 'med-01',
+              batchNumber: 'GRN-B1',
+              manufacturer: 'Sun Pharma',
+              quantity: 200, // only part of the 500 ordered
+              manufacturingDate: '2026-01-01',
+              expiryDate: '2028-01-01',
+              purchasePrice: 10,
+              issuePrice: 15,
+            },
+          ],
+        },
+        'user-storemanager',
+      );
+
+      expect(mockPrisma.purchaseOrder.update).not.toHaveBeenCalled();
+      expect(mockPrisma.purchaseRequisition.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: RequisitionStatus.FULFILLED } }),
+      );
+    });
   });
 
   describe('createStoreTransfer', () => {
@@ -252,8 +424,8 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
       );
 
       expect(res.id).toBe('transfer-01');
-      expect(mockPrisma.pharmacyStock.update).toHaveBeenCalledWith({
-        where: { id: 'stock-central' },
+      expect(mockPrisma.pharmacyStock.updateMany).toHaveBeenCalledWith({
+        where: { id: 'stock-central', quantity: { gte: 200 } },
         data: { quantity: { decrement: 200 } },
       });
       expect(mockPrisma.pharmacyStock.update).toHaveBeenCalledWith({
@@ -262,7 +434,7 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
       });
     });
 
-    it('should THROW BadRequestException if Central Store has insufficient stock', async () => {
+    it('should THROW BadRequestException if Central Store has insufficient stock (regression: now enforced by the atomic conditional update, not just an upfront read)', async () => {
       mockPrisma.medicineBatch.findUnique.mockResolvedValue({ id: 'batch-01' });
 
       mockPrisma.pharmacyStock.findFirst.mockResolvedValueOnce({
@@ -270,6 +442,7 @@ describe('ProcurementService (Phase 12 — Supply Chain & Procurement)', () => {
         location: PharmacyLocation.CENTRAL_STORE,
         quantity: 50,
       });
+      mockPrisma.pharmacyStock.updateMany.mockResolvedValueOnce({ count: 0 });
 
       await expect(
         service.createStoreTransfer(

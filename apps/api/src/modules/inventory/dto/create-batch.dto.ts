@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Min } from 'class-validator';
 
 export class CreateBatchDto {
   @IsString()
@@ -26,26 +26,29 @@ export class CreateBatchDto {
   expiryDate!: string;
 
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive()
   purchasePrice!: number;
 
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive()
   issuePrice!: number;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @Min(0)
   currentStock!: number;
 
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   @IsOptional()
   minimumStockLevel?: number;
 
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   @IsOptional()
   reorderLevel?: number;
 
-  @IsNumber()
+  @IsInt()
+  @Min(0)
   @IsOptional()
   maximumStockLevel?: number;
 

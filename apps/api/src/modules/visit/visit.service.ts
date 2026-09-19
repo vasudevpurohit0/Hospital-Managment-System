@@ -25,16 +25,20 @@ export class VisitService {
       orConditions.push({ id: trimmedId });
     }
 
-    let employeeId = trimmedId;
     const emp = await this.prisma.employee.findFirst({
       where: {
         OR: orConditions,
       },
     });
 
-    if (emp) {
-      employeeId = emp.id;
+    // Previously, an unresolved identifier fell through to `visit.create()`
+    // with the raw input as `employeeId`, hitting a raw Postgres foreign-key
+    // violation instead of a clean 404 -- matching the existence check the
+    // patient-registration path (patient.service.ts) already does.
+    if (!emp) {
+      throw new NotFoundException(`No employee found matching '${trimmedId}'`);
     }
+    const employeeId = emp.id;
 
     // 2. Check for existing OPEN visit (Spec §5 Module 2)
     const openVisit = await this.prisma.visit.findFirst({

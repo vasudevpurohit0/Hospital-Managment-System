@@ -437,8 +437,13 @@ export const PatientRecordsPage: React.FC = () => {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h3 className="font-bold text-[var(--color-text-primary)]">Personal Details</h3>
-                        {/* Only receptionist or admin can edit details */}
-                        {(userRole === 'receptionist' || userRole === 'admin') && !editMode && (
+                        {/* Only Reception/Administrator/SuperAdmin can edit details.
+                            Regression: this used to compare against 'receptionist'/'admin',
+                            which never matched the real (lowercased) role names
+                            'reception'/'administrator'/'superadmin' -- no role could
+                            ever see this button. */}
+                        {(userRole === 'reception' || userRole === 'administrator' || userRole === 'superadmin') &&
+                          !editMode && (
                           <button
                             onClick={() => setEditMode(true)}
                             className="text-xs text-primary-600 hover:underline font-semibold"

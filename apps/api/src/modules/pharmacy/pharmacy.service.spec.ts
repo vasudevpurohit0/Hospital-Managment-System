@@ -5,7 +5,7 @@ import { BenefitRuleService } from '../benefit/benefit-rule.service';
 import { ProcurementService } from '../procurement/procurement.service';
 import { ChargeService } from '../billing/charge.service';
 import { ReceiptService } from '../billing/receipt.service';
-import { ForbiddenException, BadRequestException } from '@nestjs/common';
+import { ForbiddenException, BadRequestException, ConflictException } from '@nestjs/common';
 import { StockStatus, BenefitOutcome } from '@prisma/client';
 
 describe('PharmacyService', () => {
@@ -22,8 +22,13 @@ describe('PharmacyService', () => {
       findMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     prescriptionItem: {
+      update: jest.fn(),
+    },
+    pharmacyStock: {
+      findFirst: jest.fn().mockResolvedValue(null),
       update: jest.fn(),
     },
     stockTransaction: {
@@ -162,11 +167,6 @@ describe('PharmacyService', () => {
       issuePrice: 10,
     });
 
-    mockPrismaService.medicineBatch.update.mockResolvedValue({
-      id: 'b-1',
-      currentStock: 48,
-    });
-
     mockPrismaService.prescription.update.mockResolvedValue({
       id: 'rx-1',
       status: 'CLOSED',
@@ -181,10 +181,13 @@ describe('PharmacyService', () => {
       'Pharmacist',
     );
 
-    expect(mockPrismaService.medicineBatch.update).toHaveBeenCalledWith({
-      where: { id: 'b-1' },
-      data: { currentStock: 48 },
+    // Atomic conditional decrement (updateMany, not a read-then-write
+    // update) -- the exact fix for the confirmed stock-race finding.
+    expect(mockPrismaService.medicineBatch.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b-1', currentStock: { gte: 2 } },
+      data: { currentStock: { decrement: 2 } },
     });
+    expect(mockPrismaService.medicineBatch.update).not.toHaveBeenCalled();
 
     expect(mockPrismaService.stockTransaction.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -192,6 +195,69 @@ describe('PharmacyService', () => {
         quantity: -2,
         medicineBatchId: 'b-1',
       }),
+    });
+  });
+
+  it('rejects the dispense with ConflictException if a concurrent request already dropped stock below the requested quantity (regression: previously a plain read-then-write update)', async () => {
+    mockPrismaService.prescription.findUnique.mockResolvedValue({
+      id: 'rx-1',
+      items: [{ id: 'item-1', medicineName: 'Paracetamol', dispensedQuantity: 0 }],
+      visit: { patientProfile: { employee: { employmentType: { code: 'PERMANENT' } } } },
+    });
+    mockPrismaService.medicineBatch.findUnique.mockResolvedValue({
+      id: 'b-1',
+      batchNumber: 'BATCH-100',
+      currentStock: 50,
+      stockStatus: StockStatus.IN_STOCK,
+      expiryDate: new Date('2027-01-01'),
+      issuePrice: 10,
+    });
+    mockPrismaService.medicineBatch.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      service.dispense(
+        {
+          prescriptionId: 'rx-1',
+          items: [{ prescriptionItemId: 'item-1', medicineBatchId: 'b-1', dispenseQuantity: 2 }],
+        },
+        'user-pharmacist',
+        'Pharmacist',
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('reconciles the PHARMACY-location PharmacyStock row when dispensing (regression: previously never touched, only MedicineBatch.currentStock was decremented)', async () => {
+    mockPrismaService.prescription.findUnique.mockResolvedValue({
+      id: 'rx-1',
+      items: [{ id: 'item-1', medicineName: 'Paracetamol', dispensedQuantity: 0 }],
+      visit: { patientProfile: { employee: { employmentType: { code: 'PERMANENT' } } } },
+    });
+    mockPrismaService.medicineBatch.findUnique.mockResolvedValue({
+      id: 'b-1',
+      batchNumber: 'BATCH-100',
+      currentStock: 50,
+      stockStatus: StockStatus.IN_STOCK,
+      expiryDate: new Date('2027-01-01'),
+      issuePrice: 10,
+    });
+    mockPrismaService.pharmacyStock.findFirst.mockResolvedValueOnce({
+      id: 'pharm-stock-1',
+      quantity: 10,
+    });
+    mockPrismaService.prescription.update.mockResolvedValue({ id: 'rx-1', status: 'CLOSED' });
+
+    await service.dispense(
+      {
+        prescriptionId: 'rx-1',
+        items: [{ prescriptionItemId: 'item-1', medicineBatchId: 'b-1', dispenseQuantity: 2 }],
+      },
+      'user-pharmacist',
+      'Pharmacist',
+    );
+
+    expect(mockPrismaService.pharmacyStock.update).toHaveBeenCalledWith({
+      where: { id: 'pharm-stock-1' },
+      data: { quantity: { decrement: 2 } },
     });
   });
 });

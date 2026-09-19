@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { VisitService } from './visit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
@@ -76,5 +77,15 @@ describe('VisitService', () => {
 
     expect(result.status).toBe('CREATED');
     expect(result.visit?.id).toBe('new-v-2');
+  });
+
+  it('rejects an unresolved employee identifier with NotFoundException instead of proceeding to create() (regression: previously fell through to a raw DB foreign-key violation)', async () => {
+    mockPrismaService.employee.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.createVisit({ employeeId: 'does-not-exist', type: VisitType.OPD }),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(mockPrismaService.visit.create).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,9 @@ describe('PrescriptionService', () => {
       update: jest.fn(),
       findMany: jest.fn(),
     },
+    prescriptionItem: {
+      deleteMany: jest.fn(),
+    },
     labOrder: {
       create: jest.fn(),
     },
@@ -82,8 +85,40 @@ describe('PrescriptionService', () => {
     });
 
     await expect(
-      service.updatePrescription('rx-signed', { diagnosisText: 'Updated text' }),
+      service.updatePrescription('rx-signed', {
+        items: [{ medicineName: 'Paracetamol', dose: '500mg', frequency: '1-0-1', duration: '5 days' }],
+      }),
     ).rejects.toThrow(ForbiddenException);
+    expect(mockPrismaService.prescriptionItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('should actually persist edited items to the database (regression: update previously returned success without writing)', async () => {
+    mockPrismaService.prescription.findUnique.mockResolvedValue({
+      id: 'rx-draft',
+      status: PrescriptionStatus.DRAFT,
+    });
+    mockPrismaService.prescription.update.mockResolvedValue({
+      id: 'rx-draft',
+      status: PrescriptionStatus.DRAFT,
+      items: [{ id: 'i-new', medicineName: 'Ibuprofen', dose: '400mg', frequency: '1-1-1', duration: '3 days' }],
+    });
+
+    const result = await service.updatePrescription('rx-draft', {
+      items: [{ medicineName: 'Ibuprofen', dose: '400mg', frequency: '1-1-1', duration: '3 days' }],
+    });
+
+    expect(mockPrismaService.prescriptionItem.deleteMany).toHaveBeenCalledWith({
+      where: { prescriptionId: 'rx-draft' },
+    });
+    expect(mockPrismaService.prescription.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'rx-draft' },
+        data: expect.objectContaining({
+          items: { create: [{ medicineName: 'Ibuprofen', dose: '400mg', frequency: '1-1-1', duration: '3 days' }] },
+        }),
+      }),
+    );
+    expect(result.items[0].medicineName).toBe('Ibuprofen');
   });
 
   it('should reject signing if user does not hold Doctor or SuperAdmin role (FR-DOC-07)', async () => {

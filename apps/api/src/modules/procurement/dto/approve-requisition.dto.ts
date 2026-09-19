@@ -1,4 +1,13 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsArray, ValidateNested, IsNumber } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsArray,
+  ValidateNested,
+  IsInt,
+  IsPositive,
+} from 'class-validator';
 import { ApprovalDecision } from '@prisma/client';
 import { Type } from 'class-transformer';
 
@@ -7,8 +16,8 @@ export class UpdateRequisitionItemDto {
   @IsNotEmpty()
   itemId!: string;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @IsPositive()
   quantity!: number;
 }
 

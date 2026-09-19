@@ -26,18 +26,26 @@ export class TenantUserProvisioningService {
     identifier: string,
     password: string,
   ): Promise<{ id: string; identifier: string }> {
-    await this.loginDirectory.register(identifier, hospitalId);
+    // LoginDirectoryService normalizes internally, so the directory row is
+    // always lowercased -- but the tenant User row was previously created
+    // with whatever case the caller supplied, so an identifier with any
+    // uppercase character produced a directory entry and a tenant user that
+    // disagreed on casing, and the account could never log in again
+    // (Postgres string equality is case-sensitive). Normalizing once here,
+    // before either write, keeps both records in agreement.
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    await this.loginDirectory.register(normalizedIdentifier, hospitalId);
 
     try {
       const client = await this.tenantClients.getClient(schemaName);
       const adminRole = await client.role.findUniqueOrThrow({ where: { name: 'Administrator' } });
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await client.user.create({
-        data: { identifier, passwordHash, roleId: adminRole.id, active: true },
+        data: { identifier: normalizedIdentifier, passwordHash, roleId: adminRole.id, active: true },
       });
       return { id: user.id, identifier: user.identifier };
     } catch (err) {
-      await this.loginDirectory.remove(identifier).catch(() => undefined);
+      await this.loginDirectory.remove(normalizedIdentifier).catch(() => undefined);
       throw err;
     }
   }

@@ -1078,3 +1078,243 @@ User asked for the hospital-scoped Activity Log to look/behave like a reference 
 - `npx vitest run` (web) → **16/16 passing**, no regressions (App/routing/permissions suites untouched by this change).
 
 **Plan status: Activity Log UI redesign complete (schema → backend capture → API → frontend), all phases tested against real data.** Not performed: a live browser click-through of the new Timeline view (the API dev server was intentionally left stopped after the Phase 1 migration work, per this session's standing "don't restart without being asked" instruction — the web dev server itself was left running throughout). Every functional claim above was instead verified via direct-service-against-live-database calls and the full type-check/lint/build/test pipeline.
+
+---
+
+## Audit Remediation — fixing findings from docs/SECURITY-AUDIT-REPORT.md and docs/QA-FUNCTIONAL-AUDIT-REPORT.md
+
+Both reports were produced by a full read-only audit pass (7 + 8 parallel review agents) covering security, functional correctness, RBAC, workflows, and code quality. This section logs the fix→test→log loop for each finding as it's addressed, in the priority order from the QA report's §15 (Critical → High → Medium/Low, security items interleaved where they overlap).
+
+### Fix 1 — e2e test infrastructure: puppeteer ESM import crash (pre-existing, blocking all e2e tests)
+
+**Found while testing Fix 2, not itself an audit finding:** every e2e spec (even the trivial `health.e2e-spec.ts`) failed with `SyntaxError: Unexpected token 'export'` at `import puppeteer from 'puppeteer'` inside `document-render.service.ts`, transitively imported by `AppModule`. `puppeteer@25.9.0` ships ESM-only; `puppeteer.launch()` is only called lazily inside PDF rendering, never at import time, so no e2e spec actually needs the real package.
+
+**Built:**
+- `apps/api/test/__mocks__/puppeteer.js` (new) — minimal stub exporting `launch()` that throws loudly if ever actually invoked (no existing e2e spec exercises PDF rendering).
+- `apps/api/test/jest-e2e.json` — added a `moduleNameMapper` entry redirecting `^puppeteer$` to the stub, so the real ESM package is never loaded by any e2e run.
+
+**Tested:** `npx jest --config ./test/jest-e2e.json health.e2e-spec` → was failing to even start (SyntaxError) → now **1/1 passing**.
+
+### Fix 2 — [F-01/F-16/F-29] Admission discharge can steal another patient's bed; un-discharge possible; discharge-day billing gap
+
+**Found:** `AdmissionService.discharge()` (`admission.service.ts`) had no guard against being called on an already-`DISCHARGED` admission, and unconditionally freed whatever bed `admission.bedId` pointed to via a plain `bed.update()` — a duplicate/stale call could silently evict a *different*, currently-admitted patient's bed. `allocateBed()` had no status guard either, permitting a `DISCHARGED` admission to be re-allocated a bed ("un-discharging" it). Separately, the nightly bed-day billing cron only fires at midnight for admissions still `UNDER_TREATMENT` at that instant — no safety net existed for a day that, for any reason, wasn't covered by that run.
+
+**Built:**
+- `admission.service.ts` `discharge()` — now throws `ConflictException` up front if `admission.status === DISCHARGED`; the bed release is now a conditional `bed.updateMany({ where: { id: admission.bedId, currentAdmissionId: id }, ... })` instead of an unconditional `bed.update()`, so it can only ever free a bed that still actually belongs to this admission (a 0-count result is logged as a warning, not an error — the discharge itself still completes). Also now calls `this.ipdFinance.postBedDayForAdmission(id, new Date(), tx)` before freeing the bed, as an idempotent-per-day safety net for the discharge day's bed charge.
+- `allocateBed()` — now throws `BadRequestException` up front if `admission.status === DISCHARGED`.
+
+**Tested:**
+- New `admission.service.spec.ts` (this module had zero unit tests before this fix) — 7 tests: duplicate-discharge rejection, conditional-`updateMany`-not-`update` bed release, discharge still completes when the bed no longer belongs to this admission, discharge-day billing call, role rejection, un-discharge rejection, normal allocation still works. **7/7 passing.**
+- `npx jest src/modules/admission` against the real seeded `hospital_esic_model` tenant schema (bare `DATABASE_URL` in `.env` has no `?schema=` param and resolves to `public`, which doesn't have tenant tables — pointed `DATABASE_URL` at the schema explicitly for this run) → **18/18 passing** (7 new + 11 pre-existing `ipd-finance.service.spec.ts` integration tests, unaffected).
+- `npx tsc --noEmit` → clean.
+- **Correction during this fix:** initially (incorrectly) "cleaned up" a `roleName !== 'SuperAdmin'` check in `discharge()` as presumed-dead code, reasoning the platform Super Admin bypasses RBAC by token type. Verified against `platform-jwt.strategy.ts` before finalizing and found `PlatformJwtStrategy.validate()` explicitly sets `roleName: 'SuperAdmin'` on the returned user object — the check was real and reachable for a legitimate Super Admin discharging a patient via the cross-hospital platform path. Reverted before running any tests against it. (Consequence for the audit reports: every "dead `'SuperAdmin'` role-name check" Low finding in both reports was based on this same incorrect premise and should be disregarded — none of those checks are actually dead code.)
+
+### Fix 3 — [F-02, F-18] Prescription edits never persisted; controller defaulted an unknown role to 'Doctor'
+
+**Found:** `PrescriptionService.updatePrescription()` did `Object.assign(existing, dto)` on an in-memory object fetched via `findUnique` and returned it without ever calling `prisma.prescription.update()` — a user editing a DRAFT prescription's medicine items saw success but nothing was written to the database. The endpoint's `@Body() dto: Partial<CreatePrescriptionDto>` also TypeScript-erased to `Object`, silently bypassing the global `ValidationPipe`. Separately, `signPrescription()`'s controller read `req.user?.roleName || req.user?.role || 'Doctor'`, defaulting a missing/unexpected role to `'Doctor'` before calling the paired service-layer role check — `AuthenticatedUser.roleName` is always populated for any request that passed `JwtAuthGuard`, so this fallback chain could only ever mask a bug, never legitimately trigger.
+
+**Built:**
+- `apps/api/src/modules/prescription/dto/update-prescription.dto.ts` (new) — a real `UpdatePrescriptionDto` class covering only `items` (the one thing actually editable on a Prescription record — diagnosis fields live on the separate Diagnosis record and were never part of this endpoint's real contract), with `@ArrayMinSize(1)` so an empty edit is rejected.
+- `apps/api/src/modules/prescription/dto/create-prescription.dto.ts` — added the same `@ArrayMinSize(1)` to `items` (a prescription could previously be created with zero medicine items).
+- `apps/api/src/modules/prescription/prescription.service.ts` `updatePrescription()` — now wraps the immutability check and the actual write in one `$transaction`: `prescriptionItem.deleteMany` + `prescription.update({ data: { items: { create: [...] } } })`, so a caller can no longer edit a prescription that gets signed between the check and the write, and the edit is now genuinely persisted.
+- `apps/api/src/modules/prescription/prescription.controller.ts` — `updatePrescription` now takes the real `UpdatePrescriptionDto`; `signPrescription` reads only `req.user?.roleName` and throws `UnauthorizedException` if absent, with no default-to-'Doctor' fallback.
+- Confirmed via repo-wide grep that no frontend code currently calls `PUT /prescriptions/:id` at all — no UI compatibility concern from narrowing the DTO shape.
+
+**Tested:**
+- `prescription.service.spec.ts` — updated the existing immutability test to use the new DTO shape (and assert `prescriptionItem.deleteMany` is never called for a SIGNED prescription); added a new regression test asserting the edit is actually persisted (`prescriptionItem.deleteMany` + `prescription.update` called with the new items, and the returned object reflects the new medicine name). **5/5 passing.**
+- `npx tsc --noEmit` → clean.
+- `npx jest src/common/guards` (rbac.guard/rbac-matrix/rbac-role-boundaries) → **24/24 passing**, confirming the DTO/controller change didn't disturb the permission-decorator wiring.
+- `test/prescription.e2e-spec.ts` — fails at the `beforeAll` login step (401) on both the pre-fix and post-fix code, confirmed pre-existing and unrelated: this environment's real seed data uses hospital-namespaced identifiers (`doctor@esic-model.esic.gov.in`) while this e2e spec (like `admission-concurrency.e2e-spec.ts`) hardcodes a bare legacy identifier (`doctor@esic.gov.in`) that was never seeded here. Flagged as a pre-existing e2e/seed-data mismatch, not a regression from this fix.
+
+### Fix 4 — [F-03, F-04, F-20, F-21, F-22] Procurement: self-approval, no GRN/PO cross-check, unvalidated numeric DTOs, no re-approval guard, store-transfer race
+
+**Found:** `StoreManager` holds both `PurchaseRequisition:create` and `Approval:approve`, and `approveRequisition()` never checked whether the approver was also the requester — a self-approval loophole defeating the whole point of an approval workflow. The same method had no guard against deciding an already-decided requisition (repeated calls could flip status back and forth, creating multiple `Approval` rows). `createGRN()` had zero cross-validation against the purchase order: any medicine, any quantity, any number of times could be "received" against a PO, and `RequisitionStatus.FULFILLED` was set unconditionally on any GRN regardless of completeness. Every quantity/price field across the requisition/PO/GRN/transfer DTOs was a bare `@IsNumber()` with no positivity/integer constraint and no compensating service-layer check anywhere. `createStoreTransfer()`'s central-store decrement was a plain read-then-`update`, the same non-atomic race class as the already-known pharmacy dispense bug.
+
+**Built:**
+- `apps/api/src/modules/procurement/dto/{create-requisition,approve-requisition,create-po,create-grn,create-transfer}.dto.ts` — every quantity field is now `@IsInt() @IsPositive()`; every price field is now `@IsNumber() @IsPositive()`.
+- `apps/api/src/modules/procurement/procurement.service.ts` `approveRequisition()` — now throws `ForbiddenException` if `req.raisedBy === userId` (self-approval), and `ConflictException` if `req.status !== PENDING` (already decided).
+- `createGRN()` — now fetches `po.items` and `po.goodsReceiptNotes.items`, builds an ordered-vs-already-received-per-medicine map, and rejects (`BadRequestException`) any GRN item whose medicine isn't on the PO or whose quantity (combined with prior receipts) would exceed what was ordered; rejects outright if the PO is already `RECEIVED`/`CLOSED`. The PO is only flipped to `RECEIVED` (and its requisition to `FULFILLED`) once every ordered line item has been fully received — a partial receipt now correctly leaves the PO `ISSUED` so further GRNs against it remain possible, instead of prematurely closing it out.
+- `createStoreTransfer()` — the central-store decrement is now a conditional `pharmacyStock.updateMany({ where: { id, quantity: { gte: dto.quantity } }, data: { quantity: { decrement: dto.quantity } } })`, so two concurrent transfers draining the same source row can no longer both succeed and jointly overdraw it; a 0-count result throws `BadRequestException` instead of the old upfront (and thus racy) read-check.
+- Known, intentionally deferred residual: the destination-location `pharmacyStock` row is still created via a `findFirst`-then-`create` pattern with no unique constraint on `(medicineBatchId, location)` — two concurrent transfers to a brand-new destination location could each create a duplicate row. Lower severity than the source-side overdraw (no schema migration attempted in this pass; would need a unique constraint + upsert).
+
+**Tested:**
+- `procurement.service.spec.ts` — updated the 3 existing `createGRN`/`createStoreTransfer` tests for the new mock shapes (`po.items`/`po.goodsReceiptNotes`, `pharmacyStock.updateMany`); added 8 new regression tests: self-approval rejected, re-approval rejected, wrong-medicine GRN rejected, over-quantity GRN rejected, GRN-against-already-RECEIVED-PO rejected, partial receipt correctly leaves PO/requisition un-fulfilled, and the store-transfer insufficient-stock case now goes through the atomic path. **14/14 passing.**
+- `npx tsc --noEmit` → clean.
+- `test/procurement.e2e-spec.ts` against the real `hospital_esic_model` schema → fails at login (401), same pre-existing hardcoded-credential/seed mismatch pattern as Fix 2 and Fix 3 (this spec logs in as `superadmin@esic.gov.in`/`SuperAdminSecret123!`, not present in this environment's real seed data) — confirmed pre-existing, not a regression.
+
+### Fix 5 — [F-05, F-06, F-19] Pharmacy stock race, dual-ledger drift, unvalidated inventory batch DTO
+
+**Found:** `PharmacyService.dispense()` deducted `MedicineBatch.currentStock` via a read-then-`update` (`data: { currentStock: batch.currentStock - qty } }`), the same non-atomic race already confirmed by the earlier security audit — two concurrent dispenses could both pass the stock check and both write, causing lost updates/overselling. Separately, dispense only ever touched `MedicineBatch.currentStock` and never reconciled the location-level `PharmacyStock` row for `PHARMACY`, so after any Central→Pharmacy transfer (which does credit that row) the pharmacy-location stock figure staff actually see (`GET /inventory/stock-locations`) would silently drift upward forever, never coming back down as medicine was actually dispensed. `CreateBatchDto`'s price/stock fields were all bare `@IsNumber()` with no positivity/integer constraint and no compensating check anywhere in `createBatch()`.
+
+**Built:**
+- `apps/api/src/modules/pharmacy/pharmacy.service.ts` `dispense()` — the stock deduction is now a conditional `medicineBatch.updateMany({ where: { id, currentStock: { gte: qty } }, data: { currentStock: { decrement: qty } } })`, throwing `ConflictException` on a 0-count result, matching the atomic pattern already used elsewhere in this codebase (bed allocation, the procurement store-transfer fix in Fix 4). Also now looks up the `PHARMACY`-location `PharmacyStock` row for the batch and decrements it by `min(dispenseQuantity, recordedQuantity)` as a best-effort reconciliation — `MedicineBatch.currentStock` remains the sole authority for whether a dispense is allowed at all, so this never blocks a dispense if the location row is missing or already smaller than the dispensed amount (e.g. a batch dispensed straight from a fresh GRN that was never transferred out of Central Store).
+- `apps/api/src/modules/inventory/dto/create-batch.dto.ts` — `purchasePrice`/`issuePrice` now `@IsPositive()`; `currentStock`/`minimumStockLevel`/`reorderLevel`/`maximumStockLevel` now `@IsInt() @Min(0)`.
+
+**Tested:**
+- `pharmacy.service.spec.ts` — updated the existing dispense test to assert `medicineBatch.updateMany` (not `.update`) is called with the conditional where-clause; added 2 new regression tests: a concurrent-oversell scenario now throws `ConflictException`, and the `PHARMACY`-location `PharmacyStock` row is decremented when one exists. **6/6 passing.**
+- While updating `inventory.service.spec.ts`'s test module to verify the DTO change didn't break anything, found (and fixed, as a low-risk one-line-per-issue side fix) two **pre-existing, unrelated** test-setup gaps: `InventoryService`'s constructor already required `ProcurementService` (confirmed via `git status` — I had only touched the DTO file) but the test module never provided it, and `findAllMedicines()` already called `this.prisma.purchaseRequisition.findMany(...)` but the mock never defined that method — both existed before this session touched the file and were unrelated to the batch-validation change. Added the missing provider and mock stub. Two further pre-existing failures remain in `findAllMedicines`'s own two tests (an assertion/implementation mismatch — the real method now annotates medicines with active-requisition data that the test's `toEqual` doesn't expect) — left alone as out-of-scope test-implementation drift unrelated to any audit finding; confirmed via `-t "batch"` that the `createBatch` test relevant to this fix passes cleanly on its own.
+- `npx tsc --noEmit` → clean.
+- Consolidated run: `npx jest src/modules/admission src/modules/prescription src/modules/procurement src/modules/pharmacy src/modules/inventory src/common/guards` against the real `hospital_esic_model` schema → **74/76 passing** (the 2 failures are the pre-existing `findAllMedicines` drift noted above).
+
+### Fix 6 — [F-07, F-31] Employee mass-assignment; unscoped reclassification grant
+
+**Found:** `PUT /employees/:id` was typed `@Body() updateDto: Partial<CreateEmployeeDto>`, which TypeScript erases to `Object` at runtime, silently disabling the global `ValidationPipe`'s whitelist/forbidNonWhitelisted protection — the raw body was spread directly into `prisma.employee.update({ data: updateDto })`. Separately, `Employee:update` is granted to Reception and DataEntryOperator for demographic-only edits (per the permission's own intent, stated in a code comment), but nothing enforced that scope — either role could also change `postId`/`gradeId`/`employmentTypeId`, which feed benefit eligibility and pay-grade-linked billing, for any employee.
+
+**Built:**
+- `apps/api/src/modules/employee/dto/update-employee.dto.ts` (new) — a real `UpdateEmployeeDto` class (all fields optional, individually validated), plus an exported `EMPLOYEE_RECLASSIFICATION_FIELDS` constant (`postId`, `gradeId`, `employmentTypeId`).
+- `apps/api/prisma/seed.ts` — new `{ Administrator, Employee, reclassify }` permission grant.
+- `apps/api/src/modules/employee/employee.controller.ts` `update()` — now takes the real `UpdateEmployeeDto`; if the body includes any reclassification field, the caller must additionally hold `Employee:reclassify` (platform Super Admin bypasses, matching `RbacGuard`'s own bypass) or the request is rejected with `ForbiddenException` before the service is ever called.
+- `apps/api/src/modules/employee/employee.service.ts` `update()` — now builds an explicit field-by-field `data` object instead of `data: updateDto`, matching the allowlisting pattern already used in `doctor.service.ts`/`staff.service.ts` (defense in depth on top of the DTO/controller-level fixes).
+- Confirmed via the frontend's `updateEmployeeContact()` (`apps/web/src/api/employee.api.ts`) that the UI already only ever sends `name`/`department`/`contactPhone`/`contactEmail` — no frontend compatibility impact from narrowing the DTO or adding the reclassification gate.
+
+**Tested:**
+- New `employee.controller.spec.ts` (this module previously had zero controller-level tests) — 4 tests: demographic-only edit allowed for Reception, reclassification field rejected for Reception (`Employee:reclassify` missing), reclassification allowed for a user holding it, and platform Super Admin bypass. **4/4 passing** (9/9 across the whole employee module including pre-existing service specs).
+- `npx tsc --noEmit` → clean.
+- `npx jest src/common/guards` (rbac.guard/rbac-matrix/rbac-role-boundaries) → **24/24 passing**, confirming the new seed permission grant didn't disturb the matrix/boundary expectations.
+
+### Fix 7 — [F-09] Hospital-admin identifier case-mismatch permanently breaks login
+
+**Found:** `TenantUserProvisioningService.provisionAdministrator()` (used by hospital onboarding, cross-hospital admin creation, and the retry path) passed the caller-supplied identifier straight into `client.user.create()` without normalizing case, while `LoginDirectoryService.register()` always lowercases before storing its own directory row, and `AuthService.login()` always lowercases before looking a user up. Postgres string comparison is case-sensitive, so any identifier containing an uppercase character produced a tenant `User` row whose stored identifier could never match a subsequent (always-lowercased) login lookup — a freshly onboarded hospital admin with an identifier like `Admin@Hospital.com` could never log in, permanently, with no error at creation time to warn anyone. `HospitalsService.resetHospitalUserPassword()` had the same gap on the read side: a case-mismatched reset request would 404 even for a real, existing user.
+
+**Built:**
+- `apps/api/src/common/tenant/tenant-user-provisioning.service.ts` `provisionAdministrator()` — normalizes the identifier (`.trim().toLowerCase()`) once, up front, and uses that single normalized value for both the directory registration and the tenant `User.create()` (and the rollback path on failure), so the two records can never disagree on casing again. This one fix covers all three affected call sites: hospital onboarding and its retry path (`hospitals.service.ts`), and cross-hospital admin creation (`hospital-admins.service.ts`) — all three call this same method.
+- `apps/api/src/modules/platform/hospitals.service.ts` `resetHospitalUserPassword()` — normalizes the lookup identifier the same way before querying.
+
+**Tested:**
+- New `tenant-user-provisioning.service.spec.ts` (the `platform`/tenant-provisioning surface had zero test coverage before this) — 3 tests: mixed-case identifier is stored lowercased in both the directory and the tenant user, whitespace is trimmed too, and the rollback-on-failure path removes the correctly-normalized directory entry. **3/3 passing.**
+- `npx tsc --noEmit` → clean.
+- `npx jest src/modules/auth src/modules/user` → **73/73 passing**, no regressions in the login/doctor/staff account-lifecycle specs that exercise adjacent identifier-handling code.
+
+### Fix 8 — [F-10, revised F-11] No audit trail for platform administrative actions; RBAC permission changes under-classified
+
+**Found (F-10, confirmed real):** no platform-level mutating action (create/suspend/reactivate/delete a hospital, hospital-admin CRUD, platform-admin CRUD) wrote to `PlatformAuditLog` — only the Super Admin's cross-hospital *data-read* access was logged (in `tenant-resolution.middleware.ts`). Confirmed this is a genuine gap: the tenant-scoped `AuditInterceptor` (global `APP_INTERCEPTOR`) explicitly skips every request when `!hasTenantContext()`, and platform routes never enter tenant context at all (by design — they carry no hospital), so nothing else was catching these.
+
+**Revised finding (originally reported as F-11, "RBAC Admin grant/revoke writes no audit log at all"):** traced this one before implementing a fix, and it turned out to be **not accurate as stated**. `POST /rbac/permissions` and `DELETE /rbac/permissions/:id` are hospital-scoped (tenant context *is* set for them, unlike platform routes), so the global `AuditInterceptor` already writes a generic `AuditLog` entry for both, same as every other mutating tenant route. The real, narrower gap: `severity.util.ts`'s `SENSITIVE_ENTITIES` list didn't include `'permission'`, so a permission **grant** (POST) fell through to the default `LOW` severity classification — easy to miss in the Activity Log's Critical/High filters despite being one of the most security-sensitive actions in the system. (A **revoke**, DELETE, already landed on `HIGH` via the separate delete-severity branch.) This correction is itself logged here since it changes what the QA report's F-11 finding should be understood to mean — no new redundant audit-write mechanism was added to `rbac-admin.service.ts`, since one already existed generically.
+
+**Built:**
+- `apps/api/src/common/tenant/platform-audit.util.ts` (new) — `recordPlatformAuditLog()`, a small shared helper wrapping `platformAuditLog.create()` in a try/catch (logging failure never fails the underlying action, matching the existing fire-and-forget philosophy in `tenant-resolution.middleware.ts`, but awaited here for deterministic ordering/testability).
+- `apps/api/src/modules/platform/hospitals.service.ts` — `createHospital()`, `resumeProvisioning()`, `update()`, `setStatus()` (records the from→to transition), `resetHospitalUserPassword()` (records only the identifier, **never** the new password value — applying the lesson from the plaintext-temp-password-in-audit-log issue found elsewhere), and `remove()` (records name/slug in `metadata` since the hospital row, and thus the FK, is gone by the time this fires — confirmed the `hospital_id` FK is `ON DELETE SET NULL`, so this is safe) each now call the new helper. All five now take a `platformUserId` parameter, threaded from `@CurrentUser()` in `hospitals.controller.ts`.
+- `apps/api/src/modules/platform/hospital-admins.service.ts` — `create()` and `setActive()` now record `hospital_admin.create`/`.activate`/`.deactivate`; `hospital-admins.controller.ts` threads `@CurrentUser()` through.
+- `apps/api/src/modules/platform/platform-admins.service.ts` — `create()` now records `platform_admin.create` (`setActive()` already had `callerId` threaded and now also records `.activate`/`.deactivate`); `platform-admins.controller.ts` updated to pass it.
+- `apps/api/src/common/audit/severity.util.ts` — added `'permission'` to `SENSITIVE_ENTITIES`.
+
+**Tested:**
+- New `hospitals.service.spec.ts` (the entire `platform` module had zero test coverage before this) — 3 tests: an update writes the expected `PlatformAuditLog` entry, a status change records the from→to transition, and a password reset's audit entry is confirmed (via `JSON.stringify` on the whole call) to never contain the plaintext new password. **3/3 passing.**
+- New `severity.util.spec.ts` — 4 tests confirming permission grant→HIGH, permission revoke→CRITICAL, an ordinary create stays LOW, and a failed login stays MEDIUM. **4/4 passing.**
+- `npx tsc --noEmit` → clean.
+- `npx jest src/common/interceptors src/common/guards` → **31/31 passing**, confirming the severity-list change and the new controller `@CurrentUser()` parameters didn't disturb the generic audit-interceptor or RBAC guard/matrix/boundary specs.
+
+### Fix 9 — [F-13] `/dashboard/summary` leaked admin-tier billing/staff/audit data to every role
+
+**Found:** `GET /dashboard/summary` had no `@RequirePermission` (deliberately, per its own code comment, since every role needs the operational OPD/bed/inventory/procurement counts it returns) -- but the same response also unconditionally included `billing` (revenue/utilization), `auditExceptions` (recent audit-log entries), and `staff` (headcount) sections, which are correctly Administrator/Analytics-only everywhere else in the system (`Analytics:read` is Administrator-only per `seed.ts`). Any authenticated role -- Pharmacist, Reception, LabTechnician -- could see them.
+
+**Built:**
+- `apps/api/src/modules/dashboard/dashboard.service.ts` `getMetrics(user: AuthenticatedUser)` — now takes the caller, still always computes and returns the operational sections (`opd`/`ipd`/`inventory`/`procurement`) that every dashboard-consuming role needs, but only includes `billing`/`auditExceptions`/`staff` when the caller holds `Analytics:read` (or is the platform Super Admin). No permission decorator was added to the route itself (that would have blocked the operational data every role legitimately needs) -- the gating is on which *fields* come back, matching how `getMySummary()` already scopes its own response per-role.
+- `apps/api/src/modules/dashboard/dashboard.controller.ts` — `getMetrics` now takes `@CurrentUser()` and forwards it.
+- `apps/api/src/modules/platform/platform-dashboard.service.ts` — its cross-hospital aggregation call to `dashboardService.getMetrics()` (used only by the platform Super Admin's own dashboard, already `PlatformOnlyGuard`-gated) now passes a synthetic platform-type user so it keeps receiving the full admin-tier payload it depends on (`metrics.staff.totalEmployees`).
+- Confirmed via `apps/web/src/pages/DashboardPage.tsx` that every read of `metrics.billing`/`metrics.staff` already uses optional chaining with a `'—'` fallback (`metrics?.billing?.totalTransactions ?? '—'`) — no frontend crash risk for roles that now receive a response without those keys; those specific stat cards will just show a placeholder for non-admin roles instead of leaking real figures.
+
+**Tested:**
+- `dashboard.service.spec.ts` — added a new `getMetrics()` describe block (previously zero coverage, matching the audit's own finding) — 3 tests: a role without `Analytics:read` gets only the operational sections, a role with it gets the full payload, and a platform Super Admin always gets the full payload regardless of its permissions array. **10/10 passing** across the whole file (7 pre-existing `getMySummary` tests unaffected).
+- `npx tsc --noEmit` → clean (also required a small follow-on fix in `platform-dashboard.service.ts`, since `getMetrics()`'s return type is now a union and TS can't narrow it across the call boundary — used an `in` check with a `0` fallback rather than a blind assertion).
+
+### Fix 10 — [F-12] No frontend route guard — any role could navigate directly to admin screens
+
+**Found:** `AppShell.tsx`'s `renderPage()` switched purely on the URL-derived `activePage` with zero role check anywhere in the render path. Protection was sidebar-link-hiding only (`Sidebar.tsx`'s `isItemVisible`) — a role could type `/rbac-management`, `/billing`, `/system-config`, etc. directly into the address bar (or reach it via a stale bookmark, the browser Back button, or the command palette) and the full admin page shell, forms, and its own API-error responses would render client-side, even though the backend's own RBAC would still reject the actual data mutations. Only `DoctorSchedulePage.tsx`/`OpdQueueScreen.tsx` self-gated, and only `QueueManager` had a dedicated redirect-away effect — `LabTechnician`/`Pathologist` (also documented "single-purpose" roles) had no equivalent enforcement at all despite the same intent existing in a code comment (`SINGLE_PURPOSE_ROLES`).
+
+**Built:**
+- `apps/web/src/components/layout/Sidebar.tsx` — new exports: `PAGE_ROLES` (flattened straight from the existing `MENU_GROUPS` role lists — the same data already used to hide sidebar links, now the single source of truth for both), `isPageAllowedForRole(pageId, role)`, and `getDefaultPageForRole(role)` (returns each single-purpose role's own landing page — `opd-queue` for QueueManager, `laboratory` for LabTechnician/Pathologist — falling back to `dashboard` for every other role).
+- `apps/web/src/components/layout/AppShell.tsx` — the QueueManager-only redirect effect is replaced with a generic one: any role landing on a page `PAGE_ROLES` doesn't allow it is bounced (via `replace`, so Back doesn't loop) to its own default page. To close the one-frame "flash" risk a redirect-only fix would still have, the render itself is also guarded: `renderPage()` is only called when `isPageAllowedForRole` is true, otherwise nothing renders while the effect navigates away. The command palette's `allowedPages` filter (previously QueueManager-only special-cased) now uses the same `isPageAllowedForRole` check, so Ctrl+K search also can't be used to reach a page a role shouldn't see.
+- This generalization automatically extends the "single-purpose role" enforcement that only existed for QueueManager to LabTechnician and Pathologist too (both are excluded from `dashboard`'s role list in `MENU_GROUPS`, same as QueueManager, but had no redirect enforcing it before this fix).
+
+**Tested:**
+- New `page-access.test.ts` — 7 tests: every page allows SuperAdmin, every page denies an unauthenticated/unknown role, QueueManager is confined to `opd-queue` (denied `dashboard`/`billing`/`rbac-management`), LabTechnician/Pathologist are confined to `laboratory` (denied `dashboard`/`staff-management` — this specific assertion would have failed before this fix, since there was no enforcement for these two roles at all), 9 admin-only screens reject 6 non-admin roles each, every declared `PageId` has a non-empty role list, and an ordinary role's default page is one it can actually see. **7/7 passing.**
+- `npx tsc --noEmit` (web) → clean.
+- `npx vitest run` → **23/23 passing** (16 pre-existing + 7 new), no regressions in the login/routing/permissions suites.
+
+### Fix 11 — [F-26] Dead "Edit Profile" feature on Patient Records
+
+**Found:** `PatientRecordsPage.tsx` gated the profile-edit button on `userRole === 'receptionist' || userRole === 'admin'`, where `userRole` is `(user?.role || '').toLowerCase()`. Real role names are `'Reception'`/`'Administrator'`/`'SuperAdmin'`, which lowercase to `'reception'`/`'administrator'`/`'superadmin'` — none of which match `'receptionist'`/`'admin'`. No role, including SuperAdmin, could ever see this button, even though the underlying edit form and save handler were fully implemented.
+
+**Built:**
+- `apps/web/src/pages/PatientRecordsPage.tsx` — condition corrected to `userRole === 'reception' || userRole === 'administrator' || userRole === 'superadmin'`, matching the real lowercased role names. Confirmed this is the only occurrence of this comparison pattern in the file.
+
+**Tested:** `npx tsc --noEmit` (web) → clean. `npx vitest run` → **23/23 passing**, no regressions (this file has no dedicated component-level test in the existing suite — the fix is a one-line string correction, verified by re-reading the surrounding JSX to confirm the conditional's structure/parens still close correctly).
+
+### Fix 12 — [F-08 / security report V-01] Hardcoded fallback JWT secrets removed; fail-fast at startup
+
+**Found:** every JWT sign/verify call site (9 occurrences across 4 files) fell back to a hardcoded literal (`'dev_jwt_access_secret_key_12345'`, `'dev_jwt_refresh_secret_key_67890'`, `'dev_jwt_platform_secret_key_platform'`) whenever the corresponding env var was unset, with nothing logged and the app booting normally either way. Since those literals are committed in this repository, any deployment that ever left `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`/`JWT_PLATFORM_SECRET` unset would let anyone who has read the source forge a valid token for any user, including a platform Super Admin token (which bypasses all RBAC checks by design).
+
+**Discovered while implementing the fix, not itself a numbered finding:** this app has **no env-loading mechanism of its own anywhere** (no `dotenv`, no `@nestjs/config`, nothing in `main.ts`) — confirmed by grep across `main.ts`/`app.module.ts`/`package.json`. `docker-compose.yml`'s own `api` service `environment:` block never set any of the three JWT secrets (or `PLATFORM_DATABASE_URL`) at all, meaning `docker compose up` — this project's own documented one-command dev path — was **already silently exploitable today**, not just theoretically at risk. Making the app fail-fast without addressing this would have broken the project's primary local dev workflow outright.
+
+**Built:**
+- `apps/api/src/common/config/jwt-secrets.ts` (new) — reads and validates `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`/`JWT_PLATFORM_SECRET` once at module-load time (i.e., at process startup, since every call site now imports this module instead of reading `process.env` directly); throws with a clear message identifying exactly which variable is missing or still equal to the `.env.example`-documented `CHANGE_ME_IN_PRODUCTION` placeholder.
+- All 9 call sites — `auth.service.ts` (5), `jwt.strategy.ts`, `platform-jwt.strategy.ts`, `tenant-resolution.middleware.ts` (2) — now import and use these validated constants; zero `|| 'dev_jwt_...'` literals remain anywhere (confirmed via repo-wide grep).
+- `docker-compose.yml` — added `PLATFORM_DATABASE_URL` (was entirely missing, a separate pre-existing gap that would have broken the platform-schema features regardless of this fix) and the three JWT secrets as freshly-generated, clearly-commented dev-only random values, so `docker compose up` keeps working under the new fail-fast requirement instead of refusing to boot.
+- `apps/api/test/jest.setup-env.js` (new) + `setupFiles` entries in both `package.json`'s jest config and `test/jest-e2e.json` — sets fixed, test-only secret values before any test file (and therefore before `jwt-secrets.ts`) is loaded, so the existing test suite (which previously relied on the removed hardcoded fallback working transparently) keeps passing without needing a real `.env`.
+
+**Tested:**
+- New `jwt-secrets.spec.ts` — 5 tests using `jest.isolateModules`/`jest.resetModules` to re-trigger the module's import-time validation per case: throws when `JWT_ACCESS_SECRET` is missing, throws when a secret is still the literal placeholder string, throws when `JWT_PLATFORM_SECRET` specifically is missing (others set), loads and exposes the real values when all three are set, and confirms there is no fallback path at all (all three missing → throws, where the old code would have silently succeeded). **5/5 passing**, with the expected error log lines visible in the test output confirming the fail-fast path actually fires.
+- `npx tsc --noEmit` → clean.
+- `npx jest src/modules/auth src/common/middleware src/common/guards src/common/config` → **58/58 passing** — every test directly touching JWT signing/verification, the tenant-resolution middleware, and RBAC guards.
+- Full `npx jest` against the real `hospital_esic_model` schema → **38 passed / 5 failed suites (320/333 tests)**. Confirmed via `git status` that the 5 failing suites (`laboratory`, `catalog`/pricing, `billing`) touch modules untouched by this or any other fix in this session; their failures are pre-existing real-database state pollution from this session's many repeated integration-test runs against a persistent schema (a `lab_number` unique-constraint collision from leftover sequence state, the `audit_logs` append-only trigger correctly rejecting a test's own cleanup `deleteMany`, and one pre-existing mock-wiring gap in `billing.service.spec.ts` unrelated to auth) — not a regression from this fix.
+- `test/health.e2e-spec.ts` → still **1/1 passing** with the new e2e `setupFiles` wiring in place, confirming the e2e test environment also has working, non-production secrets.
+
+### Fix 13 — [F-14 / security report V-05] Unbounded CSV report exports + formula injection
+
+**Found:** `billingReportCsv`/`outstandingReportCsv`/`patientRegisterCsv` all called `findMany()` with no `take` limit, so a caller with `Report:generate` could pull a tenant's entire history in one response. The shared `toCsv()` helper (also used by the audit-log CSV export) didn't neutralize a leading `=`/`+`/`-`/`@`, the classic CSV/Excel formula-injection vector, for any string value flowing into an export (patient/employee names, charge descriptions). Reports' `from`/`to` query params also had no validation — an unparsable or reversed date range silently produced `Invalid Date`, which Prisma would match nothing against, with no error surfaced to the caller.
+
+**Built:**
+- `apps/api/src/modules/reports/csv.util.ts` `toCsv()` — any **string** cell (not a `number` -- a genuine negative amount typed as a number is left untouched, since it can never be a formula) starting with `=`, `+`, `-`, or `@` is now prefixed with a leading `'`, the standard OWASP mitigation forcing Excel/Sheets to render it as literal text.
+- `apps/api/src/modules/reports/reports.service.ts` — added a shared `MAX_REPORT_ROWS = 10_000` cap, applied via `take` to all three `findMany` calls. Kept the date range itself optional (confirmed via `apps/web/src/api/reports.api.ts` that the frontend genuinely supports an unfiltered "all time" export today) rather than making it mandatory, which would have been a breaking behavior change beyond the scope of this fix.
+- `apps/api/src/modules/reports/reports.controller.ts` `parseRange()` — now throws `BadRequestException` for an unparsable `from`/`to` or a reversed range (`from > to`), instead of silently constructing an `Invalid Date`.
+
+**Tested:**
+- New `csv.util.spec.ts` — 5 tests: `=`/`+`/`-`/`@`-prefixed strings get the literal-text prefix, a genuine negative *number* is left untouched, an ordinary string passes through unchanged, and the fix composes correctly with the existing comma-quoting logic. **5/5 passing.**
+- New `reports.service.spec.ts` — 3 tests confirming all three export methods pass `take: 10_000` to their `findMany` call. **3/3 passing.**
+- New `reports.controller.spec.ts` — 5 tests: invalid `from`, invalid `to`, reversed range, a valid range, and no range at all (still allowed). **5/5 passing.**
+- `npx jest src/modules/reports src/modules/audit` → **22/22 passing** — the pre-existing `audit-log.service.spec.ts` CSV-export tests still pass against the shared, now formula-injection-safe `toCsv()`.
+- `npx tsc --noEmit` → clean.
+
+### Fix 14 — [F-15, F-17] Visit/OPD: missing existence checks and mis-scoped permissions
+
+**Found:** `VisitService.createVisit()` fell through to `visit.create()` with the raw, unresolved input as `employeeId` when no matching employee was found, hitting a raw Postgres foreign-key violation instead of a clean 404. `OpdService.createOpdVisit()` had the same gap for `visitId`. Separately, four `OpdController` routes (`createOpdVisit`, `callToken`, `getMyPatients`, `closeOpdVisit`) and `VisitController.createVisit` were gated by `Employee:read` instead of a permission matching the actual resource/action -- a read-only-sounding permission covering create/update actions.
+
+**Built:**
+- `apps/api/src/modules/visit/visit.service.ts` `createVisit()` — throws `NotFoundException` when no employee resolves, before ever touching `visit.create()`.
+- `apps/api/src/modules/opd/services/opd.service.ts` `createOpdVisit()` — added the same `visit.findUnique` + `NotFoundException` check, before the department lookup and the transaction.
+- `apps/api/src/modules/visit/visit.controller.ts` — `createVisit` now requires `Visit:create` (already granted to Reception/Doctor/Administrator in `seed.ts`; confirmed via `apps/web/src/api/patient-lookup.api.ts`'s only caller, `EnterpriseReceptionDesk.tsx`, that Reception is the only role actually exercising this endpoint today).
+- `apps/api/src/modules/opd/controllers/opd.controller.ts` — `createOpdVisit` → `OPDVisit:create`; `callToken` → `OPDVisit:call` (matching the semantically-identical `call-next` action); `getMyPatients` → `OPDVisit:read`; `closeOpdVisit` → `OPDVisit:update`. Confirmed via repo-wide grep that no current frontend screen calls `callToken`/`closeOpdVisit` at all (dead API surface today), so tightening their permission carries no risk of breaking an existing flow; `createOpdVisit` is only called by `EnterpriseReceptionDesk.tsx` (Reception), which already holds `OPDVisit:create`.
+
+**Tested:**
+- `visit.service.spec.ts` — new test: an unresolved employee identifier throws `NotFoundException` and never reaches `visit.create()`. **4/4 passing** in the file.
+- `opd.service.spec.ts` — new test: an unresolved `visitId` throws `NotFoundException` before the department lookup or the transaction ever run. **All passing.**
+- `npx jest src/modules/visit src/modules/opd` → **28/28 passing**.
+- `npx jest src/common/guards` (rbac-matrix/rbac-role-boundaries) → still passing, confirming the permission-decorator changes are correctly recognized by the static RBAC-matrix check.
+- `npx tsc --noEmit` → clean.
+
+### Fix 15 — [F-24, security report V-09/V-15] Plaintext temp passwords (and any future secret) redacted from the audit log
+
+**Found:** `doctor.service.ts`/`staff.service.ts` return a plaintext `temporaryPassword` in the HTTP response for both account creation and password reset (by design, so an admin can relay it to the new user) — but the global `AuditInterceptor` persisted the **entire** response/request body verbatim into `AuditLog.afterSnapshot`/`beforeSnapshot`, turning every one of those four endpoints into a durable, plaintext-credential leak in the audit trail, readable by anyone with `AuditLog:read`. This was flagged as systemic (V-15) rather than a per-endpoint bug: any current or future mutating endpoint that includes a password/token/secret field in its request or response would be captured the same way.
+
+**Built:**
+- `apps/api/src/common/audit/redact.util.ts` (new) — `redactSensitiveFields()`, a deep-clone that replaces any object key matching `/password|secret|token|passwordhash|apikey/i` (case-insensitive, so `temporaryPassword`, `passwordHash`, `refreshToken`, `apiKey`, etc. are all caught) with the literal string `'[REDACTED]'`, at any nesting depth and inside arrays.
+- `apps/api/src/common/interceptors/audit.interceptor.ts` — both the success and failure paths now redact `beforeSnapshot`/`afterSnapshot` immediately before persisting, applied **after** `changedFields`/`description` are computed from the real, unredacted data (so "temporaryPassword changed" still shows correctly as a field *name* in the description — only the actual secret *value* is ever replaced).
+- This is a systemic fix at the interceptor level, not a per-endpoint change — `doctor.service.ts`/`staff.service.ts`/`hospitals.service.ts`'s response shapes are untouched, preserving the legitimate "show the admin the temp password to relay it" UX; the fix is in what gets *persisted to the audit trail*, not what the caller receives.
+
+**Tested:**
+- New `redact.util.spec.ts` — 5 tests: top-level and nested `password`/`secret`/`token`/`apiKey` fields redacted, array elements redacted, non-sensitive fields/primitives left untouched, and null/undefined/primitive inputs handled without throwing. **5/5 passing.**
+- `audit.interceptor.spec.ts` — 2 new tests: a `POST .../reset-password`-shaped response with a `temporaryPassword` is stored with that field redacted (and the raw secret string confirmed absent anywhere in the actual `create()` call via `JSON.stringify`), and a `PUT` request body containing a `password` field is redacted in the stored `beforeSnapshot` the same way. **18/18 passing** across the whole interceptor+audit-util test set.
+- `npx tsc --noEmit` → clean.
+
+### Fix 16 — [F-23] Receipt double-issue race on concurrent requests for the same charges
+
+**Found:** `ReceiptService.issue()` read the target charges, confirmed all were `PENDING`, then wrote a receipt and ran `chargeItem.updateMany({ where: { id: { in: chargeIds } }, data: { status: PAID, receiptId } })` — the `updateMany` was conditioned only on `id`, not on `status` still being `PENDING`. Two concurrent `issue()` calls for the exact same `chargeIds` could both pass the initial read-based check (no isolation guarantee prevents two transactions from both reading the same pre-commit `PENDING` rows) and both proceed to create a receipt, with the second `updateMany` happily "succeeding" again and silently overwriting `receiptId` — a real double-receipt-for-the-same-money risk under concurrency (e.g., a double-submitted payment button).
+
+**Built:**
+- `apps/api/src/modules/billing/receipt.service.ts` `issue()` — the charge-claiming `updateMany` now includes `status: ChargeStatus.PENDING` in its `where` clause (the same atomic conditional-update pattern already used elsewhere in this codebase for bed allocation, pharmacy dispense, and the procurement store-transfer fix earlier in this session), and checks `claimed.count === params.chargeIds.length`, throwing `ConflictException` if a concurrent request already claimed one or more of them. Since this runs inside the surrounding `$transaction`, the exception correctly rolls back the receipt row that was about to be orphaned.
+
+**Tested:**
+- New integration test in `receipt.service.spec.ts` (real Postgres, `Promise.allSettled` firing two concurrent `issue()` calls for the identical `chargeIds`) — asserts exactly one call succeeds and one is rejected, and that the charge itself ends up `PAID` against exactly one receipt. **10/10 passing** in the file (9 pre-existing + 1 new), run against the real `hospital_esic_model` schema.
+- `npx jest src/modules/billing` → 30/31 passing; the 1 failure is the same pre-existing, unrelated `billing.service.spec.ts` mock-wiring gap (`brandingConfig` not stubbed) already identified and confirmed unrelated during Fix 12.
+- `npx tsc --noEmit` → clean.

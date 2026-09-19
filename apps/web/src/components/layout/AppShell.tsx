@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Sidebar, PageId } from './Sidebar';
+import { Sidebar, PageId, isPageAllowedForRole, getDefaultPageForRole } from './Sidebar';
 import { TopNav } from './TopNav';
 import { BreadcrumbItem } from './Breadcrumb';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -130,10 +130,9 @@ export const AppShell: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const activePage = pageIdFromPath(
-    location.pathname,
-    user?.role === 'QueueManager' ? 'opd-queue' : 'dashboard',
-  );
+  const defaultPageForRole = getDefaultPageForRole(userRole);
+  const activePage = pageIdFromPath(location.pathname, defaultPageForRole);
+  const isActivePageAllowed = isPageAllowedForRole(activePage, userRole);
 
   const setActivePage = useCallback(
     (page: PageId, options?: { replace?: boolean }) => {
@@ -163,11 +162,15 @@ export const AppShell: React.FC = () => {
     }
   }, [activePage, location.pathname, setActivePage]);
 
-  // Redirect QueueManager back to opd-queue if they are on another page.
-  // Replaces rather than pushes, so Back does not bounce them around.
+  // Bounces any role away from a page it isn't allowed to see -- whether
+  // reached via a stale bookmark, a manually-typed URL, or the browser Back
+  // button -- to its own default landing page (generalizes what used to be a
+  // QueueManager-only redirect; the same PAGE_ROLES source that hides a
+  // sidebar link now also blocks navigating straight to that link's URL).
+  // Replaces rather than pushes, so Back does not bounce the user around.
   useEffect(() => {
-    if (userRole === 'QueueManager' && activePage !== 'opd-queue') {
-      setActivePage('opd-queue', { replace: true });
+    if (!isActivePageAllowed) {
+      setActivePage(defaultPageForRole, { replace: true });
     }
   }, [userRole, activePage, setActivePage]);
 
@@ -248,7 +251,9 @@ export const AppShell: React.FC = () => {
       case 'ipd-admissions':
         return <AdmissionDeskScreen authToken={authToken} />;
       case 'ward-console':
-        return <WardStaffScreen authToken={authToken} userRole={userRole} onNavigate={handleNavigate} />;
+        return (
+          <WardStaffScreen authToken={authToken} userRole={userRole} onNavigate={handleNavigate} />
+        );
       case 'laboratory':
         return <LabWorkbenchScreen authToken={authToken} userRole={userRole} />;
       case 'therapy':
@@ -346,7 +351,11 @@ export const AppShell: React.FC = () => {
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             >
-              {renderPage()}
+              {
+                isActivePageAllowed
+                  ? renderPage()
+                  : null /* redirect effect above is about to navigate away -- never render a page this role isn't allowed to see, even for one frame */
+              }
             </motion.div>
           </AnimatePresence>
         </div>

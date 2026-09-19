@@ -1,7 +1,7 @@
 import { AuditSeverity, AuditStatus } from '@prisma/client';
 
 /** Sensitive entities where locking/deactivating/deleting a record is worth flagging loudly. */
-const SENSITIVE_ENTITIES = ['user', 'staff', 'doctor', 'role', 'administrator', 'hospital'];
+const SENSITIVE_ENTITIES = ['user', 'staff', 'doctor', 'role', 'administrator', 'hospital', 'permission'];
 
 /**
  * Best-effort classification for the Activity Log's severity badge -- not a

@@ -65,6 +65,15 @@ export class OpdService {
    * department), so a client can't smuggle in an ineligible doctor id.
    */
   async createOpdVisit(dto: CreateOpdVisitDto) {
+    // Without this, an invalid/unresolved visitId fell through to
+    // tx.oPDVisit.create() and hit a raw Postgres foreign-key violation
+    // instead of a clean 404 -- matching the existence check already done
+    // for prescriptions and lab orders elsewhere in this codebase.
+    const visit = await this.prisma.visit.findUnique({ where: { id: dto.visitId } });
+    if (!visit) {
+      throw new NotFoundException(`Visit not found for ID: ${dto.visitId}`);
+    }
+
     const dept = await this.departmentService.findById(dto.departmentId);
     if (!dept) {
       throw new NotFoundException(`Department not found for ID: ${dto.departmentId}`);

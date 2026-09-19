@@ -15,8 +15,8 @@ export class PlatformAdminsController {
   }
 
   @Post()
-  async create(@Body() dto: CreatePlatformAdminDto) {
-    return this.admins.create(dto);
+  async create(@Body() dto: CreatePlatformAdminDto, @CurrentUser('id') callerId: string) {
+    return this.admins.create(dto, callerId);
   }
 
   @Patch(':id/active')

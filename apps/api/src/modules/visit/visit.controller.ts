@@ -8,7 +8,7 @@ export class VisitController {
   constructor(private readonly visitService: VisitService) {}
 
   @Post()
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('Visit', 'create')
   async createVisit(@Body() createVisitDto: CreateVisitDto) {
     return this.visitService.createVisit(createVisitDto);
   }

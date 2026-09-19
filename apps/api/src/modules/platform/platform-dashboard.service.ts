@@ -60,7 +60,19 @@ export class PlatformDashboardService {
           startOfToday.setHours(0, 0, 0, 0);
 
           const [metrics, todayOpdVisits, staffCount, revenue] = await Promise.all([
-            this.dashboardService.getMetrics(),
+            // The platform Super Admin (this whole service is
+            // PlatformOnlyGuard-gated) always gets the full admin-tier
+            // metrics -- a synthetic platform-type user is enough for
+            // DashboardService.getMetrics()'s own permission check to allow
+            // that, without needing a real per-request AuthenticatedUser here.
+            this.dashboardService.getMetrics({
+              id: 'platform',
+              identifier: 'platform',
+              roleId: '',
+              roleName: 'SuperAdmin',
+              type: 'platform',
+              permissions: [],
+            }),
             client.visit.count({ where: { type: 'OPD', createdAt: { gte: startOfToday } } }),
             client.user.count(),
             client.chargeItem.aggregate({ _sum: { netAmount: true }, where: { status: 'PAID' } }),
@@ -69,7 +81,12 @@ export class PlatformDashboardService {
           return {
             ...base,
             ok: true,
-            totalPatients: metrics.staff.totalEmployees,
+            // `getMetrics()`'s admin-tier `staff` section is only present
+            // when the caller can see admin metrics -- always true here
+            // since this service always passes a platform-type user -- but
+            // its return type is a plain union, so TS can't narrow that
+            // across the call boundary; the fallback is defensive, not expected.
+            totalPatients: 'staff' in metrics ? metrics.staff.totalEmployees : 0,
             todayOpdVisits,
             activeAdmissions: metrics.ipd.activeAdmissions,
             bedOccupancyRate: metrics.ipd.bedOccupancyRate,

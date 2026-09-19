@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
 import { PrescriptionStatus, AdmissionStatus } from '@prisma/client';
 import { LabService } from '../laboratory/lab.service';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
@@ -72,27 +73,47 @@ export class PrescriptionService {
   }
 
   /**
-   * Update Draft Prescription (Strict API-level lock enforcement when SIGNED)
+   * Update Draft Prescription (Strict API-level lock enforcement when SIGNED).
+   *
+   * Replaces the prescription's medicine items wholesale, inside one
+   * transaction with the immutability check, so a caller can never edit a
+   * prescription that was signed between the check and the write.
    */
-  async updatePrescription(id: string, _dto: Partial<CreatePrescriptionDto>) {
-    const existing: any = await this.prisma.prescription.findUnique({ where: { id } });
+  async updatePrescription(id: string, dto: UpdatePrescriptionDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.prescription.findUnique({ where: { id } });
 
-    if (!existing) {
-      throw new NotFoundException(`Prescription not found for ID: ${id}`);
-    }
+      if (!existing) {
+        throw new NotFoundException(`Prescription not found for ID: ${id}`);
+      }
 
-    // Spec compliance: Signed prescriptions are IMMUTABLE and reject any edit attempt at the API level
-    if (existing.status === PrescriptionStatus.SIGNED) {
-      throw new ForbiddenException(
-        'Signed prescriptions are immutable and locked for audit compliance. Cannot edit a signed prescription.',
-      );
-    }
+      // Spec compliance: Signed prescriptions are IMMUTABLE and reject any edit attempt at the API level
+      if (existing.status === PrescriptionStatus.SIGNED) {
+        throw new ForbiddenException(
+          'Signed prescriptions are immutable and locked for audit compliance. Cannot edit a signed prescription.',
+        );
+      }
 
-    // Proceed with draft update if dto provided
-    if (_dto && Object.keys(_dto).length > 0) {
-      Object.assign(existing, _dto);
-    }
-    return existing;
+      await tx.prescriptionItem.deleteMany({ where: { prescriptionId: id } });
+
+      const updated = await tx.prescription.update({
+        where: { id },
+        data: {
+          items: {
+            create: dto.items.map((item) => ({
+              medicineName: item.medicineName,
+              dose: item.dose,
+              frequency: item.frequency,
+              duration: item.duration,
+            })),
+          },
+        },
+        include: { items: true },
+      });
+
+      this.logger.log(`✏️ Updated Draft Prescription ${id} (${updated.items.length} item(s))`);
+      return updated;
+    });
   }
 
   /**

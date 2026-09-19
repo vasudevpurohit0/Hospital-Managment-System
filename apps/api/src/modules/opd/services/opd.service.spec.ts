@@ -12,6 +12,10 @@ describe('OpdService', () => {
       updateMany: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
+      create: jest.fn(),
+    },
+    visit: {
+      findUnique: jest.fn(),
     },
     user: {
       findUnique: jest.fn(),
@@ -224,6 +228,19 @@ describe('OpdService', () => {
       await expect(service.transfer('v1', 'doctor-2', adminActor, 'Doctor on leave')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('createOpdVisit (regression: missing visitId existence check)', () => {
+    it('rejects an unresolved visitId with NotFoundException before ever entering the transaction', async () => {
+      mockPrisma.visit.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createOpdVisit({ visitId: 'does-not-exist', departmentId: 'dept-1', doctorId: 'doctor-1' }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockDepartmentService.findById).not.toHaveBeenCalled();
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
   });
 });

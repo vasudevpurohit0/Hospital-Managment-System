@@ -95,6 +95,22 @@ export class LabService {
       throw new BadRequestException('One or more lab tests do not exist.');
     }
 
+    // Without this, an admissionId belonging to a DIFFERENT visit/patient
+    // could be attached to this lab order, mis-attributing its downstream
+    // IPD-charge linkage (admissionFinancialSummary, bed-day billing) to the
+    // wrong patient's admission.
+    if (dto.admissionId) {
+      const admission = await client.admission.findUnique({ where: { id: dto.admissionId } });
+      if (!admission) {
+        throw new NotFoundException(`Admission not found: ${dto.admissionId}`);
+      }
+      if (admission.visitId !== dto.visitId) {
+        throw new BadRequestException(
+          `Admission ${dto.admissionId} does not belong to visit ${dto.visitId}.`,
+        );
+      }
+    }
+
     const run = async (t: PrismaClientLike) => {
       const labNumber = await this.sequences.next('LAB_NUMBER', t);
 

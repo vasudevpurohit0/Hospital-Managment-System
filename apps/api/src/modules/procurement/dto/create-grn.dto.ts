@@ -1,9 +1,11 @@
 import {
   IsArray,
   IsBoolean,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   ValidateNested,
 } from 'class-validator';
@@ -22,8 +24,8 @@ export class GRNItemDto {
   @IsNotEmpty()
   manufacturer!: string;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @IsPositive()
   quantity!: number;
 
   @IsString()
@@ -35,11 +37,11 @@ export class GRNItemDto {
   expiryDate!: string;
 
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive()
   purchasePrice!: number;
 
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive()
   issuePrice!: number;
 
   @IsBoolean()

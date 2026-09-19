@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -13,6 +14,7 @@ import {
   PrescriptionItemStatus,
   StockStatus,
   StockTransactionType,
+  PharmacyLocation,
 } from '@prisma/client';
 import { ProcurementService } from '../procurement/procurement.service';
 import { ChargeService } from '../billing/charge.service';
@@ -178,19 +180,49 @@ export class PharmacyService {
           );
         }
 
-        // Atomically deduct inventory
-        const updatedBatch = await tx.medicineBatch.update({
-          where: { id: batch.id },
-          data: {
-            currentStock: batch.currentStock - payloadItem.dispenseQuantity,
-          },
+        // Atomically deduct inventory -- a conditional `updateMany` guarded
+        // by the current stock level, not a read-then-write `update`, so two
+        // concurrent dispense requests against the same batch can't both
+        // pass the check above and jointly oversell it.
+        const deducted = await tx.medicineBatch.updateMany({
+          where: { id: batch.id, currentStock: { gte: payloadItem.dispenseQuantity } },
+          data: { currentStock: { decrement: payloadItem.dispenseQuantity } },
         });
+        if (deducted.count === 0) {
+          throw new ConflictException(
+            `Batch ${batch.batchNumber} no longer has enough stock for this dispense (concurrent update) — requested ${payloadItem.dispenseQuantity}.`,
+          );
+        }
+
+        // Reconciles the location-level PharmacyStock ledger against what
+        // actually left the batch, so the Pharmacy location's on-hand figure
+        // doesn't silently drift upward forever after a Central->Pharmacy
+        // transfer. MedicineBatch.currentStock (just decremented above)
+        // remains the sole source of truth for whether a dispense is
+        // allowed at all -- this is a best-effort reconciliation, so it
+        // never blocks or fails the dispense if the PHARMACY-location row is
+        // missing or already smaller than the dispensed quantity (e.g. a
+        // batch dispensed straight from Central Store without ever being
+        // transferred out).
+        const pharmacyLocationStock = await tx.pharmacyStock.findFirst({
+          where: { medicineBatchId: batch.id, location: PharmacyLocation.PHARMACY },
+        });
+        if (pharmacyLocationStock) {
+          await tx.pharmacyStock.update({
+            where: { id: pharmacyLocationStock.id },
+            data: {
+              quantity: {
+                decrement: Math.min(payloadItem.dispenseQuantity, pharmacyLocationStock.quantity),
+              },
+            },
+          });
+        }
 
         // Append-only audit record
         await tx.stockTransaction.create({
           data: {
             type: StockTransactionType.DISPENSE,
-            medicineBatchId: updatedBatch.id,
+            medicineBatchId: batch.id,
             quantity: -payloadItem.dispenseQuantity, // Negative for dispense
             prescriptionItemId: rxItem.id,
             performedBy: userId,
@@ -198,7 +230,7 @@ export class PharmacyService {
         });
 
         // Trigger automatic low stock check/requisition
-        await this.procurementService.checkAndTriggerLowStockRequisition(updatedBatch.id, tx, userId);
+        await this.procurementService.checkAndTriggerLowStockRequisition(batch.id, tx, userId);
 
         const newDispensed = rxItem.dispensedQuantity + payloadItem.dispenseQuantity;
         await tx.prescriptionItem.update({

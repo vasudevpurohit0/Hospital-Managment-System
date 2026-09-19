@@ -279,6 +279,38 @@ const MENU_GROUPS: MenuGroup[] = [
   },
 ];
 
+/**
+ * Pages ↔ roles allowed, flattened from MENU_GROUPS -- the single source of
+ * truth for both hiding a nav link (this component's own `isItemVisible`
+ * below) and blocking direct URL navigation to a page a role isn't allowed
+ * to see (AppShell's route guard). Previously only the sidebar link was
+ * hidden; a role could still navigate straight to the URL of any screen and
+ * have it fully render client-side, with only the backend's own permission
+ * checks (on the API calls the screen makes) actually stopping anything.
+ */
+export const PAGE_ROLES: Partial<Record<PageId, string[]>> = Object.fromEntries(
+  MENU_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item.roles])),
+) as Partial<Record<PageId, string[]>>;
+
+export function isPageAllowedForRole(pageId: PageId, role: string | undefined | null): boolean {
+  if (!role) return false;
+  const roles = PAGE_ROLES[pageId];
+  if (!roles) return true; // no entry means this page was never declared restricted
+  return roles.includes('*') || roles.includes(role);
+}
+
+/** Roles whose sidebar exposes exactly one screen (see SINGLE_PURPOSE_ROLES above) land there directly, since 'dashboard' isn't in their allowed-pages list either. */
+const SINGLE_PURPOSE_LANDING_PAGE: Partial<Record<string, PageId>> = {
+  QueueManager: 'opd-queue',
+  LabTechnician: 'laboratory',
+  Pathologist: 'laboratory',
+};
+
+export function getDefaultPageForRole(role: string | undefined | null): PageId {
+  if (role && SINGLE_PURPOSE_LANDING_PAGE[role]) return SINGLE_PURPOSE_LANDING_PAGE[role]!;
+  return 'dashboard';
+}
+
 interface SidebarProps {
   activePage: PageId;
   onNavigate: (page: PageId) => void;

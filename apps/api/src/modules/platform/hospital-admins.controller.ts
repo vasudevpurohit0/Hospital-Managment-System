@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patc
 import { HospitalAdminsService } from './hospital-admins.service';
 import { CreateHospitalAdminDto } from './dto/create-hospital-admin.dto';
 import { PlatformOnlyGuard } from '../../common/guards/platform-only.guard';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 /**
  * Routes span two URL shapes (`platform/hospital-admins` for the flat
@@ -22,8 +23,12 @@ export class HospitalAdminsController {
 
   @Post('hospitals/:id/admins')
   @HttpCode(HttpStatus.CREATED)
-  async create(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateHospitalAdminDto) {
-    return this.hospitalAdmins.create(id, dto);
+  async create(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateHospitalAdminDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hospitalAdmins.create(id, dto, user.id);
   }
 
   @Patch('hospitals/:id/admins/:userId/active')
@@ -31,7 +36,8 @@ export class HospitalAdminsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body('active') active: boolean,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.hospitalAdmins.setActive(id, userId, active);
+    return this.hospitalAdmins.setActive(id, userId, active, user.id);
   }
 }

@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException } from '@nestjs/common
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { CreateEmployeeSimpleDto } from './dto/create-employee-simple.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { EmploymentTypeCode } from '@prisma/client';
 
 @Injectable()
@@ -121,12 +122,24 @@ export class EmployeeService {
     return employee;
   }
 
-  async update(id: string, updateDto: Partial<CreateEmployeeDto>) {
+  async update(id: string, updateDto: UpdateEmployeeDto) {
     await this.findOne(id);
 
+    // Explicit allowlist, not `data: updateDto` -- defense in depth on top
+    // of the real DTO class + global ValidationPipe (whitelist,
+    // forbidNonWhitelisted) that already validates this body, matching the
+    // pattern used in doctor.service.ts/staff.service.ts.
     return this.prisma.employee.update({
       where: { id },
-      data: updateDto,
+      data: {
+        name: updateDto.name,
+        department: updateDto.department,
+        postId: updateDto.postId,
+        gradeId: updateDto.gradeId,
+        employmentTypeId: updateDto.employmentTypeId,
+        contactPhone: updateDto.contactPhone,
+        contactEmail: updateDto.contactEmail,
+      },
       include: {
         post: true,
         grade: true,

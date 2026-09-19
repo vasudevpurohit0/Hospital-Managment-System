@@ -4,6 +4,7 @@ import * as jwt from 'jsonwebtoken';
 import { TenantClientFactory } from '../tenant/tenant-client-factory';
 import { PlatformPrismaService } from '../tenant/platform-prisma.service';
 import { tenantStorage } from '../tenant/tenant-context';
+import { JWT_ACCESS_SECRET, JWT_PLATFORM_SECRET } from '../config/jwt-secrets';
 
 type DecodedToken =
   | { kind: 'hospital'; hospitalId: string; schemaName: string }
@@ -81,10 +82,7 @@ export class TenantResolutionMiddleware implements NestMiddleware {
 
   private decodeToken(token: string): DecodedToken | null {
     try {
-      const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET || 'dev_jwt_access_secret_key_12345') as Record<
-        string,
-        unknown
-      >;
+      const payload = jwt.verify(token, JWT_ACCESS_SECRET) as Record<string, unknown>;
       if (payload?.type === 'access' && typeof payload.hospitalId === 'string' && typeof payload.schemaName === 'string') {
         return { kind: 'hospital', hospitalId: payload.hospitalId, schemaName: payload.schemaName };
       }
@@ -94,10 +92,7 @@ export class TenantResolutionMiddleware implements NestMiddleware {
     }
 
     try {
-      const payload = jwt.verify(
-        token,
-        process.env.JWT_PLATFORM_SECRET || 'dev_jwt_platform_secret_key_platform',
-      ) as Record<string, unknown>;
+      const payload = jwt.verify(token, JWT_PLATFORM_SECRET) as Record<string, unknown>;
       if (payload?.type === 'platform' && typeof payload.sub === 'string') {
         return { kind: 'platform', platformUserId: payload.sub };
       }

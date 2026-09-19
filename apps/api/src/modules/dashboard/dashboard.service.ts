@@ -15,8 +15,17 @@ export class DashboardService {
   /**
    * Strictly read-only aggregate metrics for executive admin dashboard.
    * Produces zero database write side effects.
+   *
+   * `opd`/`ipd`/`inventory`/`procurement` are operational counts every role
+   * with a Dashboard screen legitimately needs (see the controller's own
+   * comment on why this endpoint can't gate on Employee:read). `billing`,
+   * `auditExceptions`, and `staff` are admin-tier figures (revenue,
+   * audit-log contents, headcount) that have no business being visible to
+   * e.g. a Pharmacist or Reception -- those three sections are only included
+   * when the caller holds `Analytics:read` (the same permission that gates
+   * the dedicated Analytics screen) or is the platform Super Admin.
    */
-  async getMetrics() {
+  async getMetrics(user: AuthenticatedUser) {
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
@@ -106,7 +115,7 @@ export class DashboardService {
     const bedOccupancyRate = totalBeds > 0 ? (occupiedBeds / totalBeds) * 100 : 0;
     const utilizationTotal = permanentTransactionCount + contractualTransactionCount;
 
-    return {
+    const operational = {
       opd: {
         totalVisits: totalOpdVisits,
         waitingQueue: openOpdVisits,
@@ -136,6 +145,17 @@ export class DashboardService {
         openPurchaseOrders,
         delayedSuppliers: 0,
       },
+    };
+
+    const canSeeAdminMetrics =
+      user.type === 'platform' ||
+      user.permissions?.some(
+        (p) => (p.resource === '*' || p.resource === 'Analytics') && (p.action === '*' || p.action === 'read'),
+      );
+    if (!canSeeAdminMetrics) return operational;
+
+    return {
+      ...operational,
       billing: {
         totalTransactions: totalBillingTransactions,
         paidTransactions: paidBillingTransactions,

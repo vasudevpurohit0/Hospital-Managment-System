@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsNotEmpty,
@@ -35,6 +36,7 @@ export class CreatePrescriptionDto {
   admissionRecommended?: boolean;
 
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CreatePrescriptionItemDto)
   items: CreatePrescriptionItemDto[] = [];

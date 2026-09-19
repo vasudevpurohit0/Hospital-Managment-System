@@ -10,7 +10,7 @@ export class OpdController {
   constructor(private readonly opdService: OpdService) {}
 
   @Post()
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('OPDVisit', 'create')
   async createOpdVisit(@Body() createOpdVisitDto: CreateOpdVisitDto) {
     return this.opdService.createOpdVisit(createOpdVisitDto);
   }
@@ -44,7 +44,7 @@ export class OpdController {
   }
 
   @Post(':id/call')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('OPDVisit', 'call')
   async callToken(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.callToken(id, { id: user.id, roleName: user.roleName });
   }
@@ -90,13 +90,13 @@ export class OpdController {
   }
 
   @Get('my-patients')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('OPDVisit', 'read')
   async getMyPatients(@CurrentUser('id') doctorId: string) {
     return this.opdService.getMyPatients(doctorId);
   }
 
   @Post(':id/close')
-  @RequirePermission('Employee', 'read')
+  @RequirePermission('OPDVisit', 'update')
   async closeOpdVisit(@Param('id') id: string) {
     return this.opdService.closeOpdVisit(id);
   }

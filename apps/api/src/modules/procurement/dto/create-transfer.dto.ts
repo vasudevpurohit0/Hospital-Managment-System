@@ -1,4 +1,4 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsPositive, IsString } from 'class-validator';
 import { PharmacyLocation } from '@prisma/client';
 
 export class CreateTransferDto {
@@ -14,7 +14,7 @@ export class CreateTransferDto {
   @IsNotEmpty()
   toLocation!: PharmacyLocation;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @IsPositive()
   quantity!: number;
 }

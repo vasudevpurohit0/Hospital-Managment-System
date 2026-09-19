@@ -163,4 +163,63 @@ describe('AuditInterceptor', () => {
 
     expect(create).not.toHaveBeenCalled();
   });
+
+  it('redacts a plaintext temporaryPassword in the stored afterSnapshot (regression: previously persisted verbatim)', async () => {
+    const ctx = contextFor({
+      method: 'POST',
+      path: '/api/staff/e1/reset-password',
+      user: { id: 'u1', roleName: 'Administrator' },
+    });
+
+    await runWithTenant(
+      { hospitalId: 'h1', schemaName: 'hospital_test', prismaClient: {} as never },
+      () =>
+        lastValueFrom(
+          interceptor.intercept(
+            ctx,
+            handler({ id: 'staff-1', email: 'nurse@example.com', temporaryPassword: 'PlaintextTemp123!' }),
+          ),
+        ),
+    );
+    await flush();
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          afterSnapshot: expect.objectContaining({
+            id: 'staff-1',
+            email: 'nurse@example.com',
+            temporaryPassword: '[REDACTED]',
+          }),
+        }),
+      }),
+    );
+    // Belt-and-braces: the raw secret string must never appear anywhere in
+    // what was actually persisted.
+    expect(JSON.stringify(create.mock.calls[0][0])).not.toContain('PlaintextTemp123!');
+  });
+
+  it('redacts a password field in the stored beforeSnapshot on a PUT/PATCH request body', async () => {
+    const ctx = contextFor({
+      method: 'PUT',
+      path: '/api/staff/e1',
+      user: { id: 'u1', roleName: 'Administrator' },
+      body: { name: 'Updated Name', password: 'should-not-be-stored' },
+    });
+
+    await runWithTenant(
+      { hospitalId: 'h1', schemaName: 'hospital_test', prismaClient: {} as never },
+      () => lastValueFrom(interceptor.intercept(ctx, handler({ id: 'e1', name: 'Updated Name' }))),
+    );
+    await flush();
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          beforeSnapshot: expect.objectContaining({ name: 'Updated Name', password: '[REDACTED]' }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(create.mock.calls[0][0])).not.toContain('should-not-be-stored');
+  });
 });

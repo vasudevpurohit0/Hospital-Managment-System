@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsNotEmpty, IsNumber, IsPositive, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class POItemDto {
@@ -6,12 +6,12 @@ export class POItemDto {
   @IsNotEmpty()
   medicineId!: string;
 
-  @IsNumber()
-  @IsNotEmpty()
+  @IsInt()
+  @IsPositive()
   quantity!: number;
 
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive()
   unitPrice!: number;
 }
 

@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
@@ -116,6 +123,25 @@ export class ProcurementService {
       const req = await tx.purchaseRequisition.findUnique({ where: { id: requisitionId } });
       if (!req) throw new NotFoundException(`Requisition not found: ${requisitionId}`);
 
+      // Segregation of duties: whoever raised a requisition cannot also be
+      // the one who approves/rejects it, even if their role holds both
+      // permissions (e.g. StoreManager holds both PurchaseRequisition:create
+      // and Approval:approve).
+      if (req.raisedBy === userId) {
+        throw new ForbiddenException(
+          'You cannot approve or reject a requisition you raised yourself.',
+        );
+      }
+
+      // A requisition can only be decided once -- without this, repeated
+      // calls create multiple Approval rows and can flip status back and
+      // forth between APPROVED/REJECTED indefinitely.
+      if (req.status !== RequisitionStatus.PENDING) {
+        throw new ConflictException(
+          `Requisition ${requisitionId} has already been ${req.status.toLowerCase()} and cannot be decided again.`,
+        );
+      }
+
       // Update item quantities if requested by the Procurement Officer
       if (dto.items && dto.items.length > 0) {
         for (const item of dto.items) {
@@ -211,8 +237,50 @@ export class ProcurementService {
   // 6. Record Goods Receipt Note (GRN) -> Creates new MedicineBatch rows & CentralStore stock
   async createGRN(dto: CreateGRNDto, userId: string) {
     return this.prisma.$transaction(async (tx) => {
-      const po = await tx.purchaseOrder.findUnique({ where: { id: dto.purchaseOrderId } });
+      const po = await tx.purchaseOrder.findUnique({
+        where: { id: dto.purchaseOrderId },
+        include: { items: true, goodsReceiptNotes: { include: { items: true } } },
+      });
       if (!po) throw new NotFoundException(`Purchase Order not found: ${dto.purchaseOrderId}`);
+
+      if (po.status === POStatus.RECEIVED || po.status === POStatus.CLOSED) {
+        throw new BadRequestException(
+          `Purchase Order ${dto.purchaseOrderId} has already been fully received and cannot accept another goods receipt.`,
+        );
+      }
+
+      // Cross-validate this GRN against what was actually ordered: every
+      // received medicine must be a line item on the PO, and cumulative
+      // received quantity (across this GRN and every prior one against the
+      // same PO) can never exceed what was ordered for it.
+      const orderedByMedicine = new Map<string, number>();
+      for (const item of po.items) {
+        orderedByMedicine.set(item.medicineId, (orderedByMedicine.get(item.medicineId) ?? 0) + item.quantity);
+      }
+      const receivedByMedicine = new Map<string, number>();
+      for (const priorGrn of po.goodsReceiptNotes) {
+        for (const item of priorGrn.items) {
+          receivedByMedicine.set(
+            item.medicineId,
+            (receivedByMedicine.get(item.medicineId) ?? 0) + item.quantity,
+          );
+        }
+      }
+      for (const item of dto.items) {
+        const ordered = orderedByMedicine.get(item.medicineId);
+        if (ordered === undefined) {
+          throw new BadRequestException(
+            `Medicine ${item.medicineId} is not part of Purchase Order ${dto.purchaseOrderId} and cannot be received against it.`,
+          );
+        }
+        const alreadyReceived = receivedByMedicine.get(item.medicineId) ?? 0;
+        if (alreadyReceived + item.quantity > ordered) {
+          throw new BadRequestException(
+            `Cannot receive ${item.quantity} of medicine ${item.medicineId}: only ${ordered - alreadyReceived} remaining against Purchase Order ${dto.purchaseOrderId} (ordered ${ordered}, already received ${alreadyReceived}).`,
+          );
+        }
+        receivedByMedicine.set(item.medicineId, alreadyReceived + item.quantity);
+      }
 
       const grn = await tx.goodsReceiptNote.create({
         data: {
@@ -267,18 +335,26 @@ export class ProcurementService {
         });
       }
 
-      // Update PO status to RECEIVED
-      await tx.purchaseOrder.update({
-        where: { id: dto.purchaseOrderId },
-        data: { status: POStatus.RECEIVED },
-      });
+      // Only flip the PO (and its requisition) to fully-received once every
+      // ordered line item has actually been received in full -- previously
+      // this ran unconditionally on ANY GRN, marking a requisition FULFILLED
+      // even after a partial or short receipt.
+      const fullyReceived = [...orderedByMedicine.entries()].every(
+        ([medicineId, ordered]) => (receivedByMedicine.get(medicineId) ?? 0) >= ordered,
+      );
 
-      // Update Requisition status to FULFILLED
-      if (po.requisitionId) {
-        await tx.purchaseRequisition.update({
-          where: { id: po.requisitionId },
-          data: { status: RequisitionStatus.FULFILLED },
+      if (fullyReceived) {
+        await tx.purchaseOrder.update({
+          where: { id: dto.purchaseOrderId },
+          data: { status: POStatus.RECEIVED },
         });
+
+        if (po.requisitionId) {
+          await tx.purchaseRequisition.update({
+            where: { id: po.requisitionId },
+            data: { status: RequisitionStatus.FULFILLED },
+          });
+        }
       }
 
       return grn;
@@ -295,17 +371,24 @@ export class ProcurementService {
         where: { medicineBatchId: dto.medicineBatchId, location: dto.fromLocation },
       });
 
-      if (!centralStock || centralStock.quantity < dto.quantity) {
-        throw new BadRequestException(
-          `Insufficient stock at ${dto.fromLocation}: available ${centralStock?.quantity || 0}, requested ${dto.quantity}`,
-        );
+      if (!centralStock) {
+        throw new BadRequestException(`No stock recorded at ${dto.fromLocation} for this batch.`);
       }
 
-      // 1. Decrease CentralStore stock
-      await tx.pharmacyStock.update({
-        where: { id: centralStock.id },
+      // 1. Decrease CentralStore stock -- a conditional `updateMany` guarded
+      // by the current quantity, not a plain read-then-`update`, so two
+      // concurrent transfers draining the same source row can't both pass
+      // the check and jointly overdraw it (the same race class as pharmacy
+      // dispense elsewhere in this codebase).
+      const decremented = await tx.pharmacyStock.updateMany({
+        where: { id: centralStock.id, quantity: { gte: dto.quantity } },
         data: { quantity: { decrement: dto.quantity } },
       });
+      if (decremented.count === 0) {
+        throw new BadRequestException(
+          `Insufficient stock at ${dto.fromLocation}: requested ${dto.quantity} exceeds what is currently available.`,
+        );
+      }
 
       // 2. Increase Pharmacy stock
       const pharmStock = await tx.pharmacyStock.findFirst({

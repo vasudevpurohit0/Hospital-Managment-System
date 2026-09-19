@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { BillingType, ChargeStatus, PaymentMode, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { DocumentSequenceService, PrismaClientLike } from '../../common/sequence/document-sequence.service';
@@ -88,10 +88,24 @@ export class ReceiptService {
         },
       });
 
-      await client.chargeItem.updateMany({
-        where: { id: { in: params.chargeIds } },
+      // Conditioned on status: PENDING, not just id -- without this, two
+      // concurrent issue() calls for the same chargeIds could both pass the
+      // PENDING check above (a plain SELECT gives no isolation guarantee
+      // against a second transaction doing the same read before either
+      // commits) and both create a receipt, since a plain `updateMany` by id
+      // alone would happily "succeed" a second time regardless of what the
+      // first transaction already did. A count short of what's expected
+      // means a concurrent request already claimed one or more of these
+      // charges between the read above and this write.
+      const claimed = await client.chargeItem.updateMany({
+        where: { id: { in: params.chargeIds }, status: ChargeStatus.PENDING },
         data: { status: ChargeStatus.PAID, receiptId: receipt.id },
       });
+      if (claimed.count !== params.chargeIds.length) {
+        throw new ConflictException(
+          'One or more of these charges were already receipted by a concurrent request.',
+        );
+      }
 
       this.logger.log(
         `Issued receipt ${receiptNumber} for ${charges.length} charge(s), ₹${totalAmount.toFixed(2)}`,

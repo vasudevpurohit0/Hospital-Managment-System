@@ -203,6 +203,11 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Administrator', resource: 'Employee', action: 'create' },
   { roleName: 'Administrator', resource: 'Employee', action: 'read' },
   { roleName: 'Administrator', resource: 'Employee', action: 'update' },
+  // Reclassification (post/grade/employment type) changes benefit
+  // eligibility and pay-grade-linked billing, so it's kept narrower than
+  // ordinary Employee:update (which Reception/DataEntryOperator also hold,
+  // for demographic-only edits) -- see EmployeeController.update.
+  { roleName: 'Administrator', resource: 'Employee', action: 'reclassify' },
   { roleName: 'Administrator', resource: 'Doctor', action: 'read' },
   // Onboarding a doctor creates a real login-capable account, so it is kept
   // to Administrator only, not handed to Reception/DataEntryOperator alongside

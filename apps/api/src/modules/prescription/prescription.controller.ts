@@ -1,6 +1,7 @@
 import { Controller, Post, Put, Get, Body, Param, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { PrescriptionService } from './prescription.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
+import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -19,14 +20,19 @@ export class PrescriptionController {
 
   @Put(':id')
   @RequirePermission('Prescription', 'update')
-  async updatePrescription(@Param('id') id: string, @Body() dto: Partial<CreatePrescriptionDto>) {
+  async updatePrescription(@Param('id') id: string, @Body() dto: UpdatePrescriptionDto) {
     return this.prescriptionService.updatePrescription(id, dto);
   }
 
   @Post(':id/sign')
   @RequirePermission('Prescription', 'sign')
   async signPrescription(@Param('id') id: string, @Req() req: any) {
-    const userRole = req.user?.roleName || req.user?.role || 'Doctor';
+    // No fallback default: JwtAuthGuard has already verified this request and
+    // AuthenticatedUser.roleName is always populated for an authenticated
+    // caller. Defaulting a missing/unexpected role to 'Doctor' here would
+    // silently defeat signPrescription's own server-side role check below.
+    const userRole = req.user?.roleName;
+    if (!userRole) throw new UnauthorizedException('User context missing');
     return this.prescriptionService.signPrescription(id, userRole);
   }
 

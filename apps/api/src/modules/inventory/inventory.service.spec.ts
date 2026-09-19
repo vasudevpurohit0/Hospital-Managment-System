@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ProcurementService } from '../procurement/procurement.service';
 import { StockStatus } from '@prisma/client';
 
 describe('InventoryService', () => {
@@ -24,11 +25,21 @@ describe('InventoryService', () => {
       findMany: jest.fn(),
       create: jest.fn(),
     },
+    purchaseRequisition: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [InventoryService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        InventoryService,
+        { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: ProcurementService,
+          useValue: { checkAndTriggerLowStockRequisition: jest.fn().mockResolvedValue(undefined) },
+        },
+      ],
     }).compile();
 
     service = module.get<InventoryService>(InventoryService);

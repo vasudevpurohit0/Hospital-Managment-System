@@ -351,7 +351,17 @@ export class AdmissionService {
    * Enforces database-level concurrency safeguards.
    */
   async allocateBed(id: string, dto: AllocateBedDto, _userId?: string) {
-    await this.findOne(id);
+    const admission = await this.findOne(id);
+
+    // Prevents "un-discharging" an admission by re-allocating it a bed after
+    // it was already marked DISCHARGED -- that status change should only
+    // happen through a real re-admission (a new Admission record), not by
+    // reusing the old one.
+    if (admission.status === AdmissionStatus.DISCHARGED) {
+      throw new BadRequestException(
+        `Admission ${id} has already been discharged and cannot be allocated a bed. Create a new admission instead.`,
+      );
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Fetch the Bed and verify availability
@@ -465,7 +475,9 @@ export class AdmissionService {
    * Doctor-approved discharge flow (transactional: generates summary and frees bed)
    */
   async discharge(id: string, dto: DischargeDto, userId: string, roleName: string) {
-    // Spec §8.1 & FR-ADM-05: Doctor, Administrator, or SuperAdmin role can approve discharge
+    // Spec §8.1 & FR-ADM-05: Doctor, Administrator, or the platform Super Admin
+    // (PlatformJwtStrategy sets roleName: 'SuperAdmin' for that token type) can
+    // approve discharge.
     if (roleName !== 'Doctor' && roleName !== 'SuperAdmin' && roleName !== 'Administrator') {
       throw new ForbiddenException(
         `Discharge approval requires the Doctor or Administrator role. Access denied for role: ${roleName}`,
@@ -473,6 +485,16 @@ export class AdmissionService {
     }
 
     const admission = await this.findOne(id);
+
+    // Guard against a repeated/duplicate discharge call (double-submit, retry,
+    // or a stale client re-hitting this endpoint). Without this, step 2 below
+    // would unconditionally free whatever bed `admission.bedId` still points
+    // to -- if that bed has since been re-allocated to a *different* admission,
+    // a second discharge() call on this stale admission would silently evict
+    // the new patient's bed while their own admission stays UNDER_TREATMENT.
+    if (admission.status === AdmissionStatus.DISCHARGED) {
+      throw new ConflictException(`Admission ${id} has already been discharged.`);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       // 1. Generate / Update Discharge Summary
@@ -489,16 +511,34 @@ export class AdmissionService {
         },
       });
 
-      // 2. Free the Bed associated with the Admission
+      // 1a. Bill today's bed-day now, before the bed is released, as a
+      // safety net: the nightly cron already covers a patient still
+      // UNDER_TREATMENT at the midnight before their discharge, but this
+      // call is idempotent per (admission, calendar day) via
+      // postBedDayForAdmission's own guard, so it can only fill a genuine
+      // gap -- it never double-charges a day the cron (or allocation) already billed.
+      await this.ipdFinance.postBedDayForAdmission(id, new Date(), tx);
+
+      // 2. Free the Bed associated with the Admission -- but only if it
+      // still actually belongs to THIS admission. A plain `update` here
+      // would blindly free whatever bed `admission.bedId` points to even if
+      // it has since been re-allocated to a different, currently-admitted
+      // patient; the conditional `updateMany` makes that a safe no-op instead.
       if (admission.bedId) {
-        await tx.bed.update({
-          where: { id: admission.bedId },
+        const freed = await tx.bed.updateMany({
+          where: { id: admission.bedId, currentAdmissionId: id },
           data: {
             status: BedStatus.AVAILABLE,
             currentAdmissionId: null,
           },
         });
-        this.logger.log(`🛌 Freed Bed ${admission.bedId} associated with Admission ${id}`);
+        if (freed.count > 0) {
+          this.logger.log(`🛌 Freed Bed ${admission.bedId} associated with Admission ${id}`);
+        } else {
+          this.logger.warn(
+            `Bed ${admission.bedId} on Admission ${id} was not freed -- it no longer belongs to this admission (already reassigned or already freed).`,
+          );
+        }
       }
 
       // 3. Mark Admission as DISCHARGED

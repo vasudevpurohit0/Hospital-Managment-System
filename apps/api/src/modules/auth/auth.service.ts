@@ -18,6 +18,7 @@ import { PlatformJwtPayload } from './strategies/platform-jwt.strategy';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
+import { JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, JWT_PLATFORM_SECRET } from '../../common/config/jwt-secrets';
 import { runWithTenant } from '../../common/tenant/tenant-context';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { generateResetToken, hashResetToken } from '../../common/security/password.util';
@@ -247,12 +248,12 @@ export class AuthService {
 
     try {
       const accessToken = this.jwtService.sign(payload, {
-        secret: process.env.JWT_ACCESS_SECRET || 'dev_jwt_access_secret_key_12345',
+        secret: JWT_ACCESS_SECRET,
         expiresIn: (process.env.JWT_EXPIRES_IN as any) || '8h',
       });
 
       const refreshToken = this.jwtService.sign(refreshPayload, {
-        secret: process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_key_67890',
+        secret: JWT_REFRESH_SECRET,
         expiresIn: '7d',
       });
 
@@ -300,7 +301,7 @@ export class AuthService {
 
     try {
       const accessToken = this.jwtService.sign(payload, {
-        secret: process.env.JWT_PLATFORM_SECRET || 'dev_jwt_platform_secret_key_platform',
+        secret: JWT_PLATFORM_SECRET,
         expiresIn: (process.env.JWT_PLATFORM_EXPIRES_IN as any) || '8h',
       });
 
@@ -330,7 +331,7 @@ export class AuthService {
     let payload: RefreshPayload;
     try {
       payload = this.jwtService.verify(refreshTokenDto.refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_key_67890',
+        secret: JWT_REFRESH_SECRET,
       });
 
       if (payload.type !== 'refresh' || !payload.hospitalId || !payload.schemaName) {
@@ -596,7 +597,7 @@ export class AuthService {
       };
 
       const newAccessToken = this.jwtService.sign(accessPayload, {
-        secret: process.env.JWT_ACCESS_SECRET || 'dev_jwt_access_secret_key_12345',
+        secret: JWT_ACCESS_SECRET,
         expiresIn: (process.env.JWT_EXPIRES_IN as any) || '8h',
       });
 

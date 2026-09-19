@@ -64,9 +64,19 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://esic_user:esic_password@postgres:5432/esic_hms
+      PLATFORM_DATABASE_URL: postgresql://esic_user:esic_password@postgres:5432/esic_hms?schema=public
       REDIS_URL: redis://redis:6379
       NODE_ENV: development
       API_PORT: 3000
+      # Dev-only values, randomly generated for this compose file -- the app
+      # now refuses to start if these are unset (see
+      # apps/api/src/common/config/jwt-secrets.ts) rather than silently
+      # falling back to a secret hardcoded in source, as it previously did.
+      # Override with real secrets via a `docker-compose.override.yml` (or an
+      # env_file) for anything beyond local development.
+      JWT_ACCESS_SECRET: e2ac5bbe5fef93852791ffffedbfa6dde941d11f72b14ceddcb3ae28482226d0
+      JWT_REFRESH_SECRET: f88136cb93b3d2af6f808f8d0c8e05a7e4503b4d71ffd892a356eabfb39242d9
+      JWT_PLATFORM_SECRET: 35d5b5e9549f2985416b8a6108727aaddaf9526a3d293bcc9d1658941f0ba732
     ports:
       - '3000:3000'
     volumes:
