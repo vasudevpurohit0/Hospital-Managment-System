@@ -223,3 +223,109 @@ export async function updateEmployeeContact(
 
   return res.json();
 }
+
+// ── Bulk Employee Import (CSV) ─────────────────────────────────────────────
+
+export type EmployeeImportRowStatus = 'VALID' | 'INVALID' | 'DUPLICATE_FILE' | 'DUPLICATE_EXISTING';
+
+export interface ParsedEmployeeRow {
+  rowNum: number;
+  employeeId: string;
+  name: string;
+  department: string;
+  postTitle: string;
+  gradePayLevel: string;
+  employmentTypeRaw: string;
+  contactPhone: string;
+  contactEmail: string;
+}
+
+export interface EmployeeImportPreviewRow {
+  rowNum: number;
+  employeeId: string;
+  status: EmployeeImportRowStatus;
+  error: string | null;
+  original: ParsedEmployeeRow;
+}
+
+export interface EmployeeImportValidation {
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  duplicateRows: number;
+  rows: EmployeeImportPreviewRow[];
+}
+
+export interface EmployeeImportResult {
+  totalRows: number;
+  validRows: number;
+  importedSuccessfully: number;
+  failedRows: number;
+  failures: { rowNum: number; employeeId: string; error: string }[];
+}
+
+function empFileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+function empDownloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadEmployeeTemplate(token?: string): Promise<void> {
+  const res = await apiFetch('/api/employees/import/template', {}, token);
+  if (!res.ok) throw new Error('Failed to download template');
+  empDownloadBlob(await res.blob(), 'employee_import_template.csv');
+}
+
+export async function validateEmployeeImport(file: File, token?: string): Promise<EmployeeImportValidation> {
+  const fileBase64 = await empFileToBase64(file);
+  const res = await apiFetch(
+    '/api/employees/import/validate',
+    { method: 'POST', body: JSON.stringify({ fileBase64 }) },
+    token,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'CSV validation failed');
+  }
+  return res.json();
+}
+
+export async function confirmEmployeeImport(rows: ParsedEmployeeRow[], token?: string): Promise<EmployeeImportResult> {
+  const res = await apiFetch(
+    '/api/employees/import/confirm',
+    { method: 'POST', body: JSON.stringify({ rows }) },
+    token,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Import failed');
+  }
+  return res.json();
+}
+
+export async function downloadEmployeeErrorReport(
+  rows: { rowNum: number; employeeId: string; error: string; original: ParsedEmployeeRow }[],
+  token?: string,
+): Promise<void> {
+  const res = await apiFetch(
+    '/api/employees/import/error-report',
+    { method: 'POST', body: JSON.stringify({ rows }) },
+    token,
+  );
+  if (!res.ok) throw new Error('Failed to download error report');
+  empDownloadBlob(await res.blob(), 'employee_import_errors.csv');
+}

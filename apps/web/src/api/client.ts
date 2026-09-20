@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+export const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const AUTH_STORAGE_KEY = 'esic-hms-auth';
 
 export function getStoredToken(): string | null {
@@ -24,7 +24,7 @@ export function getStoredToken(): string | null {
  * existing *.api.ts module work unmodified for a Super Admin inside a
  * hospital.
  */
-function getActiveHospitalHeader(): string | null {
+export function getActiveHospitalHeader(): string | null {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;

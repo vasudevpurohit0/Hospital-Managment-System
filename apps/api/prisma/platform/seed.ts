@@ -23,6 +23,17 @@ async function main() {
     },
   });
 
+  // Register the account in the login directory so /api/auth/login can
+  // resolve it. A null hospitalId marks it as a platform (control-plane)
+  // account rather than hospital staff. Without this row, resolve() returns
+  // null and every login attempt fails with "Invalid credentials".
+  const directoryIdentifier = EMAIL.trim().toLowerCase();
+  await prisma.loginIdentifier.upsert({
+    where: { identifier: directoryIdentifier },
+    update: { hospitalId: null },
+    create: { identifier: directoryIdentifier, hospitalId: null },
+  });
+
   console.log(`Platform seed complete. Super Admin: ${user.email} (id: ${user.id})`);
 }
 

@@ -491,6 +491,12 @@ export const DoctorSchedulePage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  {!form.departmentId && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                      A doctor with no department won't appear in the OPD registration doctor picker. The
+                      specialty above is just a label — assign a department to make this doctor selectable.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-1">Consultation Fee (₹)</label>

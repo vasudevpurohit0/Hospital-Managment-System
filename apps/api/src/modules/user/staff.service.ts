@@ -33,7 +33,10 @@ type StaffUser = {
     contactEmail: string | null;
   } | null;
   staffShifts: { dayOfWeek: string; startTime: string; endTime: string; active: boolean }[];
-  departmentAssignments: { isPrimary: boolean; department: { id: string; name: string; code: string } }[];
+  departmentAssignments: {
+    isPrimary: boolean;
+    department: { id: string; name: string; code: string };
+  }[];
 };
 
 export interface StaffDto {
@@ -130,7 +133,10 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
         endTime: s.endTime,
         available: s.active,
       })),
-      departments: u.departmentAssignments.map((a) => ({ ...a.department, isPrimary: a.isPrimary })),
+      departments: u.departmentAssignments.map((a) => ({
+        ...a.department,
+        isPrimary: a.isPrimary,
+      })),
     };
   }
 
@@ -167,7 +173,10 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
     const filtered = users
       .map((u) => {
         const status = statuses.get(u.identifier.trim().toLowerCase());
-        const locked = !!(status?.manuallyLockedAt || (status?.lockedUntil && status.lockedUntil > new Date()));
+        const locked = !!(
+          status?.manuallyLockedAt ||
+          (status?.lockedUntil && status.lockedUntil > new Date())
+        );
         return { ...this.toDto(u), locked, failedLoginAttempts: status?.failedAttempts ?? 0 };
       })
       .filter((s) => {
@@ -183,7 +192,10 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
     // the final filtered set -- correct for the staff-list scale this
     // screen deals with (dozens to low hundreds of accounts per hospital).
     const page = Math.max(1, filters.page ?? 1);
-    const limit = Math.min(MAX_STAFF_PAGE_LIMIT, Math.max(1, filters.limit ?? DEFAULT_STAFF_PAGE_LIMIT));
+    const limit = Math.min(
+      MAX_STAFF_PAGE_LIMIT,
+      Math.max(1, filters.limit ?? DEFAULT_STAFF_PAGE_LIMIT),
+    );
     const total = filtered.length;
     const items = filtered.slice((page - 1) * limit, page * limit);
 
@@ -192,7 +204,9 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
   async findOne(id: string) {
     const user = await this.requireAccountUser(id);
-    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: this.listSelect }));
+    return this.toDto(
+      await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: this.listSelect }),
+    );
   }
 
   protected async requireAccountUser(id: string) {
@@ -230,7 +244,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
       staffId: created.staffId,
       role: created.role,
       hospitalId,
-      actorUserId: actor?.id,
+      actorUserId: this.actorTenantUserId(actor) ?? undefined,
       temporaryPassword: created.temporaryPassword,
     });
 
@@ -249,10 +263,15 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
       const staffId = await this.sequences.nextStaffId(STAFF_ROLE_PREFIXES[dto.role], tx);
 
-      const post = (await tx.post.findFirst({ where: { title: 'Senior Officer' } })) || (await tx.post.findFirst());
-      const grade = (await tx.grade.findFirst({ where: { payLevel: 'Pay Level 10' } })) || (await tx.grade.findFirst());
+      const post =
+        (await tx.post.findFirst({ where: { title: 'Senior Officer' } })) ||
+        (await tx.post.findFirst());
+      const grade =
+        (await tx.grade.findFirst({ where: { payLevel: 'Pay Level 10' } })) ||
+        (await tx.grade.findFirst());
       const empType =
-        (await tx.employmentType.findFirst({ where: { code: 'PERMANENT' } })) || (await tx.employmentType.findFirst());
+        (await tx.employmentType.findFirst({ where: { code: 'PERMANENT' } })) ||
+        (await tx.employmentType.findFirst());
       if (!post || !grade || !empType) {
         throw new Error('Master data for employee creation is missing (Post/Grade/EmpType)');
       }
@@ -307,7 +326,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: toAuditActorUserId(actor),
+          actorUserId: actor?.id ?? null,
           actorRole: actor?.roleName ?? 'System',
           action: 'staff.created',
           entityType: 'User',
@@ -351,11 +370,14 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
           await this.loginDirectory.rename(oldEmail, newEmail);
           await tx.user.update({ where: { id }, data: { identifier: newEmail } });
           if (user.employeeId) {
-            await tx.employee.update({ where: { id: user.employeeId }, data: { contactEmail: newEmail } });
+            await tx.employee.update({
+              where: { id: user.employeeId },
+              data: { contactEmail: newEmail },
+            });
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: toAuditActorUserId(actor),
+              actorUserId: actor?.id ?? null,
               actorRole: actor?.roleName ?? 'System',
               action: 'staff.email_changed',
               entityType: 'User',
@@ -386,13 +408,18 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
         await tx.staffDepartmentAssignment.deleteMany({ where: { userId: id } });
         if (dto.departmentIds.length > 0) {
           await tx.staffDepartmentAssignment.createMany({
-            data: dto.departmentIds.map((departmentId, idx) => ({ userId: id, departmentId, isPrimary: idx === 0 })),
+            data: dto.departmentIds.map((departmentId, idx) => ({
+              userId: id,
+              departmentId,
+              isPrimary: idx === 0,
+            })),
           });
         }
       }
     });
 
-    return this.toDto(await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.listSelect }));
+    return this.toDto(
+      await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.listSelect }),
+    );
   }
-
 }

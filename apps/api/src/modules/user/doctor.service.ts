@@ -37,7 +37,13 @@ type DoctorUser = {
     checkedOutAt: Date | null;
     department: { id: string; name: string; code: string } | null;
   } | null;
-  employee: { name: string; department: string; consultationRoom: string | null; contactPhone: string | null; employeeId?: string | null } | null;
+  employee: {
+    name: string;
+    department: string;
+    consultationRoom: string | null;
+    contactPhone: string | null;
+    employeeId?: string | null;
+  } | null;
 };
 
 export interface DoctorDto {
@@ -132,7 +138,8 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       verified: u.doctorProfile?.verified ?? false,
       departmentId: u.doctorProfile?.departmentId ?? null,
       assignedDepartment: u.doctorProfile?.department ?? null,
-      consultationFee: u.doctorProfile?.consultationFee != null ? Number(u.doctorProfile.consultationFee) : 0,
+      consultationFee:
+        u.doctorProfile?.consultationFee != null ? Number(u.doctorProfile.consultationFee) : 0,
       weeklySchedule: u.doctorProfile?.weeklySchedule ?? null,
       dutyStatus: u.doctorProfile?.dutyStatus ?? 'OFF_DUTY',
       dutyStatusChangedAt: u.doctorProfile?.dutyStatusChangedAt ?? null,
@@ -186,7 +193,10 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
 
     const counts = await this.prisma.oPDVisit.groupBy({
       by: ['doctorId'],
-      where: { doctorId: { in: eligible.map((d) => d.id) }, status: { in: ['WAITING', 'CALLED', 'IN_CONSULTATION'] } },
+      where: {
+        doctorId: { in: eligible.map((d) => d.id) },
+        status: { in: ['WAITING', 'CALLED', 'IN_CONSULTATION'] },
+      },
       _count: { _all: true },
     });
     const countByDoctor = new Map(counts.map((c) => [c.doctorId, c._count._all]));
@@ -211,7 +221,10 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       const status = statuses.get(u.identifier.trim().toLowerCase());
       return {
         ...this.toDto(u),
-        locked: !!(status?.manuallyLockedAt || (status?.lockedUntil && status.lockedUntil > new Date())),
+        locked: !!(
+          status?.manuallyLockedAt ||
+          (status?.lockedUntil && status.lockedUntil > new Date())
+        ),
         failedLoginAttempts: status?.failedAttempts ?? 0,
       };
     });
@@ -245,7 +258,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       staffId: created.staffId,
       role: 'Doctor',
       hospitalId,
-      actorUserId: actor?.id,
+      actorUserId: this.actorTenantUserId(actor) ?? undefined,
       temporaryPassword: created.temporaryPassword,
     });
 
@@ -282,10 +295,15 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
 
       const empId = await this.sequences.nextStaffId('DOC', tx);
 
-      const post = (await tx.post.findFirst({ where: { title: 'Senior Officer' } })) || (await tx.post.findFirst());
-      const grade = (await tx.grade.findFirst({ where: { payLevel: 'Pay Level 10' } })) || (await tx.grade.findFirst());
+      const post =
+        (await tx.post.findFirst({ where: { title: 'Senior Officer' } })) ||
+        (await tx.post.findFirst());
+      const grade =
+        (await tx.grade.findFirst({ where: { payLevel: 'Pay Level 10' } })) ||
+        (await tx.grade.findFirst());
       const empType =
-        (await tx.employmentType.findFirst({ where: { code: 'PERMANENT' } })) || (await tx.employmentType.findFirst());
+        (await tx.employmentType.findFirst({ where: { code: 'PERMANENT' } })) ||
+        (await tx.employmentType.findFirst());
 
       if (!post || !grade || !empType) {
         throw new Error('Master data for employee creation is missing (Post/Grade/EmpType)');
@@ -322,7 +340,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: toAuditActorUserId(actor),
+          actorUserId: this.actorTenantUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'doctor.created',
           entityType: 'User',
@@ -376,11 +394,14 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
           await this.loginDirectory.rename(oldEmail, newEmail);
           await tx.user.update({ where: { id }, data: { identifier: newEmail } });
           if (user.employeeId) {
-            await tx.employee.update({ where: { id: user.employeeId }, data: { contactEmail: newEmail } });
+            await tx.employee.update({
+              where: { id: user.employeeId },
+              data: { contactEmail: newEmail },
+            });
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: toAuditActorUserId(actor),
+              actorUserId: this.actorTenantUserId(actor),
               actorRole: actor?.roleName ?? 'System',
               action: 'doctor.email_changed',
               entityType: 'User',
@@ -392,7 +413,8 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
         }
       }
 
-      const departmentChanged = dto.departmentId !== undefined && dto.departmentId !== user.doctorProfile!.departmentId;
+      const departmentChanged =
+        dto.departmentId !== undefined && dto.departmentId !== user.doctorProfile!.departmentId;
 
       await tx.doctorProfile.update({
         where: { userId: id },
@@ -409,7 +431,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       if (departmentChanged) {
         await tx.auditLog.create({
           data: {
-            actorUserId: toAuditActorUserId(actor),
+            actorUserId: this.actorTenantUserId(actor),
             actorRole: actor?.roleName ?? 'System',
             action: 'doctor.department_changed',
             entityType: 'DoctorProfile',
@@ -421,7 +443,10 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       }
     });
 
-    const updated = await this.prisma.user.findUniqueOrThrow({ where: { id }, select: this.listSelect });
+    const updated = await this.prisma.user.findUniqueOrThrow({
+      where: { id },
+      select: this.listSelect,
+    });
     return this.toDto(updated);
   }
 
@@ -434,7 +459,12 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
   async getDutyStatus(userId: string) {
     const profile = await this.prisma.doctorProfile.findUniqueOrThrow({
       where: { userId },
-      select: { dutyStatus: true, dutyStatusChangedAt: true, checkedInAt: true, checkedOutAt: true },
+      select: {
+        dutyStatus: true,
+        dutyStatusChangedAt: true,
+        checkedInAt: true,
+        checkedOutAt: true,
+      },
     });
     return profile;
   }
@@ -444,7 +474,9 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       where: { doctorId: userId, status: { in: ['CALLED', 'IN_CONSULTATION'] } },
     });
     if (activeVisit) {
-      throw new BadRequestException(`Complete, skip, or transfer your current patient before ${action}.`);
+      throw new BadRequestException(
+        `Complete, skip, or transfer your current patient before ${action}.`,
+      );
     }
   }
 
@@ -459,7 +491,13 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'AVAILABLE', checkedInAt: now, dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_in', entityType: 'User', entityId: userId },
+      data: {
+        actorUserId: toAuditActorUserId(actor) ?? userId,
+        actorRole: actor?.roleName ?? 'Doctor',
+        action: 'doctor.checked_in',
+        entityType: 'User',
+        entityId: userId,
+      },
     });
     return this.getDutyStatus(userId);
   }
@@ -476,7 +514,13 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'OFF_DUTY', checkedOutAt: now, dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_out', entityType: 'User', entityId: userId },
+      data: {
+        actorUserId: toAuditActorUserId(actor) ?? userId,
+        actorRole: actor?.roleName ?? 'Doctor',
+        action: 'doctor.checked_out',
+        entityType: 'User',
+        entityId: userId,
+      },
     });
     return this.getDutyStatus(userId);
   }
@@ -496,7 +540,13 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'ON_BREAK', dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_started', entityType: 'User', entityId: userId },
+      data: {
+        actorUserId: toAuditActorUserId(actor) ?? userId,
+        actorRole: actor?.roleName ?? 'Doctor',
+        action: 'doctor.break_started',
+        entityType: 'User',
+        entityId: userId,
+      },
     });
     return this.getDutyStatus(userId);
   }
@@ -512,7 +562,13 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'AVAILABLE', dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_ended', entityType: 'User', entityId: userId },
+      data: {
+        actorUserId: toAuditActorUserId(actor) ?? userId,
+        actorRole: actor?.roleName ?? 'Doctor',
+        action: 'doctor.break_ended',
+        entityType: 'User',
+        entityId: userId,
+      },
     });
     return this.getDutyStatus(userId);
   }

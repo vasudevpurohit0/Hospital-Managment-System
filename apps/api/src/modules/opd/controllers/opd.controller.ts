@@ -1,10 +1,17 @@
-import { BadRequestException, Controller, Post, Get, Patch, Body, Query, Param } from '@nestjs/common';
+import { BadRequestException, Controller, Post, Get, Patch, Body, Query, Param, UseInterceptors } from '@nestjs/common';
 import { OpdService } from '../services/opd.service';
 import { CreateOpdVisitDto } from '../dto/create-opd-visit.dto';
 import { TransferOpdVisitDto } from '../dto/transfer-opd-visit.dto';
 import { RequirePermission } from '../../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
+import { QueueMutationInterceptor } from '../interceptors/queue-mutation.interceptor';
 
+// Additive only: after any successful mutating request here (call, skip,
+// no-show, transfer, cancel, start/complete consultation, create), the
+// interceptor fires a "queue changed" signal that drives the public
+// display's live SSE update. It observes responses and never alters the
+// existing Queue Manager behaviour.
+@UseInterceptors(QueueMutationInterceptor)
 @Controller('opd-visits')
 export class OpdController {
   constructor(private readonly opdService: OpdService) {}

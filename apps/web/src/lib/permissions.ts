@@ -30,10 +30,10 @@ const CAPABILITY_ROLES = {
   'lab:enterResults': ['LabTechnician', 'Pathologist'],
   /** LabResult:verify — a technician's entry is never the final report. */
   'lab:verifyReport': ['Pathologist'],
-  /** TherapySession:create — Reception/Administrator book Direct-Therapy at registration. */
-  'therapy:order': ['Doctor', 'Reception', 'Administrator'],
-  /** TherapySession:update — marking a session performed stays with nursing. */
-  'therapy:markPerformed': ['Nurse'],
+  /** TherapySession:create — Reception/Administrator book Direct-Therapy at registration; dedicated Therapy staff schedule sessions against doctor orders. */
+  'therapy:order': ['Doctor', 'Reception', 'Administrator', 'THERAPY_STAFF'],
+  /** TherapySession:update — marking a session performed / cancelling it: nursing, the dedicated Therapy/Panchakarma staff, and the hospital Administrator who oversees the therapy workflow. */
+  'therapy:markPerformed': ['Nurse', 'THERAPY_STAFF', 'Administrator'],
 } as const;
 
 export type Capability = keyof typeof CAPABILITY_ROLES;

@@ -21,6 +21,7 @@ import { BillingScreen } from '../../screens/billing/BillingScreen';
 import { PatientLedgerScreen } from '../../screens/billing/PatientLedgerScreen';
 import { SystemConfigScreen } from '../../screens/admin/SystemConfigScreen';
 import { OpdQueueScreen } from '../../screens/opd/OpdQueueScreen';
+import { OpdDisplayScreen } from '../../screens/opd/OpdDisplayScreen';
 import { FacilityRulesScreen } from '../../screens/admin/FacilityRulesScreen';
 import { ServicePricingScreen } from '../../screens/admin/ServicePricingScreen';
 import { AdmissionDeskScreen } from '../../screens/admission/AdmissionDeskScreen';
@@ -49,6 +50,7 @@ const PAGE_LABELS: Record<PageId, string> = {
   registration: 'Registration',
   'employee-directory': 'Employee Directory',
   'opd-queue': 'OPD Queue',
+  'opd-display': 'OPD Public Display',
   consultations: 'Consultations',
   'doctor-schedule': 'Doctor Schedule',
   'ipd-admissions': 'IPD / Admissions',
@@ -94,6 +96,7 @@ const PAGE_GROUP: Record<PageId, string> = {
   registration: 'Clinical',
   'employee-directory': 'Clinical',
   'opd-queue': 'Clinical',
+  'opd-display': 'Clinical',
   consultations: 'Clinical',
   'doctor-schedule': 'Clinical',
   'ipd-admissions': 'Clinical',
@@ -244,6 +247,8 @@ export const AppShell: React.FC = () => {
         return <EmployeeDirectoryScreen authToken={authToken} />;
       case 'opd-queue':
         return <OpdQueueScreen authToken={authToken} />;
+      case 'opd-display':
+        return <OpdDisplayScreen authToken={authToken} />;
       case 'consultations':
         return <DoctorWorkspace authToken={authToken} />;
       case 'doctor-schedule':
