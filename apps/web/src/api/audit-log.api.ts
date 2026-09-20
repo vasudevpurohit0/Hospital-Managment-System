@@ -22,6 +22,9 @@ export interface AuditLogEntry {
   browser: string | null;
   os: string | null;
   device: string | null;
+  /** Present only when this action was taken during an impersonation session -- see the impersonation feature's audit design (actorUserId/actorRole above stay the impersonated user). */
+  impersonatorActorId: string | null;
+  impersonatorRoleLabel: string | null;
   actorUser: { identifier: string; employee: { name: string; employeeId: string } | null } | null;
   /** Only present on the cross-hospital platform endpoint. */
   hospitalId?: string;

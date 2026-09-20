@@ -1,11 +1,5 @@
 import { apiFetch, getStoredToken, getActiveHospitalHeader, BASE_URL } from './client';
 
-export interface DisplayDepartment {
-  id: string;
-  name: string;
-  code: string;
-}
-
 export interface DisplayNowServing {
   token: string;
   status: 'CALLED' | 'IN_CONSULTATION';
@@ -18,29 +12,29 @@ export interface DisplayWaiting {
   position: number;
 }
 
-export interface DisplaySnapshot {
-  department: DisplayDepartment | null;
+export interface DisplayDepartment {
+  id: string;
+  name: string;
+  code: string;
   nowServing: DisplayNowServing[];
   waiting: DisplayWaiting[];
   waitingCount: number;
+}
+
+export interface HospitalSnapshot {
+  departments: DisplayDepartment[];
   generatedAt: string;
 }
 
-export async function fetchDisplayDepartments(): Promise<DisplayDepartment[]> {
-  const res = await apiFetch('/api/opd-display/departments');
-  if (!res.ok) throw new Error('Failed to load departments');
-  return res.json();
-}
-
-/** One-shot authoritative snapshot (initial paint / reconnect re-sync). */
-export async function fetchDisplaySnapshot(departmentId: string): Promise<DisplaySnapshot> {
-  const res = await apiFetch(`/api/opd-display/queue?departmentId=${encodeURIComponent(departmentId)}`);
+/** One-shot authoritative snapshot of every active department (initial paint / reconnect re-sync). */
+export async function fetchDisplaySnapshot(): Promise<HospitalSnapshot> {
+  const res = await apiFetch('/api/opd-display/queue');
   if (!res.ok) throw new Error('Failed to load queue snapshot');
   return res.json();
 }
 
 export type DisplayStreamEvent =
-  | { type: 'snapshot'; snapshot: DisplaySnapshot }
+  | { type: 'snapshot'; snapshot: HospitalSnapshot }
   | { type: 'ping' }
   | { type: 'error'; message: string };
 
@@ -49,7 +43,7 @@ export interface DisplayStreamHandle {
 }
 
 /**
- * Subscribes to the real-time OPD display stream over SSE.
+ * Subscribes to the real-time, hospital-wide OPD display stream over SSE.
  *
  * Why a fetch-based reader rather than the browser's EventSource: EventSource
  * cannot attach the Authorization (Bearer) header this API requires, and we
@@ -63,13 +57,10 @@ export interface DisplayStreamHandle {
  *    snapshot, so we never replay stale state; we simply render whatever the
  *    server most recently sent. Ordering is the server's, not ours.
  */
-export function openDisplayStream(
-  departmentId: string,
-  handlers: {
-    onEvent: (event: DisplayStreamEvent) => void;
-    onStatus: (status: 'connecting' | 'connected' | 'reconnecting') => void;
-  },
-): DisplayStreamHandle {
+export function openDisplayStream(handlers: {
+  onEvent: (event: DisplayStreamEvent) => void;
+  onStatus: (status: 'connecting' | 'connected' | 'reconnecting') => void;
+}): DisplayStreamHandle {
   let closed = false;
   let controller: AbortController | null = null;
   let retryDelay = 1000;
@@ -88,7 +79,7 @@ export function openDisplayStream(
     const hospitalId = getActiveHospitalHeader();
     if (hospitalId) headers['X-Hospital-Id'] = hospitalId;
 
-    const path = `/api/opd-display/stream?departmentId=${encodeURIComponent(departmentId)}`;
+    const path = '/api/opd-display/stream';
 
     try {
       // Prefer the configured API origin; fall back to the dev proxy path.
@@ -129,7 +120,7 @@ export function openDisplayStream(
           try {
             const parsed = JSON.parse(dataLines.join('\n'));
             if (parsed?.type === 'snapshot') {
-              handlers.onEvent({ type: 'snapshot', snapshot: parsed as DisplaySnapshot });
+              handlers.onEvent({ type: 'snapshot', snapshot: parsed as HospitalSnapshot });
             } else if (parsed?.type === 'ping') {
               handlers.onEvent({ type: 'ping' });
             } else if (parsed?.type === 'error') {

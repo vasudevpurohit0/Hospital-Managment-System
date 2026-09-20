@@ -32,6 +32,7 @@ export interface PharmacyQueueRecord {
   items: Array<{
     id: string;
     medicineName: string;
+    medicineType: 'INVENTORY' | 'CUSTOM';
     dose: string;
     frequency: string;
     duration: string;
@@ -77,7 +78,14 @@ export async function fetchBatchOptions(
 
 export async function dispenseMedicines(
   prescriptionId: string,
-  items: Array<{ prescriptionItemId: string; medicineBatchId: string; dispenseQuantity: number }>,
+  items: Array<{
+    prescriptionItemId: string;
+    /** Omit for a CUSTOM item -- there is no batch to select. */
+    medicineBatchId?: string;
+    dispenseQuantity: number;
+    /** Pharmacist-entered price for a CUSTOM item; ignored for an INVENTORY item (priced from its batch). */
+    unitRate?: number;
+  }>,
   token?: string,
 ) {
   const res = await apiFetch(

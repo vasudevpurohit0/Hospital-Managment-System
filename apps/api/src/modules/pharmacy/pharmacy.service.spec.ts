@@ -260,4 +260,130 @@ describe('PharmacyService', () => {
       data: { quantity: { decrement: 2 } },
     });
   });
+
+  describe('Custom (non-inventory) medicine items', () => {
+    it('getBatchOptions returns an empty list for a CUSTOM item without querying MedicineBatch (no inventory lookup failure)', async () => {
+      mockPrismaService.prescription.findUnique.mockResolvedValue({
+        id: 'rx-1',
+        items: [{ id: 'item-custom', medicineName: 'Amoxicillin 500mg', medicineType: 'CUSTOM' }],
+      });
+
+      const result = await service.getBatchOptions('rx-1');
+
+      expect(result['item-custom']).toEqual([]);
+      expect(mockPrismaService.medicineBatch.findMany).not.toHaveBeenCalled();
+    });
+
+    it('dispenses a CUSTOM item using the pharmacist-entered price, with no batch lookup, stock decrement, or StockTransaction', async () => {
+      mockPrismaService.prescription.findUnique.mockResolvedValue({
+        id: 'rx-1',
+        items: [
+          { id: 'item-custom', medicineName: 'Amoxicillin 500mg', medicineType: 'CUSTOM', dispensedQuantity: 0 },
+        ],
+        visit: { patientProfile: { employee: { employmentType: { code: 'PERMANENT' } } } },
+      });
+      mockPrismaService.prescription.update.mockResolvedValue({ id: 'rx-1', status: 'CLOSED' });
+
+      await service.dispense(
+        {
+          prescriptionId: 'rx-1',
+          items: [{ prescriptionItemId: 'item-custom', dispenseQuantity: 1, unitRate: 45 }],
+        },
+        'user-pharmacist',
+        'Pharmacist',
+      );
+
+      expect(mockPrismaService.medicineBatch.findUnique).not.toHaveBeenCalled();
+      expect(mockPrismaService.medicineBatch.updateMany).not.toHaveBeenCalled();
+      expect(mockPrismaService.stockTransaction.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.pharmacyStock.update).not.toHaveBeenCalled();
+      expect(mockProcurementService.checkAndTriggerLowStockRequisition).not.toHaveBeenCalled();
+
+      expect(mockChargeService.postPharmacyCharge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prescriptionItemId: 'item-custom',
+          medicineBatchId: undefined,
+          quantity: 1,
+          unitRate: 45,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('rejects dispensing a CUSTOM item with no pharmacist-entered price (BadRequestException, not a silent $0 charge)', async () => {
+      mockPrismaService.prescription.findUnique.mockResolvedValue({
+        id: 'rx-1',
+        items: [
+          { id: 'item-custom', medicineName: 'Amoxicillin 500mg', medicineType: 'CUSTOM', dispensedQuantity: 0 },
+        ],
+        visit: { patientProfile: { employee: { employmentType: { code: 'PERMANENT' } } } },
+      });
+
+      await expect(
+        service.dispense(
+          {
+            prescriptionId: 'rx-1',
+            items: [{ prescriptionItemId: 'item-custom', dispenseQuantity: 1 }],
+          },
+          'user-pharmacist',
+          'Pharmacist',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects dispensing an INVENTORY item with no batch selected (BadRequestException)', async () => {
+      mockPrismaService.prescription.findUnique.mockResolvedValue({
+        id: 'rx-1',
+        items: [{ id: 'item-1', medicineName: 'Paracetamol', medicineType: 'INVENTORY', dispensedQuantity: 0 }],
+        visit: { patientProfile: { employee: { employmentType: { code: 'PERMANENT' } } } },
+      });
+
+      await expect(
+        service.dispense(
+          {
+            prescriptionId: 'rx-1',
+            items: [{ prescriptionItemId: 'item-1', dispenseQuantity: 1 }],
+          },
+          'user-pharmacist',
+          'Pharmacist',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('dispenses a mixed prescription (one INVENTORY item + one CUSTOM item) in a single call, applying stock deduction only to the INVENTORY item', async () => {
+      mockPrismaService.prescription.findUnique.mockResolvedValue({
+        id: 'rx-1',
+        items: [
+          { id: 'item-inv', medicineName: 'Paracetamol', medicineType: 'INVENTORY', dispensedQuantity: 0 },
+          { id: 'item-custom', medicineName: 'Amoxicillin 500mg', medicineType: 'CUSTOM', dispensedQuantity: 0 },
+        ],
+        visit: { patientProfile: { employee: { employmentType: { code: 'PERMANENT' } } } },
+      });
+      mockPrismaService.medicineBatch.findUnique.mockResolvedValue({
+        id: 'b-1',
+        batchNumber: 'BATCH-100',
+        currentStock: 50,
+        stockStatus: StockStatus.IN_STOCK,
+        expiryDate: new Date('2027-01-01'),
+        issuePrice: 10,
+      });
+      mockPrismaService.prescription.update.mockResolvedValue({ id: 'rx-1', status: 'CLOSED' });
+
+      await service.dispense(
+        {
+          prescriptionId: 'rx-1',
+          items: [
+            { prescriptionItemId: 'item-inv', medicineBatchId: 'b-1', dispenseQuantity: 2 },
+            { prescriptionItemId: 'item-custom', dispenseQuantity: 1, unitRate: 45 },
+          ],
+        },
+        'user-pharmacist',
+        'Pharmacist',
+      );
+
+      expect(mockPrismaService.medicineBatch.updateMany).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.stockTransaction.create).toHaveBeenCalledTimes(1);
+      expect(mockChargeService.postPharmacyCharge).toHaveBeenCalledTimes(2);
+    });
+  });
 });

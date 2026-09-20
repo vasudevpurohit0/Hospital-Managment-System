@@ -202,6 +202,30 @@ export class OpdService {
     });
   }
 
+  /**
+   * Active queue (waiting/called/in-consultation) across every department in
+   * the hospital's schema, in one query -- backs the hospital-wide public
+   * display. Ordered by department first so the caller can bucket rows by
+   * `departmentId` with a single pass; within a department the ordering is
+   * identical to `getQueue`'s (priority desc, queuePosition asc, createdAt
+   * asc), so a department's own queue order is unchanged by going
+   * hospital-wide.
+   */
+  async getHospitalQueue(actor?: QueueActor) {
+    if (actor?.roleName === 'Doctor') {
+      throw new ForbiddenException('Doctors must use their own queue (GET /opd-visits/my-queue).');
+    }
+    return this.prisma.oPDVisit.findMany({
+      where: { status: { in: [...ACTIVE_STATUSES] } },
+      include: {
+        department: true,
+        doctor: { select: { id: true, identifier: true, active: true, employee: { select: { name: true, department: true, consultationRoom: true } } } },
+        visit: { include: { employee: true } },
+      },
+      orderBy: [{ departmentId: 'asc' }, { priority: 'desc' }, { queuePosition: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
   /** A doctor's own active queue (waiting/called/in-consultation) -- doctorId is always the caller's own id from the JWT, never client-supplied. */
   async getMyQueue(doctorId: string) {
     return this.prisma.oPDVisit.findMany({

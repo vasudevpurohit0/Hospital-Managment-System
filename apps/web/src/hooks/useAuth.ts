@@ -20,6 +20,20 @@ export interface ActiveHospital {
   name: string;
 }
 
+/** Who is really behind the wheel right now -- kept even while `user`/`token` above are the impersonated target's, so the banner and "Exit Impersonation" never have to guess. */
+export interface ImpersonationInfo {
+  active: true;
+  impersonatorRoleName: string;
+  impersonatorIdentifier: string;
+}
+
+interface OriginalSession {
+  token: string;
+  user: AuthUser;
+  mode: AuthMode;
+  activeHospital: ActiveHospital | null;
+}
+
 interface AuthState {
   token: string | null;
   user: AuthUser | null;
@@ -28,6 +42,14 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  impersonation: ImpersonationInfo | null;
+}
+
+export interface ImpersonationTarget {
+  id: string;
+  identifier: string;
+  role: string;
+  name?: string;
 }
 
 interface AuthContextType extends AuthState {
@@ -41,6 +63,17 @@ interface AuthContextType extends AuthState {
   exitHospital: () => void;
   /** Called once a forced password change succeeds, so the app stops gating on it for the rest of this session. */
   clearMustChangePassword: () => void;
+  /**
+   * Switches the active session to an impersonation token the backend just
+   * issued (via POST /staff|doctors/:id/impersonate) -- the real
+   * administrator's own session is stashed, not discarded, so
+   * exitImpersonation() below can restore it with no re-login. This never
+   * itself grants any permission: the token's effective permissions were
+   * already decided server-side (see AccountLifecycleService.impersonate).
+   */
+  startImpersonation: (accessToken: string, target: ImpersonationTarget) => void;
+  /** Ends the current impersonation session: audits the end server-side (best-effort) and restores the original administrator's own session, already held locally. */
+  exitImpersonation: () => void;
 }
 
 const AUTH_STORAGE_KEY = 'esic-hms-auth';
@@ -52,6 +85,11 @@ interface StoredAuth {
   user: AuthUser;
   expiresAt: number;
   activeHospital?: ActiveHospital | null;
+  /** Present only while impersonating -- carries both who's impersonating and the original session to restore on exit. */
+  impersonation?: {
+    info: ImpersonationInfo;
+    original: OriginalSession;
+  };
 }
 
 function getStoredAuth(): StoredAuth | null {
@@ -76,13 +114,20 @@ function getStoredAuth(): StoredAuth | null {
   }
 }
 
-function storeAuth(mode: AuthMode, token: string, user: AuthUser, activeHospital: ActiveHospital | null = null): void {
+function storeAuth(
+  mode: AuthMode,
+  token: string,
+  user: AuthUser,
+  activeHospital: ActiveHospital | null = null,
+  impersonation: StoredAuth['impersonation'] = undefined,
+): void {
   const stored: StoredAuth = {
     mode,
     token,
     user,
     expiresAt: Date.now() + SESSION_DURATION_MS,
     activeHospital,
+    impersonation,
   };
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(stored));
 }
@@ -154,6 +199,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: true,
         isLoading: false,
         error: null,
+        // A page refresh mid-impersonation must not lose it -- the whole
+        // point of persisting `impersonation` (info + the stashed original
+        // session) in the same localStorage blob as everything else.
+        impersonation: stored.impersonation?.info || null,
       };
     }
     return {
@@ -164,6 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      impersonation: null,
     };
   });
 
@@ -242,16 +292,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: true,
       isLoading: false,
       error: null,
+      impersonation: null,
     });
   }, []);
 
   const logout = useCallback(() => {
-    // V-02: best-effort -- revokes the session server-side (bumps
-    // tokenVersion, invalidating every outstanding access/refresh token for
-    // this user) before dropping local state. Fired without awaiting so a
-    // slow/unreachable backend never blocks the user from logging out
-    // locally; if it fails, the token simply expires on its own later.
-    apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    // Impersonating: a plain logout must revoke the REAL administrator's own
+    // session, never the impersonated target's (which the impersonation
+    // token's `sub` actually is) -- otherwise clicking "Log out" while
+    // impersonating a nurse would silently bump that nurse's own
+    // tokenVersion and kill their unrelated real sessions. exitToken is an
+    // explicit token override apiFetch already supports for exactly this.
+    const stored = getStoredAuth();
+    if (stored?.impersonation) {
+      apiFetch('/api/auth/exit-impersonation', { method: 'POST' }).catch(() => undefined);
+      apiFetch('/api/auth/logout', { method: 'POST' }, stored.impersonation.original.token).catch(() => undefined);
+    } else {
+      // V-02: best-effort -- revokes the session server-side (bumps
+      // tokenVersion, invalidating every outstanding access/refresh token
+      // for this user) before dropping local state. Fired without awaiting
+      // so a slow/unreachable backend never blocks the user from logging
+      // out locally; if it fails, the token simply expires on its own later.
+      apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    }
     clearStoredAuth();
     setState({
       token: null,
@@ -261,6 +324,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      impersonation: null,
+    });
+  }, []);
+
+  const startImpersonation = useCallback((accessToken: string, target: ImpersonationTarget) => {
+    setState((prev) => {
+      if (!prev.token || !prev.user || !prev.mode || prev.impersonation) return prev; // no nested impersonation, client-side mirror of the server-side guard
+      const targetUser = buildUserFromRole(target.role, target.identifier);
+      targetUser.id = target.id;
+      if (target.name) targetUser.name = target.name;
+
+      const info: ImpersonationInfo = {
+        active: true,
+        impersonatorRoleName: prev.user.role,
+        impersonatorIdentifier: prev.user.email,
+      };
+      const original: OriginalSession = {
+        token: prev.token,
+        user: prev.user,
+        mode: prev.mode,
+        activeHospital: prev.activeHospital,
+      };
+
+      storeAuth('hospital', accessToken, targetUser, prev.activeHospital, { info, original });
+      return { ...prev, token: accessToken, user: targetUser, mode: 'hospital', impersonation: info };
+    });
+  }, []);
+
+  const exitImpersonation = useCallback(() => {
+    // Ends the session server-side (an audit event -- see
+    // AuthService.endImpersonation) before dropping it locally. Best-effort:
+    // even if this fails (network blip), the admin must still get their own
+    // account back, which is a purely local restore of a session they
+    // already legitimately held -- never something the server needs to
+    // re-grant.
+    apiFetch('/api/auth/exit-impersonation', { method: 'POST' }).catch(() => undefined);
+    setState((prev) => {
+      const stored = getStoredAuth();
+      const saved = stored?.impersonation?.original;
+      if (!saved) return prev;
+      storeAuth(saved.mode, saved.token, saved.user, saved.activeHospital);
+      return {
+        token: saved.token,
+        user: saved.user,
+        mode: saved.mode,
+        activeHospital: saved.activeHospital,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+        impersonation: null,
+      };
     });
   }, []);
 
@@ -305,7 +419,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return React.createElement(
     AuthContext.Provider,
-    { value: { ...state, login, logout, clearError, enterHospital, exitHospital, clearMustChangePassword } },
+    {
+      value: {
+        ...state,
+        login,
+        logout,
+        clearError,
+        enterHospital,
+        exitHospital,
+        clearMustChangePassword,
+        startImpersonation,
+        exitImpersonation,
+      },
+    },
     children,
   );
 };

@@ -15,10 +15,12 @@ import {
   Mail,
   ChevronLeft,
   ChevronRight,
+  UserCog,
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AccountCreatedModal } from '../components/AccountCreatedModal';
+import { useAuth } from '../hooks/useAuth';
 import {
   fetchAllStaffForAdmin,
   createStaff,
@@ -27,6 +29,7 @@ import {
   resetStaffPassword,
   setStaffLocked,
   resendStaffActivation,
+  impersonateStaff,
   StaffProfile,
   StaffRole,
   STAFF_ROLES,
@@ -76,6 +79,7 @@ const emptyForm = (): StaffFormState => ({
 });
 
 export const StaffManagementPage: React.FC = () => {
+  const { user: currentUser, impersonation, startImpersonation } = useAuth();
   const [roleFilter, setRoleFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -108,6 +112,10 @@ export const StaffManagementPage: React.FC = () => {
 
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
+
+  const [pendingImpersonate, setPendingImpersonate] = useState<StaffProfile | null>(null);
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDepartments().then(setDepartments).catch(() => undefined);
@@ -274,6 +282,38 @@ export const StaffManagementPage: React.FC = () => {
     }
   };
 
+  const confirmImpersonate = async () => {
+    if (!pendingImpersonate) return;
+    setImpersonating(true);
+    setImpersonateError(null);
+    try {
+      const session = await impersonateStaff(pendingImpersonate.id);
+      startImpersonation(session.accessToken, session.target);
+      setPendingImpersonate(null);
+    } catch (err: unknown) {
+      setImpersonateError((err as Error).message || 'Failed to start impersonation');
+    } finally {
+      setImpersonating(false);
+    }
+  };
+
+  /**
+   * UX-only gate -- every one of these rules is re-checked, authoritatively,
+   * by the backend (AccountLifecycleService.impersonate()). Hiding the
+   * button here just avoids offering an action that would only 403/400
+   * anyway; it grants nothing by itself.
+   */
+  const canImpersonate = (s: StaffProfile): boolean => {
+    if (impersonation) return false; // already impersonating -- no nested impersonation
+    if (!currentUser) return false;
+    const requesterRole = currentUser.role;
+    if (requesterRole !== 'Administrator' && requesterRole !== 'SuperAdmin') return false;
+    if (currentUser.id === s.id) return false; // self
+    if (!s.active || s.locked || s.mustChangePassword) return false;
+    if (s.role === 'Administrator' && requesterRole !== 'SuperAdmin') return false; // Hospital Admin may not impersonate a peer Administrator
+    return true;
+  };
+
   const groupedStaff = useMemo(() => {
     const groups: Record<string, StaffProfile[]> = {};
     staff.forEach((s) => {
@@ -332,6 +372,7 @@ export const StaffManagementPage: React.FC = () => {
       {toggleError && <div className="alert-danger">{toggleError}</div>}
       {resetError && <div className="alert-danger">{resetError}</div>}
       {lockError && <div className="alert-danger">{lockError}</div>}
+      {impersonateError && <div className="alert-danger">{impersonateError}</div>}
       {resendMessage && <div className="alert-success">{resendMessage}</div>}
 
       {isLoading ? (
@@ -400,6 +441,16 @@ export const StaffManagementPage: React.FC = () => {
                         {s.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
                         {s.active ? 'Deactivate' : 'Reactivate'}
                       </button>
+                      {canImpersonate(s) && (
+                        <button
+                          onClick={() => setPendingImpersonate(s)}
+                          className="btn btn-secondary btn-sm gap-1"
+                          title="Sign in as this user -- recorded in the audit log"
+                        >
+                          <UserCog className="w-3.5 h-3.5" />
+                          Impersonate
+                        </button>
+                      )}
                       {s.mustChangePassword && (
                         <button
                           onClick={() => handleResendActivation(s.id)}
@@ -635,6 +686,22 @@ export const StaffManagementPage: React.FC = () => {
           busy={locking}
           onConfirm={confirmLock}
           onCancel={() => setPendingLock(null)}
+        />
+      )}
+
+      {pendingImpersonate && (
+        <ConfirmModal
+          title="Impersonate User?"
+          message={
+            `You are about to access the system as:\n\n${pendingImpersonate.name}\n${pendingImpersonate.email}\n\n` +
+            `Role: ${ROLE_LABELS[pendingImpersonate.role] ?? pendingImpersonate.role}\n\n` +
+            'Your actions will be recorded in the audit log.'
+          }
+          confirmLabel="Continue"
+          danger
+          busy={impersonating}
+          onConfirm={confirmImpersonate}
+          onCancel={() => setPendingImpersonate(null)}
         />
       )}
     </div>

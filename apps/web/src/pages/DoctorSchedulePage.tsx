@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   ShieldQuestion,
   Mail,
+  UserCog,
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -32,6 +33,7 @@ import {
   resetDoctorPassword,
   setDoctorLocked,
   resendDoctorActivation,
+  impersonateDoctor,
   DoctorProfile,
   WeeklyScheduleEntry,
 } from '../api/doctor.api';
@@ -61,7 +63,7 @@ const emptyForm = (): DoctorFormState => ({
 });
 
 export const DoctorSchedulePage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, impersonation, startImpersonation } = useAuth();
   const isAdmin = user?.role === 'Administrator' || user?.role === 'SuperAdmin';
 
   const [filterSpecialty, setFilterSpecialty] = useState<string>('All');
@@ -95,6 +97,10 @@ export const DoctorSchedulePage: React.FC = () => {
 
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
+
+  const [pendingImpersonate, setPendingImpersonate] = useState<DoctorProfile | null>(null);
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
 
   const handleResendActivation = async (id: string) => {
     setResendingId(id);
@@ -235,6 +241,35 @@ export const DoctorSchedulePage: React.FC = () => {
     }
   };
 
+  const confirmImpersonate = async () => {
+    if (!pendingImpersonate) return;
+    setImpersonating(true);
+    setImpersonateError(null);
+    try {
+      const session = await impersonateDoctor(pendingImpersonate.id);
+      startImpersonation(session.accessToken, session.target);
+      setPendingImpersonate(null);
+    } catch (err: unknown) {
+      setImpersonateError((err as Error).message || 'Failed to start impersonation');
+    } finally {
+      setImpersonating(false);
+    }
+  };
+
+  /**
+   * UX-only gate -- every one of these rules is re-checked, authoritatively,
+   * by the backend (AccountLifecycleService.impersonate()). Hiding the
+   * button here just avoids offering an action that would only 403/400
+   * anyway; it grants nothing by itself.
+   */
+  const canImpersonate = (doc: DoctorProfile): boolean => {
+    if (impersonation) return false; // already impersonating -- no nested impersonation
+    if (!user || !isAdmin) return false;
+    if (user.id === doc.id) return false; // self
+    if (!doc.active || doc.locked || doc.mustChangePassword) return false;
+    return true;
+  };
+
   const specialties = useMemo(() => {
     const specs = Array.from(new Set(doctors.map((d) => d.specialty)));
     specs.sort();
@@ -302,6 +337,7 @@ export const DoctorSchedulePage: React.FC = () => {
       {toggleError && <div className="alert-danger">{toggleError}</div>}
       {resetError && <div className="alert-danger">{resetError}</div>}
       {lockError && <div className="alert-danger">{lockError}</div>}
+      {impersonateError && <div className="alert-danger">{impersonateError}</div>}
       {resendMessage && <div className="alert-success">{resendMessage}</div>}
 
       <div className="space-y-8">
@@ -389,6 +425,16 @@ export const DoctorSchedulePage: React.FC = () => {
                           {doc.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
                           {doc.active ? 'Deactivate' : 'Reactivate'}
                         </button>
+                        {canImpersonate(doc) && (
+                          <button
+                            onClick={() => setPendingImpersonate(doc)}
+                            className="btn btn-secondary btn-sm gap-1"
+                            title="Sign in as this doctor -- recorded in the audit log"
+                          >
+                            <UserCog className="w-3.5 h-3.5" />
+                            Impersonate
+                          </button>
+                        )}
                         {doc.mustChangePassword && (
                           <button
                             onClick={() => handleResendActivation(doc.id)}
@@ -595,6 +641,22 @@ export const DoctorSchedulePage: React.FC = () => {
           busy={locking}
           onConfirm={confirmLock}
           onCancel={() => setPendingLock(null)}
+        />
+      )}
+
+      {pendingImpersonate && (
+        <ConfirmModal
+          title="Impersonate User?"
+          message={
+            `You are about to access the system as:\n\nDr. ${pendingImpersonate.name}\n${pendingImpersonate.email}\n\n` +
+            `Role: Doctor\n\n` +
+            'Your actions will be recorded in the audit log.'
+          }
+          confirmLabel="Continue"
+          danger
+          busy={impersonating}
+          onConfirm={confirmImpersonate}
+          onCancel={() => setPendingImpersonate(null)}
         />
       )}
     </div>

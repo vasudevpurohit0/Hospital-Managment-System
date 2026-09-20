@@ -5,9 +5,10 @@ import { TenantClientFactory } from '../tenant/tenant-client-factory';
 import { PlatformPrismaService } from '../tenant/platform-prisma.service';
 import { tenantStorage } from '../tenant/tenant-context';
 import { JWT_ACCESS_SECRET, JWT_PLATFORM_SECRET } from '../config/jwt-secrets';
+import { ImpersonationClaims } from '../decorators/current-user.decorator';
 
 type DecodedToken =
-  | { kind: 'hospital'; hospitalId: string; schemaName: string }
+  | { kind: 'hospital'; hospitalId: string; schemaName: string; impersonation?: ImpersonationClaims }
   | { kind: 'platform'; platformUserId: string };
 
 /**
@@ -73,8 +74,9 @@ export class TenantResolutionMiddleware implements NestMiddleware {
         schemaName = decoded.schemaName;
       }
 
+      const impersonation = decoded.kind === 'hospital' ? decoded.impersonation : undefined;
       const prismaClient = await this.tenantClients.getClient(schemaName);
-      tenantStorage.run({ hospitalId, schemaName, prismaClient }, () => next());
+      tenantStorage.run({ hospitalId, schemaName, prismaClient, impersonation }, () => next());
     } catch (err) {
       next(err);
     }
@@ -84,7 +86,12 @@ export class TenantResolutionMiddleware implements NestMiddleware {
     try {
       const payload = jwt.verify(token, JWT_ACCESS_SECRET) as Record<string, unknown>;
       if (payload?.type === 'access' && typeof payload.hospitalId === 'string' && typeof payload.schemaName === 'string') {
-        return { kind: 'hospital', hospitalId: payload.hospitalId, schemaName: payload.schemaName };
+        return {
+          kind: 'hospital',
+          hospitalId: payload.hospitalId,
+          schemaName: payload.schemaName,
+          impersonation: payload.impersonation as ImpersonationClaims | undefined,
+        };
       }
       return null;
     } catch {

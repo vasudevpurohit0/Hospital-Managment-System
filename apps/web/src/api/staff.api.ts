@@ -135,3 +135,15 @@ export async function resendStaffActivation(id: string): Promise<{ status: strin
   const res = await apiFetch(`/api/staff/${id}/resend-activation`, { method: 'POST' });
   return unwrap(res, 'Failed to resend activation email');
 }
+
+export interface ImpersonationSession {
+  accessToken: string;
+  expiresIn: string;
+  target: { id: string; identifier: string; role: string; name: string };
+}
+
+/** Starts a secure impersonation session -- every eligibility rule (self, role, active/locked/pending status, nested impersonation) is enforced server-side; this call simply surfaces whichever one failed. */
+export async function impersonateStaff(id: string): Promise<ImpersonationSession> {
+  const res = await apiFetch(`/api/staff/${id}/impersonate`, { method: 'POST' });
+  return unwrap(res, 'Failed to start impersonation');
+}

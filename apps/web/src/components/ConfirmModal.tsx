@@ -29,7 +29,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-sm bg-white rounded-xl shadow-xl p-6 space-y-4">
         <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-        <p className="text-sm text-gray-600">{message}</p>
+        <p className="text-sm text-gray-600 whitespace-pre-line">{message}</p>
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={onCancel}

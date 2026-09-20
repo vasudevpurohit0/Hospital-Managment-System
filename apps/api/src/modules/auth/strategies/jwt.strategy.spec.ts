@@ -54,4 +54,42 @@ describe('JwtStrategy', () => {
     mockPrisma.user.findUnique.mockResolvedValue({ ...activeUser, active: false });
     await expect(strategy.validate(basePayload)).rejects.toThrow(UnauthorizedException);
   });
+
+  it('validates an impersonation token as the TARGET user, passing the impersonator claims through for attribution only', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(activeUser);
+    const impersonationPayload: JwtPayload = {
+      ...basePayload,
+      impersonation: {
+        sessionId: 'session-1',
+        impersonatorId: 'admin-1',
+        impersonatorType: 'hospital',
+        impersonatorRoleName: 'Administrator',
+        impersonatorIdentifier: 'admin@esic.gov.in',
+        startedAt: new Date().toISOString(),
+      },
+    };
+    const result = await strategy.validate(impersonationPayload);
+    // Effective identity is the target's own -- never the impersonator's.
+    expect(result.id).toBe('user-1');
+    expect(result.roleName).toBe('Nurse');
+    expect(result.impersonation).toEqual(
+      expect.objectContaining({ impersonatorId: 'admin-1', impersonatorRoleName: 'Administrator' }),
+    );
+  });
+
+  it('kills an in-progress impersonation session when the target is locked/reset/deactivated afterwards', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ ...activeUser, tokenVersion: 3 });
+    const impersonationPayload: JwtPayload = {
+      ...basePayload,
+      impersonation: {
+        sessionId: 'session-1',
+        impersonatorId: 'admin-1',
+        impersonatorType: 'hospital',
+        impersonatorRoleName: 'Administrator',
+        impersonatorIdentifier: 'admin@esic.gov.in',
+        startedAt: new Date().toISOString(),
+      },
+    };
+    await expect(strategy.validate(impersonationPayload)).rejects.toThrow(UnauthorizedException);
+  });
 });

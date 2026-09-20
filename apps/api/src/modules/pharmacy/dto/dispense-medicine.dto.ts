@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class DispenseItemPayloadDto {
@@ -6,13 +6,20 @@ export class DispenseItemPayloadDto {
   @IsNotEmpty()
   prescriptionItemId!: string;
 
+  /** Required for an INVENTORY item; must be omitted for a CUSTOM item (there is no batch to select). */
   @IsString()
-  @IsNotEmpty()
-  medicineBatchId!: string;
+  @IsOptional()
+  medicineBatchId?: string;
 
   @IsNumber()
   @IsNotEmpty()
   dispenseQuantity!: number;
+
+  /** Pharmacist-entered unit price for a CUSTOM item -- there is no catalogue/batch price to fall back on. Ignored for an INVENTORY item, which is always priced from its dispensed batch. */
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  unitRate?: number;
 }
 
 export class DispenseMedicineDto {

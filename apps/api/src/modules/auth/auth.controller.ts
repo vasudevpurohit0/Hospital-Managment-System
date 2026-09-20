@@ -47,6 +47,21 @@ export class AuthController {
     return this.authService.logout(user);
   }
 
+  /**
+   * Ends the caller's own impersonation session (audit only -- see
+   * AuthService.endImpersonation). Reachable by any authenticated user, same
+   * as logout/getProfile/changePassword: it acts purely on the caller's own
+   * token, never a target the caller specifies, so no @RequirePermission
+   * applies (see rbac-matrix.spec.ts's ALLOWED_WITHOUT_GUARD for this file's
+   * existing routes that follow the same reasoning). Throws if the caller's
+   * token isn't actually an impersonation session.
+   */
+  @Post('exit-impersonation')
+  @HttpCode(HttpStatus.OK)
+  async exitImpersonation(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.endImpersonation(user);
+  }
+
   /** In the RbacGuard mustChangePassword allowlist -- reachable even before the forced first-login change completes. */
   @Post('change-password')
   @HttpCode(HttpStatus.OK)

@@ -33,7 +33,8 @@ const ZERO = new Prisma.Decimal(0);
 export interface PostPharmacyChargeParams {
   visitId: string;
   prescriptionItemId: string;
-  medicineBatchId: string;
+  /** Omitted for a CUSTOM (non-inventory) prescription item -- ChargeItem.medicineBatchId is nullable for exactly this case. */
+  medicineBatchId?: string;
   quantity: number;
   unitRate: number | Prisma.Decimal;
   benefitOutcome: BenefitOutcome;

@@ -151,6 +151,14 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
       'No resource permission applies; a role-scoped RequirePermission would make no sense for logging oneself out.',
   },
   {
+    file: 'modules/auth/auth.controller.ts',
+    method: 'exitImpersonation',
+    reason:
+      'Ends the caller\'s own impersonation session (an audit event only) — acts purely on the caller\'s own ' +
+      'token, never a target the caller specifies, same as logout above. Throws if the caller is not actually ' +
+      'impersonating anyone.',
+  },
+  {
     file: 'modules/dashboard/dashboard.controller.ts',
     method: 'getMetrics',
     reason:

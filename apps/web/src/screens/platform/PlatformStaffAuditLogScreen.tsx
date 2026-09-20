@@ -118,7 +118,17 @@ export const PlatformStaffAuditLogScreen: React.FC = () => {
                       <span className="text-[var(--color-text-tertiary)]">System</span>
                     )}
                   </td>
-                  <td className="p-3">{entry.actorRole}</td>
+                  <td className="p-3">
+                    {entry.actorRole}
+                    {entry.impersonatorRoleLabel && (
+                      <span
+                        className="block text-[10px] font-semibold text-amber-700"
+                        title="This action was taken during an impersonation session"
+                      >
+                        via {entry.impersonatorRoleLabel}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3 font-mono text-xs">{entry.action}</td>
                   <td className="p-3 text-xs">{entry.entityType} <span className="text-[var(--color-text-tertiary)]">#{entry.entityId.slice(0, 8)}</span></td>
                 </tr>

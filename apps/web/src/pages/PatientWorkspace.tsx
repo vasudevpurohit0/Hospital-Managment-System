@@ -196,7 +196,9 @@ export const PatientWorkspace: React.FC<PatientMasterProps> = ({
             <div className="space-y-3">
               {openPrescriptions.map((rx) => {
                 const status = (rx as { status?: string }).status;
-                const items = (rx as { items?: { medicineName: string; dose: string }[] }).items;
+                const items = (
+                  rx as { items?: { medicineName: string; medicineType?: string; dose: string }[] }
+                ).items;
                 return (
                   <div
                     key={(rx as { id: string }).id}
@@ -209,6 +211,11 @@ export const PatientWorkspace: React.FC<PatientMasterProps> = ({
                     {items?.map((item, i) => (
                       <p key={i} className="text-[var(--color-text-secondary)]">
                         {item.medicineName} — {item.dose}
+                        {item.medicineType === 'CUSTOM' && (
+                          <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                            Custom
+                          </span>
+                        )}
                       </p>
                     ))}
                   </div>

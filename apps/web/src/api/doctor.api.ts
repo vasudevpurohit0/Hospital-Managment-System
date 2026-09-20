@@ -140,6 +140,18 @@ export async function resendDoctorActivation(id: string): Promise<{ status: stri
   return unwrap(res, 'Failed to resend activation email');
 }
 
+export interface ImpersonationSession {
+  accessToken: string;
+  expiresIn: string;
+  target: { id: string; identifier: string; role: string; name: string };
+}
+
+/** Starts a secure impersonation session -- every eligibility rule (self, active/locked/pending status, nested impersonation) is enforced server-side; this call simply surfaces whichever one failed. */
+export async function impersonateDoctor(id: string): Promise<ImpersonationSession> {
+  const res = await apiFetch(`/api/doctors/${id}/impersonate`, { method: 'POST' });
+  return unwrap(res, 'Failed to start impersonation');
+}
+
 /** Backs the "Auto-assign to least-busy doctor" registration option. Returns the single best doctor (or none), not the full list. */
 export async function fetchLeastBusyEligibleDoctor(departmentId: string): Promise<DoctorProfile | null> {
   const res = await apiFetch(`/api/doctors/eligible?departmentId=${encodeURIComponent(departmentId)}&autoAssign=true`);
