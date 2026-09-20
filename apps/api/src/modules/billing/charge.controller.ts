@@ -26,6 +26,7 @@ import { renderReceiptHtml, renderStatementHtml } from '../../common/rendering/p
 import { CancelChargeDto, IssueReceiptDto, PostServiceChargeDto } from './dto/charge.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { toTenantActorUserId } from '../../common/audit/audit-actor.util';
 import { buildPatientExpenseExcel } from './excel-export.util';
 
 /**
@@ -165,7 +166,7 @@ export class ChargeController {
         serviceId: dto.serviceId,
         admissionId: dto.admissionId,
         quantity: dto.quantity,
-        actorUserId: user?.id,
+        actorUserId: toTenantActorUserId(user),
       },
       outcome,
     );

@@ -6,6 +6,7 @@ import { CreateOpdVisitDto } from '../dto/create-opd-visit.dto';
 import { ChargeService } from '../../billing/charge.service';
 import { BenefitRuleService } from '../../benefit/benefit-rule.service';
 import { DocumentSequenceService } from '../../../common/sequence/document-sequence.service';
+import { toAuditActorUserId } from '../../../common/audit/audit-actor.util';
 
 /** The consultation service auto-charged on every OPD visit, once priced. */
 const OPD_CONSULTATION_SERVICE_CODE = 'CONSULT-GEN';
@@ -16,6 +17,7 @@ const ACTIVE_STATUSES = ['WAITING', 'CALLED', 'IN_CONSULTATION'] as const;
 export interface QueueActor {
   id: string;
   roleName: string;
+  type?: 'hospital' | 'platform';
 }
 
 @Injectable()
@@ -339,7 +341,7 @@ export class OpdService {
     });
     await this.prisma.auditLog.create({
       data: {
-        actorUserId: actor?.id ?? null,
+        actorUserId: toAuditActorUserId(actor),
         actorRole: actor?.roleName ?? 'System',
         action: 'opdvisit.completed',
         entityType: 'OPDVisit',
@@ -382,7 +384,7 @@ export class OpdService {
       });
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: toAuditActorUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action,
           entityType: 'OPDVisit',
@@ -434,7 +436,7 @@ export class OpdService {
       });
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: toAuditActorUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'opdvisit.transferred',
           entityType: 'OPDVisit',

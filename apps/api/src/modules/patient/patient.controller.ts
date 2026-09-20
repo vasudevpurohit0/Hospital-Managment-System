@@ -19,6 +19,7 @@ import {
 } from './dto/patient-register.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { toTenantActorUserId } from '../../common/audit/audit-actor.util';
 
 @Controller('patients')
 export class PatientController {
@@ -38,7 +39,7 @@ export class PatientController {
     @Body() dto: RegisterPatientDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.patientService.registerPatient(dto, user?.id);
+    return this.patientService.registerPatient(dto, toTenantActorUserId(user));
   }
 
   @Get('uid/:uid')
@@ -66,7 +67,7 @@ export class PatientController {
     @Body() dto: CreatePatientVisitDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.patientService.createVisit(dto, user?.id);
+    return this.patientService.createVisit(dto, toTenantActorUserId(user));
   }
 
   // V-06: these two return full diagnoses/prescriptions/lab results/therapy
@@ -93,6 +94,6 @@ export class PatientController {
     @Body() dto: UpdatePatientProfileDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.patientService.updatePatientProfile(id, dto, user?.id);
+    return this.patientService.updatePatientProfile(id, dto, toTenantActorUserId(user));
   }
 }

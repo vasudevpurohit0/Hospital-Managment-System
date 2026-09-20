@@ -38,6 +38,7 @@ const WORKSPACE_PATH: Record<string, string> = {
   LabTechnician: '/laboratory',
   Pathologist: '/laboratory',
   AdmissionDesk: '/ipd-admissions',
+  SuperAdmin: '/staff-management',
   QueueManager: '/opd-queue',
   StoreManager: '/inventory',
   ProcurementOfficer: '/supply-chain',
@@ -97,6 +98,7 @@ const MyWorkPanel: React.FC<{ summary: MyDashboardSummary | null; role: string }
         tiles.push({ label: 'Employees Added Today', value: summary.employeesAddedToday as number });
         break;
       case 'Administrator':
+      case 'SuperAdmin':
         tiles.push({ label: 'Active Staff', value: summary.activeStaff as number });
         tiles.push({ label: 'Inactive Staff', value: summary.inactiveStaff as number });
         tiles.push({ label: 'Security Events Today', value: summary.securityEventsToday as number });

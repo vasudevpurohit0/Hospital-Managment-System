@@ -21,6 +21,7 @@ import {
 } from './dto/service.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { toTenantActorUserId } from '../../common/audit/audit-actor.util';
 
 /**
  * Service catalogue and pricing administration.
@@ -119,7 +120,7 @@ export class CatalogController {
       amount: dto.amount,
       effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
       reason: dto.reason,
-      actorUserId: user?.id,
+      actorUserId: toTenantActorUserId(user),
       actorRole: user?.roleName,
     });
 

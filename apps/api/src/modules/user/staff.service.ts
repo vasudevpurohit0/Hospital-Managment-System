@@ -11,6 +11,7 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { STAFF_ROLE_NAMES, STAFF_ROLE_PREFIXES, StaffRoleName } from './dto/staff-role.const';
 import { AccountLifecycleService, Actor, TEMP_PASSWORD_TTL_MS } from './account-lifecycle.service';
+import { toAuditActorUserId } from '../../common/audit/audit-actor.util';
 
 export type { Actor };
 
@@ -306,7 +307,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: toAuditActorUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'staff.created',
           entityType: 'User',
@@ -354,7 +355,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: actor?.id ?? null,
+              actorUserId: toAuditActorUserId(actor),
               actorRole: actor?.roleName ?? 'System',
               action: 'staff.email_changed',
               entityType: 'User',

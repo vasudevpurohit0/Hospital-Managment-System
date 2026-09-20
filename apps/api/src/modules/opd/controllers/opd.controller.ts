@@ -30,7 +30,7 @@ export class OpdController {
     if (!departmentId) {
       throw new BadRequestException('departmentId query parameter is required');
     }
-    return this.opdService.getQueue(departmentId, doctorId, { id: user.id, roleName: user.roleName });
+    return this.opdService.getQueue(departmentId, doctorId, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   /** A doctor's own active (waiting/called/in-consultation) queue -- doctorId always comes from the JWT, never the client, for a Doctor caller. */
@@ -50,37 +50,37 @@ export class OpdController {
   @Post(':id/call')
   @RequirePermission('OPDVisit', 'call')
   async callToken(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.opdService.callToken(id, { id: user.id, roleName: user.roleName });
+    return this.opdService.callToken(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/start-consultation')
   @RequirePermission('OPDVisit', 'update')
   async startConsultation(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.opdService.startConsultation(id, { id: user.id, roleName: user.roleName });
+    return this.opdService.startConsultation(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/complete')
   @RequirePermission('OPDVisit', 'update')
   async completeConsultation(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.opdService.completeConsultation(id, { id: user.id, roleName: user.roleName });
+    return this.opdService.completeConsultation(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/no-show')
   @RequirePermission('OPDVisit', 'update')
   async markNoShow(@Param('id') id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
-    return this.opdService.markNoShow(id, { id: user.id, roleName: user.roleName }, reason);
+    return this.opdService.markNoShow(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/skip')
   @RequirePermission('OPDVisit', 'update')
   async skip(@Param('id') id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
-    return this.opdService.skip(id, { id: user.id, roleName: user.roleName }, reason);
+    return this.opdService.skip(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/cancel')
   @RequirePermission('OPDVisit', 'cancel')
   async cancel(@Param('id') id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
-    return this.opdService.cancel(id, { id: user.id, roleName: user.roleName }, reason);
+    return this.opdService.cancel(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/transfer')
@@ -90,7 +90,7 @@ export class OpdController {
     @Body() dto: TransferOpdVisitDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.opdService.transfer(id, dto.doctorId, { id: user.id, roleName: user.roleName }, dto.reason);
+    return this.opdService.transfer(id, dto.doctorId, { id: user.id, roleName: user.roleName, type: user.type }, dto.reason);
   }
 
   @Get('my-patients')

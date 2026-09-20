@@ -299,6 +299,12 @@ export class DashboardService {
         return { role: 'DataEntryOperator', employeesAddedToday };
       }
 
+      // A platform Super Admin inside a hospital (X-Hospital-Id) has no
+      // tenant user row, but sees the hospital through admin eyes -- the
+      // Administrator block below is pure aggregates with no user.id
+      // filtering, so it is safe to share rather than returning an empty
+      // `{ role: 'SuperAdmin' }` that leaves the dashboard blank.
+      case 'SuperAdmin':
       case 'Administrator': {
         const [
           staffByRole,

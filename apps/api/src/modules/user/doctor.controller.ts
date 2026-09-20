@@ -44,7 +44,7 @@ export class DoctorController {
   @Post()
   @RequirePermission('Doctor', 'create')
   async createDoctor(@Body() body: CreateDoctorDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.doctorService.createDoctor(body, { id: user.id, roleName: user.roleName });
+    return this.doctorService.createDoctor(body, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id')
@@ -54,7 +54,7 @@ export class DoctorController {
     @Body() dto: UpdateDoctorDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.doctorService.updateDoctor(id, dto, { id: user.id, roleName: user.roleName });
+    return this.doctorService.updateDoctor(id, dto, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/active')
@@ -64,7 +64,7 @@ export class DoctorController {
     @Body('active') active: boolean,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.doctorService.setActive(id, active, { id: user.id, roleName: user.roleName });
+    return this.doctorService.setActive(id, active, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Post(':id/reset-password')
@@ -74,7 +74,7 @@ export class DoctorController {
     @Body('reason') reason: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.doctorService.resetPassword(id, { id: user.id, roleName: user.roleName }, reason);
+    return this.doctorService.resetPassword(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/lock')
@@ -85,13 +85,13 @@ export class DoctorController {
     @Body('reason') reason: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.doctorService.setLocked(id, locked, { id: user.id, roleName: user.roleName }, reason);
+    return this.doctorService.setLocked(id, locked, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Post(':id/resend-activation')
   @RequirePermission('Doctor', 'update')
   async resendActivation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.doctorService.resendActivation(id, { id: user.id, roleName: user.roleName });
+    return this.doctorService.resendActivation(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   /**
@@ -109,24 +109,24 @@ export class DoctorController {
   @Post('me/check-in')
   @RequirePermission('DoctorDuty', 'update')
   async checkIn(@CurrentUser() user: AuthenticatedUser) {
-    return this.doctorService.checkIn(user.id, { id: user.id, roleName: user.roleName });
+    return this.doctorService.checkIn(user.id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Post('me/check-out')
   @RequirePermission('DoctorDuty', 'update')
   async checkOut(@CurrentUser() user: AuthenticatedUser) {
-    return this.doctorService.checkOut(user.id, { id: user.id, roleName: user.roleName });
+    return this.doctorService.checkOut(user.id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Post('me/break/start')
   @RequirePermission('DoctorDuty', 'update')
   async startBreak(@CurrentUser() user: AuthenticatedUser) {
-    return this.doctorService.startBreak(user.id, { id: user.id, roleName: user.roleName });
+    return this.doctorService.startBreak(user.id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Post('me/break/end')
   @RequirePermission('DoctorDuty', 'update')
   async endBreak(@CurrentUser() user: AuthenticatedUser) {
-    return this.doctorService.endBreak(user.id, { id: user.id, roleName: user.roleName });
+    return this.doctorService.endBreak(user.id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 }

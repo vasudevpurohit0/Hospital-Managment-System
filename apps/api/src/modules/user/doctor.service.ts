@@ -10,6 +10,7 @@ import { EmailService } from '../../common/email/email.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { AccountLifecycleService, Actor, TEMP_PASSWORD_TTL_MS } from './account-lifecycle.service';
+import { toAuditActorUserId } from '../../common/audit/audit-actor.util';
 
 export type { Actor };
 
@@ -321,7 +322,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: toAuditActorUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'doctor.created',
           entityType: 'User',
@@ -379,7 +380,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: actor?.id ?? null,
+              actorUserId: toAuditActorUserId(actor),
               actorRole: actor?.roleName ?? 'System',
               action: 'doctor.email_changed',
               entityType: 'User',
@@ -408,7 +409,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       if (departmentChanged) {
         await tx.auditLog.create({
           data: {
-            actorUserId: actor?.id ?? null,
+            actorUserId: toAuditActorUserId(actor),
             actorRole: actor?.roleName ?? 'System',
             action: 'doctor.department_changed',
             entityType: 'DoctorProfile',
@@ -458,7 +459,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'AVAILABLE', checkedInAt: now, dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_in', entityType: 'User', entityId: userId },
+      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_in', entityType: 'User', entityId: userId },
     });
     return this.getDutyStatus(userId);
   }
@@ -475,7 +476,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'OFF_DUTY', checkedOutAt: now, dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_out', entityType: 'User', entityId: userId },
+      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.checked_out', entityType: 'User', entityId: userId },
     });
     return this.getDutyStatus(userId);
   }
@@ -495,7 +496,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'ON_BREAK', dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_started', entityType: 'User', entityId: userId },
+      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_started', entityType: 'User', entityId: userId },
     });
     return this.getDutyStatus(userId);
   }
@@ -511,7 +512,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       data: { dutyStatus: 'AVAILABLE', dutyStatusChangedAt: now },
     });
     await this.prisma.auditLog.create({
-      data: { actorUserId: actor?.id ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_ended', entityType: 'User', entityId: userId },
+      data: { actorUserId: toAuditActorUserId(actor) ?? userId, actorRole: actor?.roleName ?? 'Doctor', action: 'doctor.break_ended', entityType: 'User', entityId: userId },
     });
     return this.getDutyStatus(userId);
   }

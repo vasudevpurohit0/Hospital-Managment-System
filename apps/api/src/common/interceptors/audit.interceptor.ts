@@ -8,6 +8,7 @@ import { parseUserAgent, extractClientIp } from '../audit/request-meta.util';
 import { classifySeverity } from '../audit/severity.util';
 import { diffChangedFields, buildDescription } from '../audit/describe.util';
 import { redactSensitiveFields } from '../audit/redact.util';
+import { toAuditActorUserId } from '../audit/audit-actor.util';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -81,7 +82,7 @@ export class AuditInterceptor implements NestInterceptor {
 
             await this.prisma.auditLog.create({
               data: {
-                actorUserId: user?.id || null,
+                actorUserId: toAuditActorUserId(user),
                 actorRole: user?.roleName || 'Anonymous',
                 action,
                 entityType,
@@ -121,7 +122,7 @@ export class AuditInterceptor implements NestInterceptor {
 
             await this.prisma.auditLog.create({
               data: {
-                actorUserId: user?.id || null,
+                actorUserId: toAuditActorUserId(user),
                 actorRole: user?.roleName || 'Anonymous',
                 action,
                 entityType,

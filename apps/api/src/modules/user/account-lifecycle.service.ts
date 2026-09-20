@@ -8,6 +8,7 @@ import { generateSecurePassword } from '../../common/security/password.util';
 import { AuthService } from '../auth/auth.service';
 import { EmailService } from '../../common/email/email.service';
 import { tempPasswordEmailBody, TEMP_PASSWORD_EMAIL_SUBJECT } from '../../common/email/templates';
+import { toAuditActorUserId } from '../../common/audit/audit-actor.util';
 
 /**
  * F-25: DoctorService and StaffService started as two independently-written,
@@ -30,7 +31,11 @@ import { tempPasswordEmailBody, TEMP_PASSWORD_EMAIL_SUBJECT } from '../../common
 export interface Actor {
   id: string;
   roleName: string;
+  /** Hospital-staff vs platform (SuperAdmin) token. Platform ids live in the platform DB, never in a tenant schema, so audit writes must map them to NULL (see toAuditActorUserId). */
+  type?: 'hospital' | 'platform';
 }
+
+export { toAuditActorUserId } from '../../common/audit/audit-actor.util';
 
 export const TEMP_PASSWORD_TTL_MS = 24 * 60 * 60_000;
 
@@ -81,7 +86,7 @@ export abstract class AccountLifecycleService<TDto> {
   ) {
     await client.auditLog.create({
       data: {
-        actorUserId: actor?.id ?? null,
+        actorUserId: toAuditActorUserId(actor),
         actorRole: actor?.roleName ?? 'System',
         action,
         entityType: 'User',
