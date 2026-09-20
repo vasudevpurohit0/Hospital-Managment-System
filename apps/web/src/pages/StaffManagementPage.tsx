@@ -49,6 +49,8 @@ const ROLE_LABELS: Record<StaffRole, string> = {
   LabTechnician: 'Lab Technician',
   Pathologist: 'Pathologist',
   Accountant: 'Accountant',
+  OPDDisplayOperator: 'OPD Display Operator',
+  THERAPY_STAFF: 'Therapy / Panchakarma Staff',
 };
 
 interface StaffFormState {

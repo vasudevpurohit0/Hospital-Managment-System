@@ -21,6 +21,8 @@ export const STAFF_ROLE_PREFIXES = {
   LabTechnician: 'LAB',
   Pathologist: 'PTH',
   Accountant: 'ACC',
+  OPDDisplayOperator: 'OPD',
+  THERAPY_STAFF: 'THP',
 } as const;
 
 export type StaffRoleName = keyof typeof STAFF_ROLE_PREFIXES;

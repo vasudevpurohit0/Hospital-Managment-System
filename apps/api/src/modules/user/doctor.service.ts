@@ -244,7 +244,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       staffId: created.staffId,
       role: 'Doctor',
       hospitalId,
-      actorUserId: actor?.id,
+      actorUserId: this.actorTenantUserId(actor) ?? undefined,
       temporaryPassword: created.temporaryPassword,
     });
 
@@ -321,7 +321,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: this.actorTenantUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'doctor.created',
           entityType: 'User',
@@ -379,7 +379,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: actor?.id ?? null,
+              actorUserId: this.actorTenantUserId(actor),
               actorRole: actor?.roleName ?? 'System',
               action: 'doctor.email_changed',
               entityType: 'User',
@@ -408,7 +408,7 @@ export class DoctorService extends AccountLifecycleService<DoctorDto> {
       if (departmentChanged) {
         await tx.auditLog.create({
           data: {
-            actorUserId: actor?.id ?? null,
+            actorUserId: this.actorTenantUserId(actor),
             actorRole: actor?.roleName ?? 'System',
             action: 'doctor.department_changed',
             entityType: 'DoctorProfile',

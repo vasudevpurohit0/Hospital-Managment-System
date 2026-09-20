@@ -34,6 +34,8 @@ const SINGLE_PURPOSE_ROLES: Record<string, string> = {
   QueueManager: 'This is your only screen — calling patients is this account’s one job.',
   LabTechnician: 'This is your only screen — sample collection and result entry are this account’s only tasks.',
   Pathologist: 'This is your only screen — verifying and releasing lab reports is this account’s only task.',
+  OPDDisplayOperator: 'This is your only screen — a read-only public waiting-area OPD display.',
+  THERAPY_STAFF: 'This is your only screen — performing and recording Therapy / Panchakarma sessions.',
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -48,6 +50,7 @@ export type PageId =
   | 'registration'
   | 'employee-directory'
   | 'opd-queue'
+  | 'opd-display'
   | 'consultations'
   | 'doctor-schedule'
   | 'ipd-admissions'
@@ -133,6 +136,15 @@ const MENU_GROUPS: MenuGroup[] = [
         roles: ['Reception', 'Nurse', 'SuperAdmin', 'Administrator', 'QueueManager'],
       },
       {
+        id: 'opd-display',
+        label: 'OPD Public Display',
+        icon: ClipboardList,
+        // Read-only public waiting-area TV. The dedicated OPDDisplayOperator
+        // account lands here as its only screen; SuperAdmin/Administrator can
+        // also open it for setup/preview.
+        roles: ['OPDDisplayOperator', 'SuperAdmin', 'Administrator'],
+      },
+      {
         id: 'consultations',
         label: 'Consultations',
         icon: Stethoscope,
@@ -169,7 +181,7 @@ const MENU_GROUPS: MenuGroup[] = [
         id: 'therapy',
         label: 'Therapy / Panchakarma',
         icon: Activity,
-        roles: ['Doctor', 'Nurse', 'SuperAdmin', 'Administrator'],
+        roles: ['Doctor', 'Nurse', 'SuperAdmin', 'Administrator', 'THERAPY_STAFF'],
       },
     ],
   },
@@ -309,6 +321,8 @@ const SINGLE_PURPOSE_LANDING_PAGE: Partial<Record<string, PageId>> = {
   QueueManager: 'opd-queue',
   LabTechnician: 'laboratory',
   Pathologist: 'laboratory',
+  OPDDisplayOperator: 'opd-display',
+  THERAPY_STAFF: 'therapy',
 };
 
 export function getDefaultPageForRole(role: string | undefined | null): PageId {

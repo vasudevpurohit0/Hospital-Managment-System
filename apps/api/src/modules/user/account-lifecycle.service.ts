@@ -30,6 +30,15 @@ import { tempPasswordEmailBody, TEMP_PASSWORD_EMAIL_SUBJECT } from '../../common
 export interface Actor {
   id: string;
   roleName: string;
+  /**
+   * 'platform' when the actor is a Platform/Central Super Admin operating
+   * inside a hospital (via X-Hospital-Id). Their id is a PlatformUser id, NOT
+   * a tenant `User` -- so it must never be written to tenant columns that FK
+   * to `User` (audit_logs.actor_user_id, email_logs.sent_by_user_id), or the
+   * write fails with a foreign-key violation. Undefined/'hospital' = a normal
+   * tenant user whose id is safe to record.
+   */
+  type?: 'hospital' | 'platform';
 }
 
 export const TEMP_PASSWORD_TTL_MS = 24 * 60 * 60_000;
@@ -72,6 +81,18 @@ export abstract class AccountLifecycleService<TDto> {
   /** The role name to record on the activation email / temp-password flow -- a fixed string for Doctor, `user.role.name` for Staff. */
   protected abstract roleNameFor(user: AccountUser): string;
 
+  /**
+   * The tenant `User` id safe to stamp on tenant rows that FK to `User`
+   * (audit_logs.actor_user_id, email_logs.sent_by_user_id). A platform/central
+   * admin acting inside a hospital has no such tenant row, so returns null for
+   * them -- preventing the foreign-key violation that otherwise 500s every
+   * account action (reset password, create staff, lock, ...) a platform admin
+   * performs in a hospital.
+   */
+  protected actorTenantUserId(actor?: Actor): string | null {
+    return actor && actor.type !== 'platform' ? actor.id : null;
+  }
+
   protected async writeAuditLog(
     client: PrismaClientLike,
     action: string,
@@ -81,7 +102,10 @@ export abstract class AccountLifecycleService<TDto> {
   ) {
     await client.auditLog.create({
       data: {
-        actorUserId: actor?.id ?? null,
+        // A platform (central) admin's id is not a tenant User, so recording
+        // it here would violate audit_logs.actor_user_id's FK. Keep the who in
+        // actorRole ('SuperAdmin') and leave the id null for platform actors.
+        actorUserId: actor && actor.type !== 'platform' ? actor.id : null,
         actorRole: actor?.roleName ?? 'System',
         action,
         entityType: 'User',
@@ -187,7 +211,9 @@ export abstract class AccountLifecycleService<TDto> {
       staffId: user.employee?.employeeId ?? null,
       role: this.roleNameFor(user),
       hospitalId,
-      actorUserId: actor?.id,
+      // Same FK reasoning as writeAuditLog: never stamp a platform admin's id
+      // onto a tenant email_logs row.
+      actorUserId: actor && actor.type !== 'platform' ? actor.id : undefined,
       temporaryPassword,
     });
 

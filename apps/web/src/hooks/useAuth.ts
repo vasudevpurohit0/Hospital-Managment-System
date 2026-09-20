@@ -105,6 +105,8 @@ const ROLE_DISPLAY_NAMES: Record<string, string> = {
   LabTechnician: 'Lab Technician',
   Pathologist: 'Pathologist',
   Accountant: 'Accountant',
+  OPDDisplayOperator: 'OPD Display Operator',
+  THERAPY_STAFF: 'Therapy / Panchakarma Staff',
 };
 
 function buildUserFromRole(roleName: string, identifier: string, hospitalId?: string): AuthUser {

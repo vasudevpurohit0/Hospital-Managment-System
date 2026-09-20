@@ -6,7 +6,8 @@ import {
   fetchPostGradeOptions,
   EmployeeDirectoryRecord,
 } from '../../api/employee.api';
-import { UserPlus, Search, Edit2, X } from 'lucide-react';
+import { UserPlus, Search, Edit2, X, Upload } from 'lucide-react';
+import { BulkImportPanel } from './BulkImportPanel';
 
 interface EmployeeDirectoryScreenProps {
   authToken: string;
@@ -25,6 +26,7 @@ export const EmployeeDirectoryScreen: React.FC<EmployeeDirectoryScreenProps> = (
   const [search, setSearch] = useState('');
 
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -171,15 +173,34 @@ export const EmployeeDirectoryScreen: React.FC<EmployeeDirectoryScreenProps> = (
             This does not register them as a hospital patient — use Registration for that.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-md gap-1.5"
-          onClick={() => setShowAddForm((v) => !v)}
-        >
-          <UserPlus className="w-4 h-4" />
-          {showAddForm ? 'Cancel' : '+ Add Employee'}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            className="btn btn-secondary btn-md gap-1.5"
+            onClick={() => setShowBulkImport((v) => !v)}
+          >
+            <Upload className="w-4 h-4" />
+            {showBulkImport ? 'Close Bulk Import' : 'Bulk Import Employees'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-md gap-1.5"
+            onClick={() => setShowAddForm((v) => !v)}
+          >
+            <UserPlus className="w-4 h-4" />
+            {showAddForm ? 'Cancel' : '+ Add Employee'}
+          </button>
+        </div>
       </div>
+
+      {showBulkImport && (
+        <BulkImportPanel
+          authToken={authToken}
+          onImported={() => {
+            loadEmployees();
+          }}
+        />
+      )}
 
       {showAddForm && (
         <form onSubmit={handleCreate} className="card p-5 space-y-4">

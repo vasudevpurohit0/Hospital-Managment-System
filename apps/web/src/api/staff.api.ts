@@ -15,6 +15,8 @@ export const STAFF_ROLES = [
   'LabTechnician',
   'Pathologist',
   'Accountant',
+  'OPDDisplayOperator',
+  'THERAPY_STAFF',
 ] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 

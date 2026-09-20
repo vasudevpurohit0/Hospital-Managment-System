@@ -27,7 +27,9 @@
     "prisma:platform:deploy": "prisma migrate deploy --schema=prisma/platform/schema.prisma",
     "prisma:platform:seed": "ts-node -r tsconfig-paths/register prisma/platform/seed.ts",
     "migrate:all-tenants": "ts-node -r tsconfig-paths/register scripts/migrate-all-tenants.ts",
-    "backfill:login-identifiers": "ts-node -r tsconfig-paths/register scripts/backfill-login-identifiers.ts"
+    "backfill:login-identifiers": "ts-node -r tsconfig-paths/register scripts/backfill-login-identifiers.ts",
+    "backfill:doctor-departments": "ts-node -r tsconfig-paths/register scripts/backfill-doctor-departments.ts",
+    "sync:role-permissions": "ts-node -r tsconfig-paths/register scripts/sync-role-permissions.ts"
   },
   "prisma": {
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"

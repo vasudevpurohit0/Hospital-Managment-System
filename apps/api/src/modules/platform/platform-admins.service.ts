@@ -1,12 +1,16 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
 import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
 import { CreatePlatformAdminDto } from './dto/create-platform-admin.dto';
 
 @Injectable()
 export class PlatformAdminsService {
-  constructor(private readonly platformPrisma: PlatformPrismaService) {}
+  constructor(
+    private readonly platformPrisma: PlatformPrismaService,
+    private readonly loginDirectory: LoginDirectoryService,
+  ) {}
 
   async list() {
     return this.platformPrisma.platformUser.findMany({
@@ -20,10 +24,28 @@ export class PlatformAdminsService {
     if (existing) {
       throw new ConflictException(`A platform admin with email "${dto.email}" already exists.`);
     }
+
+    // Register the identifier in the global login directory FIRST (hospitalId
+    // null = a platform/central account). Without this a newly-created central
+    // admin can never authenticate: /auth/login resolves the identifier through
+    // this directory before it even knows which account it is, so an
+    // unregistered admin always fails with "Invalid credentials" (and thus
+    // can't log in or reset their password). This mirrors how tenant staff and
+    // the seeded super admin are registered.
+    await this.loginDirectory.register(dto.email, null);
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.platformPrisma.platformUser.create({
-      data: { email: dto.email, name: dto.name, passwordHash },
-    });
+    let user;
+    try {
+      user = await this.platformPrisma.platformUser.create({
+        data: { email: dto.email, name: dto.name, passwordHash },
+      });
+    } catch (err) {
+      // Roll back the directory entry so a failed create never leaves the
+      // identifier permanently reserved on the platform.
+      await this.loginDirectory.remove(dto.email).catch(() => undefined);
+      throw err;
+    }
     await recordPlatformAuditLog(this.platformPrisma, {
       platformUserId: callerId,
       action: 'platform_admin.create',

@@ -43,7 +43,7 @@ export class StaffController {
   @Post()
   @RequirePermission('Staff', 'create')
   async createStaff(@Body() body: CreateStaffDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.staffService.createStaff(body, { id: user.id, roleName: user.roleName });
+    return this.staffService.createStaff(body, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id')
@@ -53,7 +53,7 @@ export class StaffController {
     @Body() dto: UpdateStaffDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.staffService.updateStaff(id, dto, { id: user.id, roleName: user.roleName });
+    return this.staffService.updateStaff(id, dto, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/active')
@@ -63,7 +63,7 @@ export class StaffController {
     @Body('active') active: boolean,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.staffService.setActive(id, active, { id: user.id, roleName: user.roleName });
+    return this.staffService.setActive(id, active, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Post(':id/reset-password')
@@ -73,7 +73,7 @@ export class StaffController {
     @Body('reason') reason: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.staffService.resetPassword(id, { id: user.id, roleName: user.roleName }, reason);
+    return this.staffService.resetPassword(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/lock')
@@ -84,12 +84,12 @@ export class StaffController {
     @Body('reason') reason: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.staffService.setLocked(id, locked, { id: user.id, roleName: user.roleName }, reason);
+    return this.staffService.setLocked(id, locked, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Post(':id/resend-activation')
   @RequirePermission('Staff', 'update')
   async resendActivation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.staffService.resendActivation(id, { id: user.id, roleName: user.roleName });
+    return this.staffService.resendActivation(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 }

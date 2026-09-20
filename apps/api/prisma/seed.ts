@@ -92,6 +92,14 @@ export const SYSTEM_ROLES = [
   'LabTechnician',
   'Pathologist',
   'Accountant',
+  // Read-only public waiting-area OPD display (a TV account). Sees the queue,
+  // can change nothing -- its only permission grant is OPDVisit:read below.
+  'OPDDisplayOperator',
+  // Dedicated Therapy/Panchakarma staff -- runs the existing Therapy console
+  // (perform/record sessions against doctor-created orders). Grants are the
+  // therapy workflow plus the read-only lookups that screen needs, nothing
+  // more (no admin/doctor scope).
+  'THERAPY_STAFF',
 ] as const;
 
 export type SystemRoleName = (typeof SYSTEM_ROLES)[number];
@@ -166,7 +174,17 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Doctor', resource: 'Admission', action: 'create' }, // Recommendation stub
   { roleName: 'Doctor', resource: 'Admission', action: 'read' },
   { roleName: 'Doctor', resource: 'Admission', action: 'approve' }, // Discharge approval
+  // A doctor caring for an admitted (IPD) patient logs clinical observation/
+  // treatment notes from Ward Console -- the same AdmissionNote workflow the
+  // Nurse already has. Without this the "Log Observation Note" action 403s.
+  { roleName: 'Doctor', resource: 'AdmissionNote', action: 'create' },
+  { roleName: 'Doctor', resource: 'AdmissionNote', action: 'read' },
   { roleName: 'Doctor', resource: 'Charge', action: 'read' },
+  // Read-only view of hospital medicine stock so the consultation screen can
+  // offer real, in-stock medicines to prescribe (GET /inventory/medicines is
+  // gated on MedicineBatch:read). Read only -- doctors never create, adjust,
+  // dispense, or dispose stock; that stays with inventory/pharmacy roles.
+  { roleName: 'Doctor', resource: 'MedicineBatch', action: 'read' },
   // A doctor orders investigations (Feature 6); lab staff never do.
   { roleName: 'Doctor', resource: 'LabTest', action: 'read' },
   { roleName: 'Doctor', resource: 'LabOrder', action: 'create' },
@@ -362,6 +380,11 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   // Administrator can also book a Direct-Therapy episode at Registration,
   // same non-clinical booking capability as Reception.
   { roleName: 'Administrator', resource: 'TherapySession', action: 'create' },
+  // ...and manage those sessions from the Therapy console (mark performed /
+  // cancel). Without this update grant the console's action buttons stay
+  // hidden for an Administrator, who could book a session but never act on
+  // it. Mirrors the therapy:markPerformed capability on the frontend.
+  { roleName: 'Administrator', resource: 'TherapySession', action: 'update' },
   // Feature 12/13: analytics and the report centre are administrative
   // oversight, not clinical or operational action.
   { roleName: 'Administrator', resource: 'Analytics', action: 'read' },
@@ -422,6 +445,28 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'QueueManager', resource: 'OPDVisit', action: 'update' },
   { roleName: 'QueueManager', resource: 'OPDVisit', action: 'cancel' },
   { roleName: 'QueueManager', resource: 'OPDVisit', action: 'transfer' },
+
+  // --- OPD Display Operator (public waiting-area TV) ---
+  // Exactly one grant: read the OPD queue. No call/skip/no-show/transfer/
+  // cancel/update/create -- the account physically cannot mutate the queue,
+  // enforced by the backend RbacGuard, not merely by hiding buttons. It backs
+  // the read-only OpdDisplayController (GET /opd-display/*, all OPDVisit:read).
+  { roleName: 'OPDDisplayOperator', resource: 'OPDVisit', action: 'read' },
+
+  // --- Therapy / Panchakarma Staff ---
+  // Exactly the permissions the existing Therapy console (TherapyConsoleScreen
+  // + TherapyController) exercises, and no more. The therapy workflow:
+  { roleName: 'THERAPY_STAFF', resource: 'TherapySession', action: 'read' },
+  { roleName: 'THERAPY_STAFF', resource: 'TherapySession', action: 'create' },
+  { roleName: 'THERAPY_STAFF', resource: 'TherapySession', action: 'update' },
+  // Read-only lookups that screen relies on: the therapy service catalogue,
+  // and the OPD visit / IPD admission context behind an order (the therapy
+  // session/course payload already embeds the patient, so no Employee/patient
+  // directory access is needed -- kept deliberately narrow). Doctor-created
+  // OPD/IPD therapy orders are the source and remain read-only here.
+  { roleName: 'THERAPY_STAFF', resource: 'Service', action: 'read' },
+  { roleName: 'THERAPY_STAFF', resource: 'Visit', action: 'read' },
+  { roleName: 'THERAPY_STAFF', resource: 'Admission', action: 'read' },
 
   // --- Accountant (billing read/create, limited employee/visit read -- no
   // clinical, pharmacy, inventory or admin access) ---
@@ -957,6 +1002,12 @@ export async function main() {
     predictablePassword: 'PathologistPass123!',
     roleId: roleMap['Pathologist'],
   });
+  await seedDemoUser({
+    roleLabel: 'THERAPY_STAFF',
+    identifierLocalPart: 'therapy',
+    predictablePassword: 'TherapyPass123!',
+    roleId: roleMap['THERAPY_STAFF'],
+  });
 
   // 6. Seed sample Patients, Visits, and OPDVisits for General Medicine
   // 6. Seed Doctor Profiles (Replacing Fake Patients)
@@ -1011,6 +1062,31 @@ export async function main() {
     },
   ];
 
+  // Doctors must be linked to a Department (via doctorProfile.departmentId),
+  // not just carry a free-text `specialty`: OPD registration's "Assigned
+  // Doctor" picker filters strictly by department, so a doctor with a null
+  // department never appears there. The full department seed also runs later
+  // (step 15); these upserts are idempotent and just make the records exist
+  // in time to link doctors to them here.
+  for (const d of SEED_DEPARTMENTS) {
+    await prisma.department.upsert({ where: { code: d.code }, update: {}, create: d });
+  }
+  const deptIdByCode = new Map(
+    (await prisma.department.findMany({ select: { id: true, code: true } })).map((d) => [d.code.toUpperCase(), d.id]),
+  );
+  // Free-text specialty -> department code. Any specialty without a matching
+  // department (e.g. "Neurologist" with no Neurology department) is left
+  // unlinked, exactly as scripts/backfill-doctor-departments.ts handles it.
+  const specialtyToDeptCode: Record<string, string> = {
+    'general physician': 'GENMED',
+    cardiologist: 'CARDIO',
+    orthopedics: 'ORTHO',
+    pediatrician: 'PEDIATRIC',
+    dermatologist: 'DERMA',
+  };
+  const deptIdForSpecialty = (specialty: string): string | undefined =>
+    deptIdByCode.get((specialtyToDeptCode[specialty.trim().toLowerCase()] ?? '').toUpperCase());
+
   for (const doc of doctorsData) {
     // Same V-17 reasoning as seedDemoUser() above: this used to reuse the
     // single shared 'DoctorPass123!' hash for every one of these named
@@ -1060,14 +1136,18 @@ export async function main() {
       data: { employeeId: employee.id },
     });
 
+    const departmentId = deptIdForSpecialty(doc.specialty);
     await prisma.doctorProfile.upsert({
       where: { userId: user.id },
-      update: {},
+      // `departmentId: undefined` is a no-op in Prisma, so an existing manual
+      // assignment (or an unmapped specialty) is never overwritten on re-seed.
+      update: { departmentId },
       create: {
         userId: user.id,
         specialty: doc.specialty,
         experience: doc.experience,
         available: true,
+        departmentId,
       },
     });
   }

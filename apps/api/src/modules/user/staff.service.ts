@@ -229,7 +229,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
       staffId: created.staffId,
       role: created.role,
       hospitalId,
-      actorUserId: actor?.id,
+      actorUserId: this.actorTenantUserId(actor) ?? undefined,
       temporaryPassword: created.temporaryPassword,
     });
 
@@ -306,7 +306,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: this.actorTenantUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'staff.created',
           entityType: 'User',
@@ -354,7 +354,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: actor?.id ?? null,
+              actorUserId: this.actorTenantUserId(actor),
               actorRole: actor?.roleName ?? 'System',
               action: 'staff.email_changed',
               entityType: 'User',
