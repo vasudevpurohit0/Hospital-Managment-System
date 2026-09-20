@@ -1,6 +1,13 @@
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
 
+# Prisma's query engine needs libssl to detect the right binary target at
+# generate time and to load the engine at runtime. Without it, Prisma can't
+# probe the installed OpenSSL version, silently defaults to the wrong engine
+# (openssl-1.1.x), and the app crashes on startup with
+# "libssl.so.1.1: cannot open shared object file".
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 

@@ -2,6 +2,7 @@
   "name": "@esic-hms/web",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
