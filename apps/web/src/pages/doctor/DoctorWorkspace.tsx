@@ -461,7 +461,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
     setTransferError(null);
     try {
       const eligible = await fetchEligibleDoctors(opdVisit.departmentId);
-      setTransferDoctors(eligible.filter((d) => d.id !== user?.id));
+      // Never yourself, and never a doctor who can't actually take the
+      // patient right now -- the backend rejects both at confirm time too,
+      // this just keeps the picker from offering a choice that would fail.
+      setTransferDoctors(eligible.filter((d) => d.id !== user?.id && d.dutyStatus === 'AVAILABLE'));
     } catch (err) {
       setTransferError(err instanceof Error ? err.message : 'Failed to load doctors to transfer to');
     }
@@ -862,10 +865,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             </div>
             <div>
               <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
-                Doctor Consultation & Prescription Console
+                {user?.name ? `Dr. ${user.name.replace(/^Dr\.\s*/i, '')}` : 'Doctor Consultation & Prescription Console'}
               </h2>
               <p className="text-xs text-[var(--color-text-secondary)]">
-                Epic EMR-style 3-panel split clinical workspace
+                {user?.department ? `${user.department} Department` : 'Consultation & Prescription Console'}
               </p>
             </div>
           </div>

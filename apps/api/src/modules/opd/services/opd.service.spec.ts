@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { OpdService, QueueActor } from './opd.service';
 
 describe('OpdService', () => {
@@ -9,6 +9,7 @@ describe('OpdService', () => {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       findUniqueOrThrow: jest.fn(),
+      findMany: jest.fn(),
       updateMany: jest.fn(),
       update: jest.fn(),
       count: jest.fn(),
@@ -210,7 +211,7 @@ describe('OpdService', () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         active: true,
         role: { name: 'Doctor' },
-        doctorProfile: { departmentId: 'dept-1', departments: [] },
+        doctorProfile: { departmentId: 'dept-1', departments: [], dutyStatus: 'AVAILABLE' },
       });
       mockPrisma.oPDVisit.count.mockResolvedValue(0);
       mockPrisma.oPDVisit.update.mockResolvedValue({ id: 'v1', doctorId: 'doctor-2', status: 'WAITING' });
@@ -228,6 +229,48 @@ describe('OpdService', () => {
       await expect(service.transfer('v1', 'doctor-2', adminActor, 'Doctor on leave')).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('rejects transferring to the same doctor the visit is already assigned to', async () => {
+      mockPrisma.oPDVisit.findUnique.mockResolvedValue(activeVisit);
+      await expect(service.transfer('v1', 'doctor-1', adminActor, 'Doctor on leave')).rejects.toThrow(
+        'Cannot transfer a patient to the same doctor.',
+      );
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects transferring to a doctor who is ON_BREAK or OFF_DUTY -- only AVAILABLE doctors can receive a transfer', async () => {
+      mockPrisma.oPDVisit.findUnique.mockResolvedValue(activeVisit);
+      mockPrisma.user.findUnique.mockResolvedValue({
+        active: true,
+        role: { name: 'Doctor' },
+        doctorProfile: { departmentId: 'dept-1', departments: [], dutyStatus: 'ON_BREAK' },
+      });
+      await expect(service.transfer('v1', 'doctor-2', adminActor, 'Doctor on leave')).rejects.toThrow(
+        'Selected doctor is not currently available to receive patients (must be checked in and not on a break).',
+      );
+
+      mockPrisma.user.findUnique.mockResolvedValue({
+        active: true,
+        role: { name: 'Doctor' },
+        doctorProfile: { departmentId: 'dept-1', departments: [], dutyStatus: 'OFF_DUTY' },
+      });
+      await expect(service.transfer('v1', 'doctor-2', adminActor, 'Doctor on leave')).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('getQueue() -- shared department queue', () => {
+    it('rejects a Doctor caller outright, even though Doctor holds the Employee:read permission this route is gated on', async () => {
+      await expect(service.getQueue('dept-1', undefined, doctorActor)).rejects.toThrow(ForbiddenException);
+      expect(mockDepartmentService.findById).not.toHaveBeenCalled();
+    });
+
+    it('allows a non-Doctor caller (e.g. Reception/Administrator) through unchanged', async () => {
+      mockDepartmentService.findById.mockResolvedValue({ id: 'dept-1' });
+      mockPrisma.oPDVisit.findMany.mockResolvedValue([]);
+      await expect(service.getQueue('dept-1', undefined, adminActor)).resolves.toEqual([]);
     });
   });
 

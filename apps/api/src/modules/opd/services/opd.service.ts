@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { OpdTokenGeneratorService } from './opd-token-generator.service';
 import { DepartmentService } from './department.service';
@@ -41,7 +41,11 @@ export class OpdService {
     }
   }
 
-  private async assertDoctorEligibleForDepartment(doctorId: string, departmentId: string): Promise<void> {
+  private async assertDoctorEligibleForDepartment(
+    doctorId: string,
+    departmentId: string,
+    opts: { requireAvailable?: boolean } = {},
+  ): Promise<void> {
     const doctor = await this.prisma.user.findUnique({
       where: { id: doctorId },
       include: { role: true, doctorProfile: { include: { departments: true } } },
@@ -54,6 +58,14 @@ export class OpdService {
       doctor.doctorProfile.departments.some((d) => d.departmentId === departmentId);
     if (!eligible) {
       throw new BadRequestException('Selected doctor does not belong to this department.');
+    }
+    // Only enforced for a transfer target (see transfer() below), not for
+    // registration -- a patient can still be pre-queued at registration for a
+    // doctor who hasn't checked in for the day yet.
+    if (opts.requireAvailable && doctor.doctorProfile.dutyStatus !== 'AVAILABLE') {
+      throw new BadRequestException(
+        'Selected doctor is not currently available to receive patients (must be checked in and not on a break).',
+      );
     }
   }
 
@@ -154,8 +166,18 @@ export class OpdService {
    * Fetch the active queue for a department (waiting/called/in-consultation),
    * optionally narrowed to one doctor -- the Reception/QueueManager
    * department view with a doctor filter.
+   *
+   * A Doctor caller is rejected outright, regardless of the Employee:read
+   * grant that gates this route (a Doctor legitimately needs that permission
+   * elsewhere, e.g. patient lookup) -- a doctor's queue view is exclusively
+   * `getMyQueue` below. The frontend already hides/blocks this screen for
+   * Doctor, but that alone doesn't stop a direct API call, which is what
+   * this guards against.
    */
-  async getQueue(departmentId: string, doctorId?: string) {
+  async getQueue(departmentId: string, doctorId?: string, actor?: QueueActor) {
+    if (actor?.roleName === 'Doctor') {
+      throw new ForbiddenException('Doctors must use their own queue (GET /opd-visits/my-queue).');
+    }
     const dept = await this.departmentService.findById(departmentId);
     const targetDeptId = dept?.id || departmentId;
 
@@ -391,7 +413,10 @@ export class OpdService {
     if (!(ACTIVE_STATUSES as readonly string[]).includes(visit.status)) {
       throw new BadRequestException(`Cannot transfer a visit from status ${visit.status}.`);
     }
-    await this.assertDoctorEligibleForDepartment(newDoctorId, visit.departmentId);
+    if (newDoctorId === visit.doctorId) {
+      throw new BadRequestException('Cannot transfer a patient to the same doctor.');
+    }
+    await this.assertDoctorEligibleForDepartment(newDoctorId, visit.departmentId, { requireAvailable: true });
 
     return this.prisma.$transaction(async (tx) => {
       const queuePosition = (await tx.oPDVisit.count({ where: { doctorId: newDoctorId, status: 'WAITING' } })) + 1;

@@ -402,7 +402,9 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
                       className="input text-xs py-1"
                     >
                       <option value="">-- Select new doctor --</option>
-                      {doctors.filter((d) => d.id !== item.doctorId).map((d) => (
+                      {doctors
+                        .filter((d) => d.id !== item.doctorId && d.dutyStatus === 'AVAILABLE')
+                        .map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.name}
                         </option>

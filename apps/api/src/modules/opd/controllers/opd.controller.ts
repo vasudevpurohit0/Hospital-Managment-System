@@ -17,7 +17,11 @@ export class OpdController {
 
   @Get('queue')
   @RequirePermission('Employee', 'read')
-  async getQueue(@Query('departmentId') departmentId?: string, @Query('doctorId') doctorId?: string) {
+  async getQueue(
+    @Query('departmentId') departmentId: string | undefined,
+    @Query('doctorId') doctorId: string | undefined,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     // Found during the P8 sweep: an absent departmentId reached
     // Prisma as `where: { id: undefined }`, which throws a raw
     // PrismaClientValidationError the global filter then flattens into an
@@ -26,7 +30,7 @@ export class OpdController {
     if (!departmentId) {
       throw new BadRequestException('departmentId query parameter is required');
     }
-    return this.opdService.getQueue(departmentId, doctorId);
+    return this.opdService.getQueue(departmentId, doctorId, { id: user.id, roleName: user.roleName });
   }
 
   /** A doctor's own active (waiting/called/in-consultation) queue -- doctorId always comes from the JWT, never the client, for a Doctor caller. */
