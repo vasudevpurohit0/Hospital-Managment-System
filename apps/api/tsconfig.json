@@ -24,6 +24,15 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
+  // Docker Desktop on Windows doesn't propagate native filesystem change
+  // events from the host into the container across a bind mount, so
+  // `nest start --watch`'s default fs.watch-based watcher never fires and
+  // edits made on the host are silently ignored until the container is
+  // restarted by hand. Polling works everywhere a bind mount is used.
+  "watchOptions": {
+    "watchFile": "priorityPollingInterval",
+    "watchDirectory": "dynamicPriorityPolling"
+  },
   "include": ["src", "test"],
   "exclude": ["node_modules", "dist"]
 }

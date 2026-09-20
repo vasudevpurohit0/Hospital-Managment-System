@@ -211,7 +211,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: 'SuperAdmin',
       };
     } else {
-      const roleName = data.user?.role || 'Doctor';
+      const roleName = data.user?.role;
+      if (!roleName) {
+        // The backend always sends `user.role` on a successful hospital
+        // login; if it's ever missing, silently treating this person as a
+        // Doctor would hand them that role's menu and workspace instead of
+        // surfacing the real problem.
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: 'Login succeeded but the server response was missing role information. Please contact support.',
+        }));
+        return;
+      }
       user = buildUserFromRole(roleName, identifier);
       if (data.user?.name) user.name = data.user.name;
       if (data.user?.id) user.id = data.user.id;

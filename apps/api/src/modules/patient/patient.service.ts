@@ -485,7 +485,7 @@ export class PatientService {
           visits: {
             orderBy: { createdAt: 'desc' },
             include: {
-              opdVisit: { include: { department: true } },
+              opdVisit: { include: { department: true, doctor: { include: { employee: true } } } },
               admissions: {
                 orderBy: { requestedAt: 'desc' },
                 include: { ward: true, bed: true, assignedDoctor: { include: { employee: true } } },
@@ -527,8 +527,14 @@ export class PatientService {
         } else {
           currentStatus = 'OPD';
         }
+        // Previously left at its '—' default for every OPD/Waiting patient --
+        // the assigned doctor was only ever populated for an active
+        // admission, even though the OPD visit itself already carries its
+        // own assigned doctor from registration.
+        assignedDoctor = openOpdVisit.opdVisit?.doctor?.employee?.name || assignedDoctor;
       } else if (lastVisit && lastVisit.status === VisitStatus.OPEN) {
         currentStatus = 'OPD';
+        assignedDoctor = lastVisit.opdVisit?.doctor?.employee?.name || assignedDoctor;
       }
 
       // Calculate Age
@@ -1063,7 +1069,16 @@ export class PatientService {
       .map((v) => {
         const dx = v.diagnoses[0];
         const rx = v.prescriptions[0];
-        const doctorName = dx ? userMap.get(dx.doctorId) : (rx ? userMap.get(rx.doctorId) : 'Attending Doctor');
+        // The OPD visit's own doctorId is the actual assigned doctor and is
+        // always known from the moment the visit is registered -- prefer it
+        // over inferring one from a diagnosis/prescription record, which
+        // doesn't exist yet for a visit still waiting on/mid consultation
+        // and previously left this column reading the literal placeholder
+        // "Attending Doctor" for every such visit instead of the real name.
+        const doctorName =
+          (v.opdVisit?.doctorId && userMap.get(v.opdVisit.doctorId)) ||
+          (dx && userMap.get(dx.doctorId)) ||
+          (rx && userMap.get(rx.doctorId));
         return {
           id: v.id,
           date: v.createdAt,

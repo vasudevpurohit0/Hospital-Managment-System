@@ -86,6 +86,9 @@ export class AuthService {
               permissions: true,
             },
           },
+          employee: {
+            select: { name: true, department: true },
+          },
         },
       });
     } catch (err: unknown) {
@@ -216,7 +219,16 @@ export class AuthService {
     await this.loginDirectory.recordSuccess(loginDto.identifier);
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }).catch(() => undefined);
 
-    const roleName = user.role?.name || 'Doctor';
+    // `roleId` is a required, foreign-key-backed field on every User row, so
+    // `user.role` being missing here means the referenced Role itself is
+    // gone -- a data-integrity failure, not a normal case to paper over.
+    // Silently treating that account as a Doctor would embed the wrong role
+    // in the JWT, the audit log, and the response the client displays.
+    if (!user.role) {
+      this.logger.error(`User "${user.id}" (${loginDto.identifier}) has no resolvable role (roleId=${user.roleId})`);
+      throw new InternalServerErrorException('Your account is not fully configured. Contact your administrator.');
+    }
+    const roleName = user.role.name;
     await this.prisma.auditLog
       .create({
         data: {
@@ -276,6 +288,16 @@ export class AuthService {
           id: user.id,
           identifier: user.identifier,
           role: roleName,
+          // Real person's name/department, when this account is linked to an
+          // Employee record (every Doctor/Nurse/Pharmacist/etc. account created
+          // through the admin UI is). Omitted rather than defaulted here so the
+          // frontend's own role-display-name fallback (e.g. "Doctor",
+          // "Pharmacist") still applies for accounts with no Employee link --
+          // previously this field was never sent at all, so every staff
+          // member's name in the UI silently fell back to their role name
+          // instead of showing who is actually logged in.
+          name: user.employee?.name,
+          department: user.employee?.department,
         },
       };
     } catch (err: unknown) {
@@ -629,7 +651,14 @@ export class AuthService {
         throw new UnauthorizedException('Refresh token has been revoked');
       }
 
-      const roleName = user.role?.name || 'Doctor';
+      // Same data-integrity guard as login() above -- the outer catch turns
+      // any thrown error here into a generic "invalid refresh token", so
+      // this never leaks the real reason, but it stops a broken role from
+      // silently becoming a valid "Doctor" access token.
+      if (!user.role) {
+        throw new Error(`User "${user.id}" has no resolvable role (roleId=${user.roleId})`);
+      }
+      const roleName = user.role.name;
 
       const accessPayload: JwtPayload = {
         sub: user.id,

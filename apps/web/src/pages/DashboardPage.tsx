@@ -144,7 +144,12 @@ export const DashboardPage: React.FC = () => {
       .catch(() => undefined); // non-fatal: the rest of the dashboard still renders from the aggregate metrics
   }, [token]);
 
-  const role = user?.role || 'Doctor';
+  // No fallback role here on purpose: defaulting an unauthenticated/loading
+  // user to 'Doctor' previously made every role-specific section below
+  // (banner text, StatCards, MyWorkPanel) silently render Doctor content for
+  // anyone whose `user` wasn't resolved yet, rather than just rendering
+  // nothing until it is.
+  const role = user?.role || '';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -160,7 +165,7 @@ export const DashboardPage: React.FC = () => {
             {formatDateFull(new Date())}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            Welcome back, {user?.name || 'Doctor'}
+            Welcome back, {user?.name || 'User'}
           </h1>
           <p className="text-sm text-primary-200/80 mt-1.5 leading-relaxed">
             {role === 'Doctor' &&

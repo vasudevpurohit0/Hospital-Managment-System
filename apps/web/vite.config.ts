@@ -9,6 +9,13 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // Docker Desktop on Windows doesn't propagate native filesystem change
+    // events from the host into the container across a bind mount, so
+    // Vite's default watcher never fires and HMR silently stops working for
+    // edits made on the host. Polling works everywhere a bind mount is used.
+    watch: {
+      usePolling: true,
+    },
     // Proxy API requests to the NestJS backend during development
     proxy: {
       '/api': {
