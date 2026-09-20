@@ -10,6 +10,34 @@ import { diffChangedFields, buildDescription } from '../audit/describe.util';
 import { redactSensitiveFields } from '../audit/redact.util';
 import { toAuditActorUserId } from '../audit/audit-actor.util';
 
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Several endpoints return wrapped shapes with no top-level `id` (e.g. POST
+ * /opd-visits returns `{ status, opdVisit, tokenNumber }`), which used to
+ * audit every one of those calls against a meaningless zero UUID. Unwrap the
+ * common single-nesting cases and fall back to identifying request-body keys
+ * before giving up on the zero UUID.
+ */
+function resolveEntityId(responseBody: unknown, request: Record<string, any>): string {
+  const bodyObj = responseBody as Record<string, unknown> | null;
+  if (bodyObj && typeof bodyObj === 'object') {
+    if (typeof bodyObj.id === 'string' && bodyObj.id) return bodyObj.id;
+    for (const key of ['opdVisit', 'visit', 'employee', 'user', 'patient', 'data']) {
+      const nested = bodyObj[key] as Record<string, unknown> | null | undefined;
+      if (nested && typeof nested.id === 'string' && nested.id) return nested.id;
+    }
+  }
+  const paramsId = request.params?.id as string | undefined;
+  if (paramsId) return paramsId;
+  const reqBody = request.body as Record<string, unknown> | undefined;
+  for (const key of ['id', 'visitId', 'employeeId', 'userId', 'doctorId', 'patientId']) {
+    const v = reqBody?.[key];
+    if (typeof v === 'string' && v) return v;
+  }
+  return ZERO_UUID;
+}
+
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditInterceptor.name);
@@ -61,12 +89,7 @@ export class AuditInterceptor implements NestInterceptor {
           }
 
           try {
-            const bodyObj = responseBody as Record<string, unknown> | null;
-            const entityId =
-              (bodyObj?.id as string) ||
-              request.params?.id ||
-              request.body?.id ||
-              '00000000-0000-0000-0000-000000000000';
+            const entityId = resolveEntityId(responseBody, request);
 
             const changedFields = diffChangedFields(beforeSnapshot, responseBody);
             const status = 'SUCCESS' as const;
@@ -115,7 +138,7 @@ export class AuditInterceptor implements NestInterceptor {
           if (!hasTenantContext()) return;
 
           try {
-            const entityId = request.params?.id || request.body?.id || '00000000-0000-0000-0000-000000000000';
+            const entityId = resolveEntityId(null, request);
             const errorMessage = err instanceof Error ? err.message : 'Request failed';
             const status = 'FAILURE' as const;
             const severity = classifySeverity({ entityType, action, status });

@@ -128,7 +128,7 @@ export class AuthService {
     // uniformly to every temp password, not only ones sent by email.
     if (user.mustChangePassword && user.tempPasswordExpiresAt && user.tempPasswordExpiresAt < new Date()) {
       throw new UnauthorizedException(
-        'This temporary password has expired. Ask your administrator to reset your password or resend your activation email.',
+        'This temporary password has expired. Ask your administrator to reset your password.',
       );
     }
 

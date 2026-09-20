@@ -64,7 +64,7 @@ export const AccountCreatedModal: React.FC<AccountCreatedModalProps> = ({
         </div>
 
         <p className="text-xs text-[var(--color-text-secondary)]">
-          An activation email has also been sent to <strong>{email}</strong> with a secure link to set their own password.
+          The account is active now — <strong>{email}</strong> can log in immediately with this password and will be asked to set their own on first login.
         </p>
 
         <div className="grid grid-cols-2 gap-3 text-sm">

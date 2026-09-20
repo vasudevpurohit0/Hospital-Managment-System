@@ -67,6 +67,10 @@ describe('StaffService', () => {
 
   const mockSequences = { nextStaffId: jest.fn() };
 
+  const mockDoctorService = {
+    createDoctor: jest.fn(),
+  };
+
   const adminActor: Actor = { id: 'admin-1', roleName: 'Administrator' };
   const tenantCtx = { hospitalId: 'hospital-1', schemaName: 'hospital_esic_model', prismaClient: mockPrisma as never };
 
@@ -82,6 +86,7 @@ describe('StaffService', () => {
       mockSequences as never,
       mockAuthService as never,
       mockEmailService as never,
+      mockDoctorService as never,
     );
   });
 
@@ -323,12 +328,12 @@ describe('StaffService', () => {
       );
     });
 
-    it('always sends the activation email, and only sends the temp-password email when the hospital setting is enabled', async () => {
+    it('never sends an activation email, and only sends the temp-password email when the hospital setting is enabled', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(DEFAULT_STAFF_LIST_SELECT_RESULT);
       mockPrisma.hospitalSettings.findUnique.mockResolvedValue({ sendTemporaryPasswordByEmail: false });
 
       await runWithTenant(tenantCtx, () => service.resetPassword('staff-user-1', adminActor));
-      expect(mockAuthService.sendActivationEmail).toHaveBeenCalledTimes(1);
+      expect(mockAuthService.sendActivationEmail).not.toHaveBeenCalled();
       expect(mockEmailService.sendMail).not.toHaveBeenCalled();
 
       mockPrisma.hospitalSettings.findUnique.mockResolvedValue({ sendTemporaryPasswordByEmail: true });

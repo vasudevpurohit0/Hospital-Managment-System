@@ -272,12 +272,12 @@ describe('DoctorService', () => {
       mockPrisma.user.findUniqueOrThrow.mockResolvedValue(DEFAULT_DOCTOR_LIST_SELECT_RESULT);
     });
 
-    it('resetPassword bumps tokenVersion and sends the activation email', async () => {
+    it('resetPassword bumps tokenVersion and sends no activation email', async () => {
       await runWithTenant(tenantCtx, () => service.resetPassword('doctor-user-1', adminActor));
       expect(mockTx.user.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ tokenVersion: { increment: 1 } }) }),
       );
-      expect(mockAuthService.sendActivationEmail).toHaveBeenCalledTimes(1);
+      expect(mockAuthService.sendActivationEmail).not.toHaveBeenCalled();
     });
 
     it('setLocked(true) bumps tokenVersion; setLocked(false) does not', async () => {

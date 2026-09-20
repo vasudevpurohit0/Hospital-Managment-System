@@ -314,7 +314,11 @@ export class IpdFinanceService {
         category: c.categoryName,
         quantity: c.quantity.toString(),
         rate: c.unitRate.toString(),
-        totalAmount: c.netAmount.toString(),
+        // Named after the ChargeItem column (and the web client's
+        // AdmissionFinancialSummary contract) -- a previous rename to
+        // `totalAmount` here silently broke the ward Financial Summary modal,
+        // which reads `li.netAmount` and rendered every row as Rs.NaN.
+        netAmount: c.netAmount.toString(),
         status: c.status,
       })),
     };

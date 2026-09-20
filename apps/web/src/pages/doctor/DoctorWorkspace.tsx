@@ -121,6 +121,11 @@ const TransferPanel: React.FC<{
 
 export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) => {
   const { user } = useAuth();
+  // Duty status is a self-service Doctor concept (DoctorDuty grants + a
+  // doctorProfile row). Administrators/SuperAdmins can open this workspace
+  // read-only, but must not query or mutate "their own" duty state: the
+  // fetch 403s (no grant) and would 404 anyway (no doctor profile).
+  const isDoctor = user?.role === 'Doctor';
   const [visitIdInput, setVisitIdInput] = useState('');
   const [visit, setVisit] = useState<VisitDetail | null>(null);
   const [visitLoading, setVisitLoading] = useState(false);
@@ -326,6 +331,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
   const [dutyError, setDutyError] = useState<string | null>(null);
 
   const loadDutyStatus = useCallback(async () => {
+    if (!isDoctor) {
+      setDutyLoading(false);
+      return;
+    }
     try {
       const res = await fetchMyDutyStatus();
       setDutyStatus(res.dutyStatus);
@@ -336,7 +345,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
     } finally {
       setDutyLoading(false);
     }
-  }, []);
+  }, [isDoctor]);
 
   useEffect(() => {
     loadDutyStatus();
@@ -906,7 +915,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
         {dutyError && <div className="alert alert-danger">{dutyError}</div>}
         {transferError && <div className="alert alert-danger">{transferError}</div>}
 
-        {/* Duty Status — Check In / Check Out / Break */}
+        {/* Duty Status — Check In / Check Out / Break (doctors only; other
+            roles viewing this workspace get the queue/lookup below without
+            self-service shift controls) */}
+        {isDoctor && (
         <div className="card p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {dutyStatus === 'AVAILABLE' && (
@@ -979,6 +991,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
             )}
           </div>
         </div>
+        )}
 
         {/* My OPD Queue — own queue only, JWT-scoped server-side */}
         <div className="card p-4 space-y-3">

@@ -44,6 +44,19 @@ export interface Actor {
 
 export { toAuditActorUserId } from '../../common/audit/audit-actor.util';
 
+/**
+ * Optional password overrides for account creation. Single-account creation
+ * omits this entirely (random temp password + forced change); bulk creation
+ * ("Create Roles Automatically") supplies the admin-chosen initial password
+ * and suppresses credential emails (placeholder identifiers have no real
+ * mailboxes, and the shared password must not be fanned out by email).
+ */
+export interface AccountPasswordOpts {
+  initialPassword?: string;
+  requirePasswordChange?: boolean;
+  suppressEmails?: boolean;
+}
+
 export const TEMP_PASSWORD_TTL_MS = 24 * 60 * 60_000;
 
 /** The minimal shape every account-lifecycle method here actually touches -- both DoctorService's and StaffService's real (much wider) user rows already satisfy this structurally. */
@@ -119,33 +132,30 @@ export abstract class AccountLifecycleService<TDto> {
   }
 
   /**
-   * Always sends the activation link. If the hospital has opted into
-   * `sendTemporaryPasswordByEmail`, also emails the temp password directly,
-   * separately. Called after the triggering transaction has already
-   * committed -- an email failure must never roll back or fail the account
-   * action that triggered it (AuthService/EmailService already swallow their
-   * own errors; this stays fire-and-forget on top of that).
+   * Deliberately sends NO activation link: login identifiers in this system
+   * are staff login ids, not real mailboxes, so an emailed activation link
+   * can never be opened and the account would sit unusable. Accounts are
+   * login-ready the moment they are created (active row + temp-password hash
+   * already persisted); the creating administrator hands the one-time
+   * temporary password over directly (returned once in the create/reset
+   * response) and the forced first-login password change completes
+   * onboarding. The explicit resendActivation() endpoint below is kept for
+   * deployments with real SMTP, but nothing invokes it automatically.
+   *
+   * If the hospital has opted into `sendTemporaryPasswordByEmail`, the temp
+   * password is also emailed directly, separately. Called after the
+   * triggering transaction has already committed -- an email failure must
+   * never roll back or fail the account action that triggered it
+   * (EmailService already swallows its own errors; this stays
+   * fire-and-forget on top of that).
    */
   protected async sendCredentialEmails(params: {
     identifier: string;
     staffName: string;
     staffId: string | null;
-    role: string;
-    hospitalId: string;
     actorUserId?: string;
     temporaryPassword?: string;
   }): Promise<void> {
-    await this.authService
-      .sendActivationEmail({
-        identifier: params.identifier,
-        staffName: params.staffName,
-        staffId: params.staffId,
-        role: params.role,
-        hospitalId: params.hospitalId,
-        actorUserId: params.actorUserId,
-      })
-      .catch(() => undefined);
-
     if (!params.temporaryPassword) return;
 
     const settings = await this.prisma.hospitalSettings
@@ -217,13 +227,10 @@ export abstract class AccountLifecycleService<TDto> {
       });
     });
 
-    const { hospitalId } = getTenantContext();
     await this.sendCredentialEmails({
       identifier: user.identifier,
       staffName: user.employee?.name ?? user.identifier,
       staffId: user.employee?.employeeId ?? null,
-      role: this.roleNameFor(user),
-      hospitalId,
       // Same FK reasoning as writeAuditLog: never stamp a platform admin's id
       // onto a tenant email_logs row.
       actorUserId: actor && actor.type !== 'platform' ? actor.id : undefined,

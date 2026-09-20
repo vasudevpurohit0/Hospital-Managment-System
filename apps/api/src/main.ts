@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { ExpressAdapter } from '@nestjs/platform-express';
+import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
 import express from 'express';
 import { resolveCorsOrigins } from './common/config/cors.util';
 
@@ -13,6 +13,12 @@ let nestApp: any;
 async function bootstrapServer() {
   if (!isAppInitialized) {
     nestApp = await NestFactory.create(AppModule, new ExpressAdapter(server));
+    // Patient registration posts photos as base64 data URLs (100KB+); the
+    // Express default JSON limit (100kb) 500s those requests before any
+    // guard/validation runs. 10MB comfortably fits a downscaled photo while
+    // still rejecting absurd payloads.
+    nestApp.useBodyParser('json', { limit: '10mb' });
+    nestApp.useBodyParser('urlencoded', { limit: '10mb', extended: true });
     nestApp.setGlobalPrefix('api');
     nestApp.useGlobalFilters(new AllExceptionsFilter());
     nestApp.useGlobalPipes(
@@ -48,7 +54,12 @@ export default async (req: any, res: any) => {
 async function bootstrapLocal() {
   // If not running inside Vercel environment, start listening on local port
   if (!process.env.VERCEL) {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    // Same raised body limit as the serverless bootstrap above -- patient
+    // registration posts photos as base64 data URLs (100KB+), which the
+    // Express default JSON limit (100kb) rejects with a 500.
+    app.useBodyParser('json', { limit: '10mb' });
+    app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
     app.setGlobalPrefix('api');
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalPipes(

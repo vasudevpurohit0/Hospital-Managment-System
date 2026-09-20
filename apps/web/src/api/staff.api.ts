@@ -135,3 +135,39 @@ export async function resendStaffActivation(id: string): Promise<{ status: strin
   const res = await apiFetch(`/api/staff/${id}/resend-activation`, { method: 'POST' });
   return unwrap(res, 'Failed to resend activation email');
 }
+
+/** One row of the "Create Roles Automatically" preview: the role, the login id it would get, and whether it already exists. */
+export interface DefaultRoleStatus {
+  role: string;
+  displayName: string;
+  identifier: string;
+  exists: boolean;
+  active: boolean | null;
+}
+
+export async function fetchDefaultRolesStatus(): Promise<DefaultRoleStatus[]> {
+  const res = await apiFetch('/api/staff/default-roles');
+  return unwrap(res, 'Failed to fetch default roles');
+}
+
+export interface CreateDefaultRolesPayload {
+  initialPassword: string;
+  confirmPassword: string;
+  roles?: string[];
+  requirePasswordChange?: boolean;
+}
+
+export interface DefaultRolesResult {
+  created: { role: string; identifier: string }[];
+  skipped: { role: string; identifier: string; reason: string }[];
+  failed: { role: string; identifier: string; reason: string }[];
+  createdCount: number;
+  skippedCount: number;
+  failedCount: number;
+  requirePasswordChange: boolean;
+}
+
+export async function createDefaultRoles(data: CreateDefaultRolesPayload): Promise<DefaultRolesResult> {
+  const res = await apiFetch('/api/staff/default-roles', { method: 'POST', body: JSON.stringify(data) });
+  return unwrap(res, 'Failed to create default role accounts');
+}

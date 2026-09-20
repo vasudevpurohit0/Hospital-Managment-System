@@ -56,6 +56,30 @@ import { openTherapyCourse, scheduleTherapySession } from '../../api/therapy.api
 import { PatientWorkspace } from '../PatientWorkspace';
 import { formatDateDDMonYYYY, formatDateIN, formatDateTimeMedium } from '../../utils/date';
 
+/**
+ * Registration photos travel as base64 data URLs inside the JSON payload,
+ * so a raw multi-megapixel upload/camera frame (1-5MB) used to blow past
+ * the API's JSON body limit and fail registration with a 500. Downscaling
+ * to a bounded JPEG keeps every photo to ~100-200KB -- plenty for an ID
+ * thumbnail -- regardless of the source resolution.
+ */
+const PHOTO_MAX_DIM = 800;
+
+function downscaleToDataUrl(
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+): string {
+  const scale = Math.min(1, PHOTO_MAX_DIM / Math.max(sourceWidth, sourceHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+  canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context unavailable');
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
+
 /* ═══════════════════════════════════════════════════════════
    Reception Workspace — Employee-ID verification/registration,
    universal patient search + repeat-visit token issue, and a
@@ -274,11 +298,28 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
       setRegistrationError('Photo size must be under 5MB');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (reader.result) setPhotoUrl(reader.result as string);
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        setPhotoUrl(downscaleToDataUrl(img, img.naturalWidth, img.naturalHeight));
+      } catch {
+        // Fallback: raw data URL (backend limit raised to 10MB, so this
+        // still submits -- just heavier than the downscaled version).
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (reader.result) setPhotoUrl(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      setRegistrationError('Could not read that image file');
+    };
+    img.src = objectUrl;
   };
 
   const handleVerify = async (e: React.FormEvent) => {
@@ -2186,13 +2227,7 @@ const CameraCaptureModal: React.FC<{ onCapture: (dataUrl: string) => void; onClo
   const handleCapture = () => {
     const video = videoRef.current;
     if (!video || video.videoWidth === 0) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    onCapture(canvas.toDataURL('image/jpeg', 0.9));
+    onCapture(downscaleToDataUrl(video, video.videoWidth, video.videoHeight));
   };
 
   return (

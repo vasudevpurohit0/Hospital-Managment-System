@@ -495,7 +495,7 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
               <span className="text-[var(--color-text-secondary)]">
                 Send temporary password by email
                 <span className="block text-[11px] text-[var(--color-text-tertiary)] mt-0.5">
-                  Off by default. An account-activation email is always sent regardless of this setting; enabling this
+                  Off by default. New accounts are usable immediately with the one-time password shown at creation; enabling this
                   also emails the one-time temporary password directly, with a 24-hour expiry warning.
                 </span>
               </span>

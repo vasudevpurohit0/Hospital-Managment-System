@@ -19,6 +19,7 @@ import {
 import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AccountCreatedModal } from '../components/AccountCreatedModal';
+import { CreateDefaultRolesModal } from '../components/CreateDefaultRolesModal';
 import {
   fetchAllStaffForAdmin,
   createStaff,
@@ -108,6 +109,8 @@ export const StaffManagementPage: React.FC = () => {
 
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
+
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
   useEffect(() => {
     fetchDepartments().then(setDepartments).catch(() => undefined);
@@ -324,6 +327,13 @@ export const StaffManagementPage: React.FC = () => {
           </select>
           <button onClick={openCreate} className="btn btn-primary btn-sm whitespace-nowrap gap-2">
             <Plus className="w-4 h-4" /> Add Staff
+          </button>
+          <button
+            onClick={() => setShowBulkModal(true)}
+            className="btn btn-secondary btn-sm whitespace-nowrap gap-2"
+            title="Create one login-ready account per default role with a single initial password"
+          >
+            <Users className="w-4 h-4" /> Create Roles Automatically
           </button>
         </div>
       </div>
@@ -591,6 +601,15 @@ export const StaffManagementPage: React.FC = () => {
           email={accountCreated.email}
           password={accountCreated.password}
           onClose={() => setAccountCreated(null)}
+        />
+      )}
+
+      {showBulkModal && (
+        <CreateDefaultRolesModal
+          onClose={() => setShowBulkModal(false)}
+          onDone={() => {
+            loadStaff();
+          }}
         />
       )}
 

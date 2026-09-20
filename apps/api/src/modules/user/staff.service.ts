@@ -10,10 +10,39 @@ import { EmailService } from '../../common/email/email.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { STAFF_ROLE_NAMES, STAFF_ROLE_PREFIXES, StaffRoleName } from './dto/staff-role.const';
-import { AccountLifecycleService, Actor, TEMP_PASSWORD_TTL_MS } from './account-lifecycle.service';
+import { CreateDefaultRolesDto, DEFAULT_BULK_ROLES } from './dto/create-default-roles.dto';
+import { AccountLifecycleService, Actor, AccountPasswordOpts, TEMP_PASSWORD_TTL_MS } from './account-lifecycle.service';
 import { toAuditActorUserId } from '../../common/audit/audit-actor.util';
+import { DoctorService } from './doctor.service';
 
 export type { Actor };
+
+/**
+ * Bulk-provisioning ("Create Roles Automatically") identifier + display
+ * helpers. Identifiers mirror the seed convention
+ * (`{local}@{tenant-tag}.esic.gov.in`, tag derived from the tenant schema
+ * name) so they are valid emails, unique platform-wide, and clearly
+ * recognizable as system-generated login ids -- not real mailboxes.
+ */
+export function bulkTenantTag(schemaName: string): string {
+  return schemaName.replace(/^hospital_/, '').replace(/_/g, '-');
+}
+
+export function bulkIdentifierForRole(role: string, schemaName: string): string {
+  const local = role.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `${local}@${bulkTenantTag(schemaName)}.esic.gov.in`;
+}
+
+const BULK_ROLE_DISPLAY_NAMES: Record<string, string> = {
+  THERAPY_STAFF: 'Therapy Staff',
+  OPDDisplayOperator: 'OPD Display Operator',
+};
+
+export function bulkDisplayNameForRole(role: string): string {
+  const mapped = BULK_ROLE_DISPLAY_NAMES[role];
+  if (mapped) return mapped;
+  return role.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+}
 
 type StaffUser = {
   id: string;
@@ -78,6 +107,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
     private readonly sequences: DocumentSequenceService,
     authService: AuthService,
     emailService: EmailService,
+    private readonly doctorService: DoctorService,
   ) {
     super(prisma, loginDirectory, authService, emailService);
   }
@@ -220,7 +250,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
     return user;
   }
 
-  async createStaff(dto: CreateStaffDto, actor?: Actor) {
+  async createStaff(dto: CreateStaffDto, actor?: Actor, opts?: AccountPasswordOpts) {
     const email = dto.email.trim().toLowerCase();
     const { hospitalId } = getTenantContext();
 
@@ -230,35 +260,42 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
     let created: Awaited<ReturnType<typeof this.createStaffInTenant>>;
     try {
-      created = await this.createStaffInTenant(dto, email, actor);
+      created = await this.createStaffInTenant(dto, email, actor, opts);
     } catch (err) {
       await this.loginDirectory.remove(email).catch(() => undefined);
       throw err;
     }
 
     // Deliberately after the transaction commits, not inside it -- an email
-    // failure must never roll back a successful account creation.
-    await this.sendCredentialEmails({
-      identifier: created.email,
-      staffName: created.name,
-      staffId: created.staffId,
-      role: created.role,
-      hospitalId,
-      actorUserId: this.actorTenantUserId(actor) ?? undefined,
-      temporaryPassword: created.temporaryPassword,
-    });
+    // failure must never roll back a successful account creation. Bulk
+    // creation ("Create Roles Automatically") suppresses these: the
+    // identifiers are placeholders without real mailboxes, and the shared
+    // initial password is handed over in person by the creating admin.
+    if (!opts?.suppressEmails) {
+      await this.sendCredentialEmails({
+        identifier: created.email,
+        staffName: created.name,
+        staffId: created.staffId,
+        actorUserId: this.actorTenantUserId(actor) ?? undefined,
+        temporaryPassword: created.temporaryPassword,
+      });
+    }
 
     return created;
   }
 
-  private async createStaffInTenant(dto: CreateStaffDto, email: string, actor?: Actor) {
+  private async createStaffInTenant(dto: CreateStaffDto, email: string, actor?: Actor, opts?: AccountPasswordOpts) {
     return this.prisma.$transaction(async (tx) => {
       const role = await tx.role.findUnique({ where: { name: dto.role } });
       if (!role) {
         throw new BadRequestException(`Role "${dto.role}" is not seeded for this hospital.`);
       }
 
-      const temporaryPassword = generateSecurePassword();
+      // Bulk creation supplies the admin-chosen initial password; single
+      // creation mints a fresh random one. Either way only the bcrypt hash
+      // is persisted, and `temporaryPassword` is returned once so the
+      // creating admin can hand it over in person.
+      const temporaryPassword = opts?.initialPassword ?? generateSecurePassword();
       const passwordHash = await bcrypt.hash(temporaryPassword, 10);
 
       const staffId = await this.sequences.nextStaffId(STAFF_ROLE_PREFIXES[dto.role], tx);
@@ -297,7 +334,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
           roleId: role.id,
           employeeId: employee.id,
           active: true,
-          mustChangePassword: true,
+          mustChangePassword: opts?.requirePasswordChange ?? true,
           tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_TTL_MS),
         },
       });
@@ -326,7 +363,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
 
       await tx.auditLog.create({
         data: {
-          actorUserId: actor?.id ?? null,
+          actorUserId: this.actorTenantUserId(actor),
           actorRole: actor?.roleName ?? 'System',
           action: 'staff.created',
           entityType: 'User',
@@ -347,6 +384,154 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
         temporaryPassword,
       };
     });
+  }
+
+  /**
+   * "Create Roles Automatically" preview: every bulk-provisionable role with
+   * the identifier it WOULD get and whether an account already exists for it.
+   * Read-only -- creates nothing.
+   */
+  async getDefaultRolesStatus() {
+    const { schemaName } = getTenantContext();
+    const statuses: {
+      role: string;
+      displayName: string;
+      identifier: string;
+      exists: boolean;
+      active: boolean | null;
+    }[] = [];
+    for (const role of DEFAULT_BULK_ROLES) {
+      const identifier = bulkIdentifierForRole(role, schemaName);
+      const existing = await this.prisma.user.findUnique({
+        where: { identifier },
+        select: { id: true, active: true },
+      });
+      statuses.push({
+        role,
+        displayName: bulkDisplayNameForRole(role),
+        identifier,
+        exists: !!existing,
+        active: existing?.active ?? null,
+      });
+    }
+    return statuses;
+  }
+
+  /**
+   * "Create Roles Automatically": provisions one login-ready account per
+   * requested default role, all sharing the admin-chosen initial password.
+   *
+   * Guarantees (per the acceptance criteria):
+   * - No activation: accounts are active immediately (same direct-creation
+   *   semantics as provisionAdministrator -- active row + bcrypt hash, login
+   *   works at once, forced first-login change when requirePasswordChange).
+   * - Idempotent: roles whose identifier already exists are SKIPPED, never
+   *   touched (no password reset, no data/status/permission change).
+   * - Hospital-scoped: the hospital comes from the caller's trusted tenant
+   *   context; the DTO carries no hospitalId, so cross-hospital creation is
+   *   structurally impossible.
+   * - Secrets: the initial password is hashed independently per account
+   *   (bcrypt salts differ), and is never returned, logged, snapshotted, or
+   *   emailed by this operation.
+   *
+   * Not one atomic transaction by design: tenant rows (this database) and
+   * login-directory rows (the platform database) cannot share a transaction,
+   * so each account reuses the single-create flow with its built-in
+   * directory compensation, and per-role results are reported. A failure
+   * affects only that role -- previously created roles in the same run are
+   * valid accounts and are reported as created, never rolled back.
+   */
+  async createDefaultRoleAccounts(dto: CreateDefaultRolesDto, actor?: Actor) {
+    if (!dto.initialPassword.trim()) {
+      throw new BadRequestException('Initial password must not be blank.');
+    }
+    if (dto.initialPassword !== dto.confirmPassword) {
+      throw new BadRequestException('Initial password and confirmation do not match.');
+    }
+    const requested = dto.roles?.length ? dto.roles : [...DEFAULT_BULK_ROLES];
+    const unknown = requested.filter((r) => !(DEFAULT_BULK_ROLES as readonly string[]).includes(r));
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `Unknown roles: ${unknown.join(', ')}. Allowed: ${DEFAULT_BULK_ROLES.join(', ')}`,
+      );
+    }
+    const requirePasswordChange = dto.requirePasswordChange ?? true;
+    const { schemaName } = getTenantContext();
+
+    const created: { role: string; identifier: string }[] = [];
+    const skipped: { role: string; identifier: string; reason: string }[] = [];
+    const failed: { role: string; identifier: string; reason: string }[] = [];
+    const seen = new Set<string>();
+    for (const role of requested) {
+      const identifier = bulkIdentifierForRole(role, schemaName);
+      if (seen.has(role)) {
+        skipped.push({ role, identifier, reason: 'DUPLICATE_REQUEST' });
+        continue;
+      }
+      seen.add(role);
+      const existing = await this.prisma.user.findUnique({ where: { identifier }, select: { id: true } });
+      if (existing) {
+        skipped.push({ role, identifier, reason: 'EXISTS' });
+        continue;
+      }
+      try {
+        const opts = { initialPassword: dto.initialPassword, requirePasswordChange, suppressEmails: true };
+        if (role === 'Doctor') {
+          // Doctor accounts need a DoctorProfile row the generic staff path
+          // never creates; department is assigned later from Doctor Schedule.
+          await this.doctorService.createDoctor(
+            {
+              name: bulkDisplayNameForRole(role),
+              specialty: 'General Physician',
+              experience: 'N/A',
+              email: identifier,
+            },
+            actor,
+            opts,
+          );
+        } else {
+          await this.createStaff(
+            {
+              name: bulkDisplayNameForRole(role),
+              role: role as StaffRoleName,
+              email: identifier,
+              department: 'General',
+            },
+            actor,
+            opts,
+          );
+        }
+        created.push({ role, identifier });
+      } catch (err) {
+        failed.push({ role, identifier, reason: err instanceof Error ? err.message : 'Creation failed' });
+      }
+    }
+
+    // Summary audit: roles and counts only -- never the password or its hash
+    // (per-account staff.created/doctor.created audits are already written by
+    // the single-create flows above, also password-free).
+    await this.writeAuditLog(
+      this.prisma,
+      'staff.default_roles_created',
+      actor,
+      actor && actor.type !== 'platform' ? actor.id : 'default-roles',
+      {
+        rolesCreated: created.map((c) => c.role),
+        rolesSkipped: skipped.map((s) => `${s.role} (${s.reason})`),
+        rolesFailed: failed.map((f) => `${f.role} (${f.reason})`),
+        requirePasswordChange,
+      },
+    );
+
+    return {
+      created,
+      skipped,
+      failed,
+      createdCount: created.length,
+      skippedCount: skipped.length,
+      failedCount: failed.length,
+      requirePasswordChange,
+    };
   }
 
   async updateStaff(id: string, dto: UpdateStaffDto, actor?: Actor) {
@@ -377,7 +562,7 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
           }
           await tx.auditLog.create({
             data: {
-              actorUserId: actor?.id ?? null,
+              actorUserId: this.actorTenantUserId(actor),
               actorRole: actor?.roleName ?? 'System',
               action: 'staff.email_changed',
               entityType: 'User',

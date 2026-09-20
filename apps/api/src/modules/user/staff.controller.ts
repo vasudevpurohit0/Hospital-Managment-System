@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from 
 import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
+import { CreateDefaultRolesDto } from './dto/create-default-roles.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
@@ -13,6 +14,29 @@ import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-
 @Controller('staff')
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
+
+  /**
+   * "Create Roles Automatically" -- declared before the `:id` routes below so
+   * the literal `default-roles` path can never be captured as an id param.
+   * Gated on Staff:create (Administrator-only in practice): Doctors, Nurses
+   * and every other operational role get a 403 here, and the platform Super
+   * Admin passes via the standard type-based bypass.
+   */
+  @Get('default-roles')
+  @RequirePermission('Staff', 'create')
+  async getDefaultRoles() {
+    return this.staffService.getDefaultRolesStatus();
+  }
+
+  @Post('default-roles')
+  @RequirePermission('Staff', 'create')
+  async createDefaultRoles(@Body() body: CreateDefaultRolesDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.staffService.createDefaultRoleAccounts(body, {
+      id: user.id,
+      roleName: user.roleName,
+      type: user.type,
+    });
+  }
 
   @Get()
   @RequirePermission('Staff', 'read')
