@@ -40,6 +40,7 @@ import { RbacGuard } from './common/guards/rbac.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SecurityMiddleware } from './common/middleware/security.middleware';
 import { TenantResolutionMiddleware } from './common/middleware/tenant-resolution.middleware';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
 @Module({
   imports: [
@@ -116,9 +117,11 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // TenantResolutionMiddleware must run before the guard chain (JwtAuthGuard
-    // reloads the user from the tenant DB during Passport validation), so it
-    // is applied first here.
-    consumer.apply(TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
+    // RequestIdMiddleware runs first so every other middleware, guard,
+    // interceptor, and the exception filter can all rely on req.id already
+    // being set. TenantResolutionMiddleware must run before the guard chain
+    // (JwtAuthGuard reloads the user from the tenant DB during Passport
+    // validation), so it stays right after.
+    consumer.apply(RequestIdMiddleware, TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
   }
 }
