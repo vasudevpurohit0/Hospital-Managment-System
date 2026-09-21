@@ -1,5 +1,5 @@
 {
-  "buildCommand": "turbo run build --filter=@esic-hms/web",
+  "buildCommand": "pnpm run build",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
