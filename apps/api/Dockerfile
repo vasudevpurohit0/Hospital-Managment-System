@@ -66,6 +66,12 @@ COPY apps/api/prisma ./apps/api/prisma
 RUN pnpm install --frozen-lockfile --filter @esic-hms/api
 
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+# prisma/seed.ts imports raw TypeScript from ../src/... and runs via
+# `ts-node -r tsconfig-paths/register` (see package.json's `prisma.seed`
+# script) -- without src/ and the tsconfig files here, that import fails
+# at runtime since only the compiled dist/ output was copied above.
+COPY apps/api/src ./apps/api/src
+COPY apps/api/tsconfig.json apps/api/tsconfig.build.json ./apps/api/
 RUN pnpm --filter @esic-hms/api prisma:generate
 RUN pnpm --filter @esic-hms/api prisma:platform:generate
 
