@@ -1,4 +1,5 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { UserAwareThrottlerGuard } from './common/guards/user-aware-throttler.guard';
@@ -121,9 +122,14 @@ export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     // RequestIdMiddleware runs first so every other middleware, guard,
     // interceptor, and the exception filter can all rely on req.id already
-    // being set. TenantResolutionMiddleware must run before the guard chain
-    // (JwtAuthGuard reloads the user from the tenant DB during Passport
-    // validation), so it stays right after.
-    consumer.apply(RequestIdMiddleware, TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
+    // being set. cookie-parser must run before the guard chain too --
+    // JwtStrategy/PlatformJwtStrategy's cookie fallback extractor reads
+    // req.cookies, which only exists once this has run. Registered here
+    // (not just in main.ts) so it also applies to every e2e spec that
+    // bootstraps AppModule directly via Test.createTestingModule(), not
+    // only the real server entrypoints. TenantResolutionMiddleware must run
+    // before the guard chain (JwtAuthGuard reloads the user from the tenant
+    // DB during Passport validation), so it stays right after.
+    consumer.apply(RequestIdMiddleware, cookieParser(), TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
   }
 }

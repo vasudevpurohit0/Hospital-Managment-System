@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, BadRequestException } from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res, BadRequestException } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { DoctorService } from './doctor.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { setAccessTokenCookie } from '../../common/auth/auth-cookies.util';
 
 @Controller('doctors')
 export class DoctorController {
@@ -98,12 +99,19 @@ export class DoctorController {
   /** Starts a secure impersonation session as this doctor -- see AccountLifecycleService.impersonate() for every server-side eligibility rule enforced. */
   @Post(':id/impersonate')
   @RequirePermission('Doctor', 'impersonate')
-  async impersonate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
-    return this.doctorService.impersonate(
+  async impersonate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.doctorService.impersonate(
       id,
       { id: user.id, roleName: user.roleName, type: user.type, identifier: user.identifier, isImpersonating: !!user.impersonation },
       { ip: req.ip, userAgent: req.headers['user-agent'] },
     );
+    setAccessTokenCookie(res, result.accessToken);
+    return result;
   }
 
   /**

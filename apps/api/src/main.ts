@@ -30,7 +30,11 @@ async function bootstrapServer() {
         transform: true,
       }),
     );
-    nestApp.enableCors({ origin: resolveCorsOrigins(), credentials: false });
+    // credentials: true so a browser opting into the new httpOnly-cookie
+    // auth flow (see auth-cookies.util.ts) can actually send it cross-origin
+    // -- safe alongside an explicit origin allowlist (never wildcard, which
+    // the browser spec forbids combining with credentials anyway).
+    nestApp.enableCors({ origin: resolveCorsOrigins(), credentials: true });
     // V-04: this app runs behind exactly one reverse-proxy hop on Vercel --
     // without this, Express (and therefore the rate-limiter's per-IP
     // tracking) would see every visitor as the proxy's own address, sharing
@@ -72,7 +76,7 @@ async function bootstrapLocal() {
         transform: true,
       }),
     );
-    app.enableCors({ origin: resolveCorsOrigins(), credentials: false });
+    app.enableCors({ origin: resolveCorsOrigins(), credentials: true });
     app.getHttpAdapter().getInstance().set('trust proxy', 1);
     app.enableShutdownHooks();
 

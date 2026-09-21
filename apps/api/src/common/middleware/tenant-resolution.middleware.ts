@@ -6,6 +6,7 @@ import { PlatformPrismaService } from '../tenant/platform-prisma.service';
 import { tenantStorage } from '../tenant/tenant-context';
 import { JWT_ACCESS_SECRET, JWT_PLATFORM_SECRET } from '../config/jwt-secrets';
 import { ImpersonationClaims } from '../decorators/current-user.decorator';
+import { ACCESS_TOKEN_COOKIE, PLATFORM_TOKEN_COOKIE } from '../auth/auth-cookies.util';
 
 type DecodedToken =
   | { kind: 'hospital'; hospitalId: string; schemaName: string; impersonation?: ImpersonationClaims }
@@ -33,8 +34,20 @@ export class TenantResolutionMiddleware implements NestMiddleware {
 
   async use(req: Request, _res: Response, next: NextFunction) {
     try {
+      // Header first (existing behavior, unchanged), falling back to
+      // whichever httpOnly cookie AuthController now also sets -- a
+      // cookie-only browser session (see auth-cookies.util.ts) was reaching
+      // JwtStrategy.validate() with no tenant context ever set by this
+      // middleware, since it only ever looked at the header, throwing
+      // "No tenant context set" as a 500 on every cookie-only request
+      // (found live-testing the cookie flow end-to-end -- neither the unit
+      // suite, which mocks Prisma and never exercises this middleware, nor
+      // the e2e suite, which only ever uses the header, could catch it).
       const authHeader = req.headers['authorization'];
-      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const token =
+        (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined) ??
+        req.cookies?.[ACCESS_TOKEN_COOKIE] ??
+        req.cookies?.[PLATFORM_TOKEN_COOKIE];
       if (!token) return next();
 
       const decoded = this.decodeToken(token);

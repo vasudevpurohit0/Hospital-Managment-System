@@ -1,11 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
-import { Request } from 'express';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
 import { CreateDefaultRolesDto } from './dto/create-default-roles.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { setAccessTokenCookie } from '../../common/auth/auth-cookies.util';
 
 /**
  * Generic staff account management for every seeded role except Doctor
@@ -121,11 +122,23 @@ export class StaffController {
   /** Starts a secure impersonation session as this staff member -- see AccountLifecycleService.impersonate() for every server-side eligibility rule enforced. */
   @Post(':id/impersonate')
   @RequirePermission('Staff', 'impersonate')
-  async impersonate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
-    return this.staffService.impersonate(
+  async impersonate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.staffService.impersonate(
       id,
       { id: user.id, roleName: user.roleName, type: user.type, identifier: user.identifier, isImpersonating: !!user.impersonation },
       { ip: req.ip, userAgent: req.headers['user-agent'] },
     );
+    // Keeps a cookie-based session's ambient credential in sync with the
+    // impersonated identity, exactly like the JSON body's accessToken
+    // already is -- otherwise a stale cookie from before impersonation
+    // would keep authenticating as the original admin on any request that
+    // happened to rely on the cookie instead of the (unaffected) header.
+    setAccessTokenCookie(res, result.accessToken);
+    return result;
   }
 }
