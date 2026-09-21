@@ -14,7 +14,7 @@ import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-
  * standalone-session lifecycle (schedule -> perform/cancel/no-show -> list)
  * plus RBAC. `openCourse` and a standalone (non-course) `performSession` both
  * also call into `ChargeService.postServiceCharge()` -- already covered by
- * `charge.service.spec.ts` -- so this spec exercises `performSession` on a
+ * `charge.service.integration.spec.ts` -- so this spec exercises `performSession` on a
  * course-linked session (skips the charge, per the service's own "a course
  * already paid for it up front" rule) rather than re-mocking the entire
  * pricing/billing chain here too.

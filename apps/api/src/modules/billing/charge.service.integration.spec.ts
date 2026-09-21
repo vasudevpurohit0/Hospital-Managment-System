@@ -136,7 +136,7 @@ describeWithDb('ChargeService (integration)', () => {
     });
 
     // The database's own exactly-one-source CHECK is proven directly in
-    // pricing.service.spec-adjacent raw-SQL tests; this proves the SERVICE
+    // pricing.service.integration.spec-adjacent raw-SQL tests; this proves the SERVICE
     // never even attempts to construct an ambiguous row.
     it('never sets both a service source and a pharmacy source on one charge', async () => {
       const svc = await makePricedService(200);

@@ -25,7 +25,7 @@ describeWithDb('TherapyService (integration)', () => {
   async function makeVisit() {
     // CONTRACTUAL → PAID, so charge amounts below assert the actual rate
     // resolved rather than a COVERED zero — the benefit-outcome zeroing
-    // itself is already covered by charge.service.spec.ts.
+    // itself is already covered by charge.service.integration.spec.ts.
     const contractualType = await prisma.employmentType.findFirstOrThrow({ where: { code: 'CONTRACTUAL' } });
     const post = await prisma.post.findFirstOrThrow();
     const grade = await prisma.grade.findFirstOrThrow();
