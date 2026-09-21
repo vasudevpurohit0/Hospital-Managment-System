@@ -1,6 +1,6 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { StaffService, Actor } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { runWithTenant } from '../../common/tenant/tenant-context';
@@ -50,6 +50,11 @@ describe('StaffService', () => {
 
   const mockAuthService = {
     sendActivationEmail: jest.fn().mockResolvedValue(undefined),
+    issueImpersonationSession: jest.fn().mockResolvedValue({
+      accessToken: 'impersonation.jwt.token',
+      expiresIn: '60m',
+      sessionId: 'session-1',
+    }),
   };
 
   const mockEmailService = {
@@ -63,6 +68,7 @@ describe('StaffService', () => {
     lockManually: jest.fn().mockResolvedValue(undefined),
     unlock: jest.fn().mockResolvedValue(undefined),
     getStatuses: jest.fn().mockResolvedValue(new Map()),
+    checkLock: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockSequences = { nextStaffId: jest.fn() };
@@ -371,6 +377,121 @@ describe('StaffService', () => {
       expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ action: 'staff.activation_resent' }) }),
       );
+    });
+  });
+
+  describe('impersonate() -- secure user impersonation', () => {
+    const platformActor: Actor = { id: 'platform-1', roleName: 'SuperAdmin', type: 'platform', identifier: 'super@platform.esic.gov.in' };
+    const nurseTarget = {
+      id: 'target-nurse-1',
+      identifier: 'nurse@esic.gov.in',
+      roleId: 'role-nurse',
+      active: true,
+      mustChangePassword: false,
+      tokenVersion: 2,
+      role: { id: 'role-nurse', name: 'Nurse' },
+      employee: { name: 'Target Nurse' },
+    };
+    const adminTarget = {
+      ...nurseTarget,
+      id: 'target-admin-1',
+      identifier: 'other-admin@esic.gov.in',
+      roleId: 'role-admin',
+      role: { id: 'role-admin', name: 'Administrator' },
+      employee: { name: 'Other Administrator' },
+    };
+
+    it('rejects starting a new session while the caller is already impersonating (no nested impersonation)', async () => {
+      await expect(
+        runWithTenant(tenantCtx, () =>
+          service.impersonate('target-nurse-1', { ...adminActor, isImpersonating: true }),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('404s when the target does not exist', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('does-not-exist', adminActor)),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects self-impersonation for a hospital-local actor', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ ...nurseTarget, id: 'admin-1' });
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('admin-1', adminActor)),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects a hospital Administrator impersonating another Administrator', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(adminTarget);
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('target-admin-1', adminActor)),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAuthService.issueImpersonationSession).not.toHaveBeenCalled();
+    });
+
+    it('allows a Super Admin (platform actor) to impersonate a Hospital Administrator', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(adminTarget);
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('target-admin-1', platformActor)),
+      ).resolves.toBeDefined();
+      expect(mockAuthService.issueImpersonationSession).toHaveBeenCalledWith(
+        expect.objectContaining({ impersonator: expect.objectContaining({ type: 'platform', id: 'platform-1' }) }),
+      );
+    });
+
+    it('rejects impersonating a deactivated account', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ ...nurseTarget, active: false });
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', adminActor)),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects impersonating an account still pending first-login setup', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ ...nurseTarget, mustChangePassword: true });
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', adminActor)),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects impersonating a locked account', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(nurseTarget);
+      mockLoginDirectory.checkLock.mockRejectedValueOnce(new ForbiddenException('Account locked'));
+      await expect(
+        runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', adminActor)),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('mints a session carrying the TARGET user\'s own identity, not the impersonator\'s', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(nurseTarget);
+      await runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', adminActor));
+
+      expect(mockAuthService.issueImpersonationSession).toHaveBeenCalledWith({
+        target: {
+          id: 'target-nurse-1',
+          identifier: 'nurse@esic.gov.in',
+          roleId: 'role-nurse',
+          roleName: 'Nurse',
+          tokenVersion: 2,
+        },
+        hospitalId: 'hospital-1',
+        schemaName: 'hospital_esic_model',
+        impersonator: { id: 'admin-1', identifier: 'Administrator', roleName: 'Administrator', type: 'hospital' },
+        meta: {},
+      });
+    });
+
+    it('returns the minted session and a PII-minimal target descriptor', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(nurseTarget);
+      const result = await runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', adminActor));
+
+      expect(result).toEqual({
+        accessToken: 'impersonation.jwt.token',
+        expiresIn: '60m',
+        target: { id: 'target-nurse-1', identifier: 'nurse@esic.gov.in', role: 'Nurse', name: 'Target Nurse' },
+      });
     });
   });
 });

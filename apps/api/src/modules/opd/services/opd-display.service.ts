@@ -5,7 +5,7 @@ import { DepartmentService } from './department.service';
 /**
  * Read-only, PII-stripped view of the existing OPD queue for the public
  * waiting-area display. It does NOT run its own queue: it calls the exact
- * same OpdService.getQueue() the Queue Manager reads, then projects it down
+ * same OpdService reads the Queue Manager uses, then projects them down
  * to only what a TV in a public area may show -- token, status, doctor name,
  * consultation room. Patient name, mobile, address, diagnosis, and every
  * other identifier are deliberately dropped here, at the source, so they can
@@ -23,11 +23,17 @@ export interface OpdDisplayWaiting {
   position: number;
 }
 
-export interface OpdDisplaySnapshot {
-  department: { id: string; name: string; code: string } | null;
+export interface OpdDisplayDepartment {
+  id: string;
+  name: string;
+  code: string;
   nowServing: OpdDisplayEntry[];
   waiting: OpdDisplayWaiting[];
   waitingCount: number;
+}
+
+export interface OpdHospitalSnapshot {
+  departments: OpdDisplayDepartment[];
   /** Monotonic per-response stamp so a client can ignore any out-of-order snapshot after a reconnect. */
   generatedAt: string;
 }
@@ -39,47 +45,49 @@ export class OpdDisplayService {
     private readonly departmentService: DepartmentService,
   ) {}
 
-  /** Active departments, for the display's department picker. */
-  async listDepartments() {
-    const departments = await this.departmentService.findAll();
-    return departments.map((d) => ({ id: d.id, name: d.name, code: d.code }));
-  }
+  /**
+   * Hospital-wide snapshot: every active department, each with its own
+   * current-serving and waiting buckets. One DB read for every department's
+   * active visits (OpdService.getHospitalQueue), not one read per department
+   * -- avoids an N+1 query as the department count grows.
+   *
+   * A department with zero active visits still appears (sourced from the
+   * department list, not from the visit rows), so the display can show
+   * "no patient currently being called" / "no patients waiting" for it
+   * rather than hiding it.
+   */
+  async getHospitalSnapshot(): Promise<OpdHospitalSnapshot> {
+    const [departments, rows] = await Promise.all([
+      this.departmentService.findAll(),
+      this.opdService.getHospitalQueue({ id: 'opd-display', roleName: 'OPDDisplayOperator' }),
+    ]);
 
-  async getSnapshot(departmentId: string): Promise<OpdDisplaySnapshot> {
-    // Reuse the authoritative queue read. The OPDDisplayOperator role is not a
-    // Doctor, so getQueue's "doctors must use their own queue" guard doesn't
-    // apply; it returns the same records the Queue Manager screen shows.
-    const rows = await this.opdService.getQueue(departmentId, undefined, {
-      id: 'opd-display',
-      roleName: 'OPDDisplayOperator',
-    });
-
-    const dept =
-      (rows[0] as any)?.department ??
-      (await this.departmentService.findById(departmentId).catch(() => null));
-
-    const nowServing: OpdDisplayEntry[] = [];
-    const waiting: OpdDisplayWaiting[] = [];
+    const byDept = new Map<string, OpdDisplayDepartment>(
+      departments.map((d) => [
+        d.id,
+        { id: d.id, name: d.name, code: d.code, nowServing: [], waiting: [], waitingCount: 0 },
+      ]),
+    );
 
     for (const row of rows as any[]) {
+      const entry = byDept.get(row.departmentId);
+      if (!entry) continue; // row belongs to a department that's since been deactivated
       const token = row.tokenNumber as string;
       if (row.status === 'CALLED' || row.status === 'IN_CONSULTATION') {
-        nowServing.push({
+        entry.nowServing.push({
           token,
           status: row.status,
           doctorName: row.doctor?.employee?.name ?? null,
           room: row.doctor?.employee?.consultationRoom ?? null,
         });
       } else if (row.status === 'WAITING') {
-        waiting.push({ token, position: row.queuePosition ?? waiting.length + 1 });
+        entry.waiting.push({ token, position: row.queuePosition ?? entry.waiting.length + 1 });
+        entry.waitingCount += 1;
       }
     }
 
     return {
-      department: dept ? { id: dept.id, name: dept.name, code: dept.code } : null,
-      nowServing,
-      waiting,
-      waitingCount: waiting.length,
+      departments: Array.from(byDept.values()),
       generatedAt: new Date().toISOString(),
     };
   }

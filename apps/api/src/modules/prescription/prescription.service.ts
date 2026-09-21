@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nest
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
-import { PrescriptionStatus, AdmissionStatus } from '@prisma/client';
+import { PrescriptionStatus, AdmissionStatus, PrescriptionItemMedicineType } from '@prisma/client';
 import { LabService } from '../laboratory/lab.service';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 
@@ -48,6 +48,7 @@ export class PrescriptionService {
           items: {
             create: dto.items.map((item) => ({
               medicineName: item.medicineName,
+              medicineType: item.medicineType ?? PrescriptionItemMedicineType.INVENTORY,
               dose: item.dose,
               frequency: item.frequency,
               duration: item.duration,
@@ -102,6 +103,7 @@ export class PrescriptionService {
           items: {
             create: dto.items.map((item) => ({
               medicineName: item.medicineName,
+              medicineType: item.medicineType ?? PrescriptionItemMedicineType.INVENTORY,
               dose: item.dose,
               frequency: item.frequency,
               duration: item.duration,

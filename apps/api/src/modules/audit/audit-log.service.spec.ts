@@ -34,6 +34,12 @@ describe('AuditLogService', () => {
       });
     });
 
+    it('selects impersonatorActorId/impersonatorRoleLabel, so a dual-attributed row is never silently dropped from the API response', async () => {
+      await service.findAll({});
+      const selectArg = mockPrisma.auditLog.findMany.mock.calls[0][0].select;
+      expect(selectArg).toMatchObject({ impersonatorActorId: true, impersonatorRoleLabel: true });
+    });
+
     it('defaults to page 1 / limit 50, and caps limit at 200', async () => {
       await service.findAll({});
       expect(mockPrisma.auditLog.findMany.mock.calls[0][0]).toEqual(
@@ -108,7 +114,7 @@ describe('AuditLogService', () => {
       ]);
 
       const csv = await service.exportCsv({});
-      expect(csv).toContain('Timestamp,Actor,Staff ID,Role,Action,Module,Record ID,Status,Severity,IP Address,Browser,OS,Description,Reason');
+      expect(csv).toContain('Timestamp,Actor,Staff ID,Role,Impersonated By,Action,Module,Record ID,Status,Severity,IP Address,Browser,OS,Description,Reason');
       expect(csv).toContain('admin@esic.gov.in');
       expect(csv).toContain('ADX-0001');
       expect(csv).toContain('staff.locked');
@@ -130,6 +136,24 @@ describe('AuditLogService', () => {
 
       const csv = await service.exportCsv({});
       expect(csv).toContain('System');
+    });
+
+    it('includes the impersonator role label for a row performed during an impersonation session', async () => {
+      mockPrisma.auditLog.findMany.mockResolvedValueOnce([
+        {
+          createdAt: new Date('2026-01-15T10:00:00Z'),
+          actorUser: { identifier: 'nurse@esic.gov.in', employee: { name: 'Nurse User', employeeId: 'NUR-0001' } },
+          actorRole: 'Nurse',
+          action: 'auth.password_changed',
+          entityType: 'User',
+          entityId: 'user-1',
+          reason: null,
+          impersonatorRoleLabel: 'Administrator',
+        },
+      ]);
+
+      const csv = await service.exportCsv({});
+      expect(csv).toContain('Nurse,Administrator,auth.password_changed');
     });
   });
 });

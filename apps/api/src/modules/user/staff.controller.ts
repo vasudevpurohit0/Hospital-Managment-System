@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { UpdateStaffDto } from './dto/update-staff.dto';
@@ -115,5 +116,16 @@ export class StaffController {
   @RequirePermission('Staff', 'update')
   async resendActivation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.staffService.resendActivation(id, { id: user.id, roleName: user.roleName, type: user.type });
+  }
+
+  /** Starts a secure impersonation session as this staff member -- see AccountLifecycleService.impersonate() for every server-side eligibility rule enforced. */
+  @Post(':id/impersonate')
+  @RequirePermission('Staff', 'impersonate')
+  async impersonate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
+    return this.staffService.impersonate(
+      id,
+      { id: user.id, roleName: user.roleName, type: user.type, identifier: user.identifier, isImpersonating: !!user.impersonation },
+      { ip: req.ip, userAgent: req.headers['user-agent'] },
+    );
   }
 }

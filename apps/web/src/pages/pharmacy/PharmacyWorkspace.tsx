@@ -22,6 +22,8 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
   const [selectedBatches, setSelectedBatches] = useState<Record<string, string>>({});
   const [dispenseQtyMap, setDispenseQtyMap] = useState<Record<string, number>>({});
   const [timingMap, setTimingMap] = useState<Record<string, string>>({});
+  /** Pharmacist-entered price for a CUSTOM (non-inventory) item -- there is no batch/catalogue price to fall back on. */
+  const [unitRateMap, setUnitRateMap] = useState<Record<string, number>>({});
 
   const [dispensing, setDispensing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,15 +105,19 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
     setDispensing(true);
 
     const itemsToDispense = selectedRx.items
-      .map((item) => ({
-        prescriptionItemId: item.id,
-        medicineBatchId: selectedBatches[item.id],
-        dispenseQuantity: dispenseQtyMap[item.id] || 1,
-      }))
-      .filter((i) => i.medicineBatchId);
+      .map((item) => {
+        const isCustom = item.medicineType === 'CUSTOM';
+        return {
+          prescriptionItemId: item.id,
+          medicineBatchId: isCustom ? undefined : selectedBatches[item.id],
+          dispenseQuantity: dispenseQtyMap[item.id] || 1,
+          unitRate: isCustom ? unitRateMap[item.id] : undefined,
+        };
+      })
+      .filter((i) => (i.medicineBatchId ? true : i.unitRate !== undefined && i.unitRate >= 0));
 
     if (itemsToDispense.length === 0) {
-      setError('No valid FEFO batches selected for dispensing.');
+      setError('No valid FEFO batches (or, for custom medicines, dispense prices) selected for dispensing.');
       setDispensing(false);
       return;
     }
@@ -350,6 +356,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                 {selectedRx.items.map((item) => {
                   const options = batchOptions[item.id] || [];
                   const selectedBatchId = selectedBatches[item.id] || '';
+                  const isCustom = item.medicineType === 'CUSTOM';
 
                   return (
                     <div
@@ -358,8 +365,9 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <h5 className="font-bold text-sm text-[var(--color-text-primary)]">
+                          <h5 className="font-bold text-sm text-[var(--color-text-primary)] flex items-center gap-1.5">
                             {item.medicineName}
+                            {isCustom && <Badge variant="warning">Custom — Not in Inventory</Badge>}
                           </h5>
                           <p className="text-xs text-[var(--color-text-secondary)]">
                             Dose: {item.dose} • Freq: {item.frequency} • Duration: {item.duration}
@@ -372,26 +380,43 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                         <div>
                           <label className="text-[11px] font-semibold text-[var(--color-text-secondary)] block mb-1">
-                            FEFO Batch Selection (Auto-ranked)
+                            {isCustom ? 'Dispense Price (₹, not in inventory)' : 'FEFO Batch Selection (Auto-ranked)'}
                           </label>
-                          <select
-                            value={selectedBatchId}
-                            onChange={(e) =>
-                              setSelectedBatches({ ...selectedBatches, [item.id]: e.target.value })
-                            }
-                            className="input text-xs font-mono py-1.5"
-                          >
-                            {options.length === 0 ? (
-                              <option value="">No stock available</option>
-                            ) : (
-                              options.map((b) => (
-                                <option key={b.id} value={b.id}>
-                                  Batch #{b.batchNumber} (Stock: {b.currentStock} | Exp:{' '}
-                                  {formatDateDefault(b.expiryDate)})
-                                </option>
-                              ))
-                            )}
-                          </select>
+                          {isCustom ? (
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              placeholder="Enter price"
+                              value={unitRateMap[item.id] ?? ''}
+                              onChange={(e) =>
+                                setUnitRateMap({
+                                  ...unitRateMap,
+                                  [item.id]: e.target.value === '' ? 0 : parseFloat(e.target.value),
+                                })
+                              }
+                              className="input text-xs py-1.5"
+                            />
+                          ) : (
+                            <select
+                              value={selectedBatchId}
+                              onChange={(e) =>
+                                setSelectedBatches({ ...selectedBatches, [item.id]: e.target.value })
+                              }
+                              className="input text-xs font-mono py-1.5"
+                            >
+                              {options.length === 0 ? (
+                                <option value="">No stock available</option>
+                              ) : (
+                                options.map((b) => (
+                                  <option key={b.id} value={b.id}>
+                                    Batch #{b.batchNumber} (Stock: {b.currentStock} | Exp:{' '}
+                                    {formatDateDefault(b.expiryDate)})
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          )}
                         </div>
 
                         <div>

@@ -1,10 +1,20 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { PrismaClient } from '@prisma/client';
+import { ImpersonationClaims } from '../decorators/current-user.decorator';
 
 export interface TenantContext {
   hospitalId: string;
   schemaName: string;
   prismaClient: PrismaClient;
+  /**
+   * Set only for a request running under an impersonation session (see
+   * ImpersonationClaims). Read by the Prisma middleware TenantClientFactory
+   * registers on every tenant client, which stamps `impersonatorActorId`/
+   * `impersonatorRoleLabel` onto any `audit_logs` row created during this
+   * request -- the one place that needs to reach this without every
+   * individual audit-log call site being rewritten to thread it through.
+   */
+  impersonation?: ImpersonationClaims;
 }
 
 export const tenantStorage = new AsyncLocalStorage<TenantContext>();

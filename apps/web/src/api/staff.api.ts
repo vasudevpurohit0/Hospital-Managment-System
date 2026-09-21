@@ -111,7 +111,10 @@ export async function updateStaff(id: string, data: UpdateStaffPayload): Promise
 }
 
 export async function setStaffActive(id: string, active: boolean): Promise<StaffProfile> {
-  const res = await apiFetch(`/api/staff/${id}/active`, { method: 'PATCH', body: JSON.stringify({ active }) });
+  const res = await apiFetch(`/api/staff/${id}/active`, {
+    method: 'PATCH',
+    body: JSON.stringify({ active }),
+  });
   return unwrap(res, 'Failed to update staff member');
 }
 
@@ -121,17 +124,32 @@ export interface StaffPasswordResetResult {
   temporaryPassword: string;
 }
 
-export async function resetStaffPassword(id: string, reason?: string): Promise<StaffPasswordResetResult> {
-  const res = await apiFetch(`/api/staff/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ reason }) });
+export async function resetStaffPassword(
+  id: string,
+  reason?: string,
+): Promise<StaffPasswordResetResult> {
+  const res = await apiFetch(`/api/staff/${id}/reset-password`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
   return unwrap(res, 'Failed to reset password');
 }
 
-export async function setStaffLocked(id: string, locked: boolean, reason?: string): Promise<StaffProfile> {
-  const res = await apiFetch(`/api/staff/${id}/lock`, { method: 'PATCH', body: JSON.stringify({ locked, reason }) });
+export async function setStaffLocked(
+  id: string,
+  locked: boolean,
+  reason?: string,
+): Promise<StaffProfile> {
+  const res = await apiFetch(`/api/staff/${id}/lock`, {
+    method: 'PATCH',
+    body: JSON.stringify({ locked, reason }),
+  });
   return unwrap(res, 'Failed to update account lock');
 }
 
-export async function resendStaffActivation(id: string): Promise<{ status: string; message: string }> {
+export async function resendStaffActivation(
+  id: string,
+): Promise<{ status: string; message: string }> {
   const res = await apiFetch(`/api/staff/${id}/resend-activation`, { method: 'POST' });
   return unwrap(res, 'Failed to resend activation email');
 }
@@ -167,7 +185,12 @@ export interface DefaultRolesResult {
   requirePasswordChange: boolean;
 }
 
-export async function createDefaultRoles(data: CreateDefaultRolesPayload): Promise<DefaultRolesResult> {
-  const res = await apiFetch('/api/staff/default-roles', { method: 'POST', body: JSON.stringify(data) });
+export async function createDefaultRoles(
+  data: CreateDefaultRolesPayload,
+): Promise<DefaultRolesResult> {
+  const res = await apiFetch('/api/staff/default-roles', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
   return unwrap(res, 'Failed to create default role accounts');
 }

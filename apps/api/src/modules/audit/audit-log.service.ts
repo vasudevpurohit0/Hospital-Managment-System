@@ -74,6 +74,8 @@ export class AuditLogService {
     browser: true,
     os: true,
     device: true,
+    impersonatorActorId: true,
+    impersonatorRoleLabel: true,
     actorUser: {
       select: {
         identifier: true,
@@ -125,12 +127,13 @@ export class AuditLogService {
     });
 
     return toCsv(
-      ['Timestamp', 'Actor', 'Staff ID', 'Role', 'Action', 'Module', 'Record ID', 'Status', 'Severity', 'IP Address', 'Browser', 'OS', 'Description', 'Reason'],
+      ['Timestamp', 'Actor', 'Staff ID', 'Role', 'Impersonated By', 'Action', 'Module', 'Record ID', 'Status', 'Severity', 'IP Address', 'Browser', 'OS', 'Description', 'Reason'],
       rows.map((r) => [
         r.createdAt.toISOString(),
         r.actorUser?.identifier ?? r.actorUser?.employee?.name ?? 'System',
         r.actorUser?.employee?.employeeId ?? '',
         r.actorRole,
+        r.impersonatorRoleLabel ?? '',
         r.action,
         r.entityType,
         r.entityId,

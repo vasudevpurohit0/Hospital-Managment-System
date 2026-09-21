@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, BadRequestException } from '@nestjs/common';
+import { Request } from 'express';
 import { DoctorService } from './doctor.service';
 import { CreateDoctorDto } from './dto/create-doctor.dto';
 import { UpdateDoctorDto } from './dto/update-doctor.dto';
@@ -92,6 +93,17 @@ export class DoctorController {
   @RequirePermission('Doctor', 'update')
   async resendActivation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.doctorService.resendActivation(id, { id: user.id, roleName: user.roleName, type: user.type });
+  }
+
+  /** Starts a secure impersonation session as this doctor -- see AccountLifecycleService.impersonate() for every server-side eligibility rule enforced. */
+  @Post(':id/impersonate')
+  @RequirePermission('Doctor', 'impersonate')
+  async impersonate(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser, @Req() req: Request) {
+    return this.doctorService.impersonate(
+      id,
+      { id: user.id, roleName: user.roleName, type: user.type, identifier: user.identifier, isImpersonating: !!user.impersonation },
+      { ip: req.ip, userAgent: req.headers['user-agent'] },
+    );
   }
 
   /**

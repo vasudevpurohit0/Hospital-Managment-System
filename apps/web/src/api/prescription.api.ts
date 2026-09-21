@@ -1,5 +1,9 @@
+export type PrescriptionMedicineType = 'INVENTORY' | 'CUSTOM';
+
 export interface PrescriptionItemPayload {
   medicineName: string;
+  /** Defaults to INVENTORY server-side when omitted. Set to CUSTOM for a medicine not carried in hospital stock. */
+  medicineType?: PrescriptionMedicineType;
   dose: string;
   frequency: string;
   duration: string;
@@ -27,6 +31,7 @@ export interface PrescriptionRecord {
   items: {
     id: string;
     medicineName: string;
+    medicineType: PrescriptionMedicineType;
     dose: string;
     frequency: string;
     duration: string;

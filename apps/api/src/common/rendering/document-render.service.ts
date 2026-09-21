@@ -44,7 +44,10 @@ export class DocumentRenderService implements OnModuleDestroy {
     return this.browserPromise;
   }
 
-  async renderPdf(html: string, options?: { landscape?: boolean }): Promise<Buffer> {
+  async renderPdf(
+    html: string,
+    options?: { landscape?: boolean; /** Repeating page-number footer (e.g. multi-page clinical reports) -- omitted for the existing single/few-page receipts and lab reports, which never needed one. */ footerTemplate?: string },
+  ): Promise<Buffer> {
     const browser = await this.getBrowser();
     const page = await browser.newPage();
     try {
@@ -56,7 +59,10 @@ export class DocumentRenderService implements OnModuleDestroy {
         format: 'A4',
         printBackground: true,
         landscape: options?.landscape ?? false,
-        margin: { top: '12mm', bottom: '14mm', left: '10mm', right: '10mm' },
+        margin: { top: '12mm', bottom: options?.footerTemplate ? '18mm' : '14mm', left: '10mm', right: '10mm' },
+        displayHeaderFooter: !!options?.footerTemplate,
+        headerTemplate: '<span></span>',
+        footerTemplate: options?.footerTemplate ?? '',
       });
       return Buffer.from(buffer);
     } finally {

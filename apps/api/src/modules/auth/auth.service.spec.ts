@@ -543,4 +543,119 @@ describe('AuthService', () => {
       });
     });
   });
+
+  describe('issueImpersonationSession()', () => {
+    const baseParams = {
+      target: { id: 'target-1', identifier: 'nurse@esic.gov.in', roleId: 'role-nurse', roleName: 'Nurse', tokenVersion: 3 },
+      hospitalId: 'hospital-123',
+      schemaName: 'hospital_test_hospital',
+      impersonator: { id: 'admin-1', identifier: 'admin@esic.gov.in', roleName: 'Administrator', type: 'hospital' as const },
+    };
+
+    it('signs a token carrying the TARGET user\'s own sub/roleId/roleName/tokenVersion, not the impersonator\'s', async () => {
+      await service.issueImpersonationSession(baseParams);
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: 'target-1',
+          identifier: 'nurse@esic.gov.in',
+          roleId: 'role-nurse',
+          roleName: 'Nurse',
+          tokenVersion: 3,
+          type: 'access',
+          impersonation: expect.objectContaining({
+            impersonatorId: 'admin-1',
+            impersonatorType: 'hospital',
+            impersonatorRoleName: 'Administrator',
+          }),
+        }),
+        expect.objectContaining({ expiresIn: expect.any(String) }),
+      );
+    });
+
+    it('mints a shorter-lived token than a real login (not the 8h default)', async () => {
+      const result = await service.issueImpersonationSession(baseParams);
+      expect(result.expiresIn).not.toBe('8h');
+    });
+
+    it('writes a blocking (non-fire-and-forget) auth.impersonation_started audit row attributing the impersonator as actor', async () => {
+      await service.issueImpersonationSession(baseParams);
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actorUserId: 'admin-1',
+            actorRole: 'Administrator',
+            action: 'auth.impersonation_started',
+            entityType: 'User',
+            entityId: 'target-1',
+            impersonatorActorId: null,
+            impersonatorRoleLabel: null,
+          }),
+        }),
+      );
+    });
+
+    it('records a null actorUserId (never a PlatformUser id) and a descriptive actorRole for a Super Admin impersonator', async () => {
+      await service.issueImpersonationSession({
+        ...baseParams,
+        impersonator: { id: 'platform-1', identifier: 'super@platform.esic.gov.in', roleName: 'SuperAdmin', type: 'platform' },
+      });
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actorUserId: null,
+            actorRole: 'SuperAdmin (super@platform.esic.gov.in)',
+          }),
+        }),
+      );
+    });
+
+    it('fails the whole start if the audit write fails, rather than handing out a working but unaudited session', async () => {
+      mockPrismaService.auditLog.create.mockRejectedValueOnce(new Error('db unavailable'));
+      await expect(service.issueImpersonationSession(baseParams)).rejects.toThrow('db unavailable');
+    });
+  });
+
+  describe('endImpersonation()', () => {
+    const impersonatingUser: AuthenticatedUser = {
+      id: 'target-1',
+      identifier: 'nurse@esic.gov.in',
+      roleId: 'role-nurse',
+      roleName: 'Nurse',
+      hospitalId: 'hospital-123',
+      type: 'hospital',
+      permissions: [],
+      impersonation: {
+        sessionId: 'session-1',
+        impersonatorId: 'admin-1',
+        impersonatorType: 'hospital',
+        impersonatorRoleName: 'Administrator',
+        impersonatorIdentifier: 'admin@esic.gov.in',
+        startedAt: new Date().toISOString(),
+      },
+    };
+
+    it('rejects when the caller is not actually impersonating anyone', async () => {
+      const normalUser: AuthenticatedUser = { ...impersonatingUser, impersonation: undefined };
+      await expect(service.endImpersonation(normalUser)).rejects.toThrow(BadRequestException);
+      expect(mockPrismaService.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('writes an auth.impersonation_ended audit row attributing the impersonator (not the target) as actor', async () => {
+      await service.endImpersonation(impersonatingUser);
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            actorUserId: 'admin-1',
+            actorRole: 'Administrator',
+            action: 'auth.impersonation_ended',
+            entityType: 'User',
+            entityId: 'target-1',
+            impersonatorActorId: null,
+            impersonatorRoleLabel: null,
+          }),
+        }),
+      );
+    });
+  });
 });

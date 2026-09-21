@@ -312,6 +312,10 @@ model OPDVisit {
   @@index([departmentId, createdAt])
   @@index([doctorId])
   @@index([doctorId, status])
+  // Backs the hospital-wide public display's getHospitalQueue(), which filters
+  // by status alone (no departmentId equality) across every department -- the
+  // [departmentId, createdAt] index above can't help that query pattern.
+  @@index([status, departmentId])
   @@map("opd_visits")
 }
 
@@ -345,9 +349,15 @@ model Prescription {
 }
 
 model PrescriptionItem {
-  id                  String                 @id @default(uuid()) @db.Uuid
-  prescriptionId      String                 @map("prescription_id") @db.Uuid
-  medicineName        String                 @map("medicine_name")
+  id             String                 @id @default(uuid()) @db.Uuid
+  prescriptionId String                 @map("prescription_id") @db.Uuid
+  medicineName   String                 @map("medicine_name")
+  /// INVENTORY (default): medicineName was chosen from the hospital's
+  /// Medicine catalogue and pharmacy may fulfil it from stocked batches.
+  /// CUSTOM: a free-text medicine the doctor prescribed that is not carried
+  /// in inventory -- pharmacy must never attempt batch matching or stock
+  /// deduction for it (see PharmacyService.getBatchOptions/dispense).
+  medicineType        PrescriptionItemMedicineType @default(INVENTORY) @map("medicine_type")
   dose                String
   frequency           String
   duration            String
@@ -360,6 +370,11 @@ model PrescriptionItem {
   stockTransactions   StockTransaction[]
 
   @@map("prescription_items")
+}
+
+enum PrescriptionItemMedicineType {
+  INVENTORY
+  CUSTOM
 }
 
 /// A doctor's order for one or more investigations, per Feature 6: "Doctor can
@@ -696,6 +711,16 @@ model AuditLog {
   browser        String?
   os             String?
   device         String?
+  // Set (by TenantClientFactory's Prisma middleware, never by a caller
+  // directly) whenever this row was written during an active impersonation
+  // session -- `actorUserId`/`actorRole` above stay the IMPERSONATED user
+  // (who actually performed the action), while these two record who was
+  // impersonating them. Deliberately not a `User` relation: the impersonator
+  // may be a PlatformUser (Super Admin), whose id doesn't exist in this
+  // tenant schema and would violate a real FK (same reasoning as
+  // actorUserId being nullable for a platform actor elsewhere in this app).
+  impersonatorActorId   String?       @map("impersonator_actor_id") @db.Uuid
+  impersonatorRoleLabel String?       @map("impersonator_role_label")
   createdAt      DateTime      @default(now()) @map("created_at")
   actorUser      User?         @relation(fields: [actorUserId], references: [id])
 

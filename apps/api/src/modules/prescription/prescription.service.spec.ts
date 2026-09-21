@@ -4,7 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { LabService } from '../laboratory/lab.service';
 import { DocumentSequenceService } from '../../common/sequence/document-sequence.service';
 import { ForbiddenException } from '@nestjs/common';
-import { PrescriptionStatus } from '@prisma/client';
+import { PrescriptionStatus, PrescriptionItemMedicineType } from '@prisma/client';
 
 describe('PrescriptionService', () => {
   let service: PrescriptionService;
@@ -114,11 +114,103 @@ describe('PrescriptionService', () => {
       expect.objectContaining({
         where: { id: 'rx-draft' },
         data: expect.objectContaining({
-          items: { create: [{ medicineName: 'Ibuprofen', dose: '400mg', frequency: '1-1-1', duration: '3 days' }] },
+          items: {
+            create: [
+              {
+                medicineName: 'Ibuprofen',
+                medicineType: PrescriptionItemMedicineType.INVENTORY,
+                dose: '400mg',
+                frequency: '1-1-1',
+                duration: '3 days',
+              },
+            ],
+          },
         }),
       }),
     );
     expect(result.items[0].medicineName).toBe('Ibuprofen');
+  });
+
+  it('defaults medicineType to INVENTORY when the item omits it', async () => {
+    mockPrismaService.diagnosis.create.mockResolvedValue({ id: 'dx-2' });
+    mockPrismaService.prescription.create.mockResolvedValue({
+      id: 'rx-2',
+      status: PrescriptionStatus.DRAFT,
+      items: [{ id: 'i-2', medicineName: 'Paracetamol', medicineType: PrescriptionItemMedicineType.INVENTORY }],
+    });
+
+    await service.createPrescription(
+      {
+        visitId: 'v-1001',
+        diagnosisText: 'Fever',
+        items: [{ medicineName: 'Paracetamol', dose: '500mg', frequency: '1-0-1', duration: '5 days' }],
+      },
+      'doc-101',
+    );
+
+    expect(mockPrismaService.prescription.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: {
+            create: [
+              expect.objectContaining({
+                medicineName: 'Paracetamol',
+                medicineType: PrescriptionItemMedicineType.INVENTORY,
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
+  it('persists a CUSTOM medicine item exactly as flagged, alongside an INVENTORY item in the same prescription', async () => {
+    mockPrismaService.diagnosis.create.mockResolvedValue({ id: 'dx-3' });
+    mockPrismaService.prescription.create.mockResolvedValue({
+      id: 'rx-3',
+      status: PrescriptionStatus.DRAFT,
+      items: [
+        { id: 'i-3a', medicineName: 'Paracetamol 650mg', medicineType: PrescriptionItemMedicineType.INVENTORY },
+        { id: 'i-3b', medicineName: 'Amoxicillin 500mg', medicineType: PrescriptionItemMedicineType.CUSTOM },
+      ],
+    });
+
+    await service.createPrescription(
+      {
+        visitId: 'v-1001',
+        diagnosisText: 'Infection with fever',
+        items: [
+          {
+            medicineName: 'Paracetamol 650mg',
+            medicineType: PrescriptionItemMedicineType.INVENTORY,
+            dose: '1 Tablet',
+            frequency: '1-0-1',
+            duration: '5 Days',
+          },
+          {
+            medicineName: 'Amoxicillin 500mg',
+            medicineType: PrescriptionItemMedicineType.CUSTOM,
+            dose: '1 Capsule',
+            frequency: '1-0-1',
+            duration: '5 Days',
+          },
+        ],
+      },
+      'doc-101',
+    );
+
+    expect(mockPrismaService.prescription.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: {
+            create: [
+              expect.objectContaining({ medicineName: 'Paracetamol 650mg', medicineType: PrescriptionItemMedicineType.INVENTORY }),
+              expect.objectContaining({ medicineName: 'Amoxicillin 500mg', medicineType: PrescriptionItemMedicineType.CUSTOM }),
+            ],
+          },
+        }),
+      }),
+    );
   });
 
   it('should reject signing if user does not hold Doctor or SuperAdmin role (FR-DOC-07)', async () => {

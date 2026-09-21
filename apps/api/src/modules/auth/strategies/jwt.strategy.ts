@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
+import { AuthenticatedUser, ImpersonationClaims } from '../../../common/decorators/current-user.decorator';
 import { JWT_ACCESS_SECRET } from '../../../common/config/jwt-secrets';
 
 export interface JwtPayload {
@@ -23,6 +23,16 @@ export interface JwtPayload {
   /** Compared against the live User row on every request; a mismatch means this token was issued before a password change/reset/lock/deactivation and must be rejected even though it hasn't expired yet. */
   tokenVersion: number;
   type?: 'access' | 'refresh';
+  /**
+   * Present only on a token minted by AccountLifecycleService.impersonate().
+   * Every other field above (sub, roleId, roleName, tokenVersion, ...) is
+   * already the TARGET user's own -- this claim carries nothing that affects
+   * authorization, only who to attribute/restore. Locking, deactivating, or
+   * resetting the target's password bumps their tokenVersion exactly like it
+   * does for the target's own real sessions, which is what makes those
+   * actions kill an in-progress impersonation session too, automatically.
+   */
+  impersonation?: ImpersonationClaims;
 }
 
 @Injectable()
@@ -74,6 +84,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         resource: p.resource,
         action: p.action,
       })),
+      impersonation: payload.impersonation,
     };
   }
 }

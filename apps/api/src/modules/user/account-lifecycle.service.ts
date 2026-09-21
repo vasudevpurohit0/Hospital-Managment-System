@@ -1,5 +1,6 @@
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
+import { BadRequestException, ForbiddenException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PrismaClientLike } from '../../common/sequence/document-sequence.service';
 import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
@@ -40,6 +41,10 @@ export interface Actor {
    * tenant user whose id is safe to record.
    */
   type?: 'hospital' | 'platform';
+  /** Login identifier (email/staff id) -- only needed by impersonate() below, so most Actor literals elsewhere leave it out. */
+  identifier?: string;
+  /** True when the CALLER's own session is itself an impersonation session -- the nested-impersonation guard in impersonate() below. */
+  isImpersonating?: boolean;
 }
 
 export { toAuditActorUserId } from '../../common/audit/audit-actor.util';
@@ -279,6 +284,102 @@ export abstract class AccountLifecycleService<TDto> {
     await this.writeAuditLog(this.prisma, `${this.accountKind}.activation_resent`, actor, id);
 
     return { status: 'success', message: 'Activation email resent.' };
+  }
+
+  /**
+   * Starts a secure impersonation session for `id`. Every eligibility rule
+   * here is enforced server-side, independent of the "Impersonate" button's
+   * visibility logic on the frontend, which is UX only:
+   *
+   *  - nested impersonation is refused outright (actor.isImpersonating);
+   *  - self-impersonation is refused;
+   *  - a hospital-local Administrator may not impersonate another
+   *    Administrator (only a Super Admin -- actor.type === 'platform' --
+   *    may, matching this app's existing Super-Admin-manages-Hospital-Admins
+   *    model in hospital-admins.service.ts);
+   *  - the target must be active, must not be mid first-login setup
+   *    (mustChangePassword), and must not be locked.
+   *
+   * The target is looked up through `this.prisma`, which is already scoped
+   * to the caller's own tenant schema (a hospital Administrator's own, or --
+   * for a Super Admin -- whichever hospital they've entered via
+   * X-Hospital-Id/TenantResolutionMiddleware): cross-hospital impersonation
+   * is impossible here for the same structural reason cross-hospital staff
+   * lock/deactivate already is, with zero explicit hospitalId filtering
+   * needed in this method.
+   */
+  async impersonate(
+    id: string,
+    actor: Actor,
+    meta: { ip?: string; userAgent?: string } = {},
+  ): Promise<{ accessToken: string; expiresIn: string; target: { id: string; identifier: string; role: string; name: string } }> {
+    if (actor.isImpersonating) {
+      throw new ForbiddenException(
+        'Already impersonating another user -- exit that session before starting a new one.',
+      );
+    }
+
+    const target = await this.prisma.user.findUnique({
+      where: { id },
+      include: { role: true, employee: { select: { name: true } } },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found.');
+    }
+    if (!target.role) {
+      throw new InternalServerErrorException('Target account is not fully configured.');
+    }
+
+    if (actor.type !== 'platform' && target.id === actor.id) {
+      throw new BadRequestException('You cannot impersonate your own account.');
+    }
+
+    const targetRoleName = target.role.name;
+    if (targetRoleName === 'Administrator' && actor.type !== 'platform') {
+      throw new ForbiddenException('Only a Super Admin may impersonate a Hospital Administrator.');
+    }
+
+    if (!target.active) {
+      throw new BadRequestException('Cannot impersonate a deactivated account.');
+    }
+    if (target.mustChangePassword) {
+      throw new BadRequestException('Cannot impersonate an account that has not completed first-login setup yet.');
+    }
+    // Throws ForbiddenException if manually or automatically locked -- same
+    // check login() itself runs, reused rather than reimplemented.
+    await this.loginDirectory.checkLock(target.identifier);
+
+    const { hospitalId, schemaName } = getTenantContext();
+
+    const session = await this.authService.issueImpersonationSession({
+      target: {
+        id: target.id,
+        identifier: target.identifier,
+        roleId: target.roleId,
+        roleName: targetRoleName,
+        tokenVersion: target.tokenVersion,
+      },
+      hospitalId,
+      schemaName,
+      impersonator: {
+        id: actor.id,
+        identifier: actor.identifier ?? actor.roleName,
+        roleName: actor.roleName,
+        type: actor.type === 'platform' ? 'platform' : 'hospital',
+      },
+      meta,
+    });
+
+    return {
+      accessToken: session.accessToken,
+      expiresIn: session.expiresIn,
+      target: {
+        id: target.id,
+        identifier: target.identifier,
+        role: targetRoleName,
+        name: target.employee?.name ?? target.identifier,
+      },
+    };
   }
 
   protected async refetchDto(id: string): Promise<TDto> {

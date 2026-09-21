@@ -32,7 +32,7 @@ import { fetchVisitById } from '../../api/patient-lookup.api';
 import { fetchPatientLedger } from '../../api/ledger.api';
 import { useNavigate } from 'react-router-dom';
 import { fetchBranding } from '../../api/security.api';
-import { TestTube, Pill, Plus, Trash2, IndianRupee, ArrowRight } from 'lucide-react';
+import { TestTube, Pill, Plus, Trash2, IndianRupee, ArrowRight, Edit, List } from 'lucide-react';
 import { formatDateDefault, formatDateIN, formatDateTimeDefault, formatDateTimeIN } from '../../utils/date';
 
 interface WardStaffScreenProps {
@@ -128,9 +128,9 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const [availableMedicines, setAvailableMedicines] = useState<MedicineRecord[]>([]);
   const [rxDiagnosis, setRxDiagnosis] = useState('');
   const [rxSymptoms, setRxSymptoms] = useState('');
-  const [rxItems, setRxItems] = useState<Array<{ medicineName: string; dose: string; frequency: string; duration: string }>>([
-    { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
-  ]);
+  const [rxItems, setRxItems] = useState<
+    Array<{ medicineName: string; mode: 'SELECT' | 'CUSTOM'; dose: string; frequency: string; duration: string }>
+  >([{ medicineName: '', mode: 'SELECT', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' }]);
   const [existingPrescriptions, setExistingPrescriptions] = useState<any[]>([]);
   const [rxLoading, setRxLoading] = useState(false);
   const [rxSubmitting, setRxSubmitting] = useState(false);
@@ -457,7 +457,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
     setRxDiagnosis('Inpatient Treatment & Observation');
     setRxSymptoms('');
     setRxItems([
-      { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
+      { medicineName: '', mode: 'SELECT', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
     ]);
     setRxLoading(true);
     try {
@@ -486,7 +486,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
   const handleAddRxItem = () => {
     setRxItems([
       ...rxItems,
-      { medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
+      { medicineName: '', mode: 'SELECT', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
     ]);
   };
 
@@ -497,11 +497,18 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
 
   const handleRxItemChange = (
     index: number,
-    field: 'medicineName' | 'dose' | 'frequency' | 'duration',
+    field: 'medicineName' | 'mode' | 'dose' | 'frequency' | 'duration',
     value: string,
   ) => {
     const updated = [...rxItems];
-    updated[index] = { ...updated[index], [field]: value };
+    updated[index] = { ...updated[index], [field]: value } as (typeof rxItems)[number];
+    setRxItems(updated);
+  };
+
+  const toggleRxItemMode = (index: number) => {
+    const updated = [...rxItems];
+    const newMode = updated[index].mode === 'SELECT' ? 'CUSTOM' : 'SELECT';
+    updated[index] = { ...updated[index], mode: newMode, medicineName: '' };
     setRxItems(updated);
   };
 
@@ -529,6 +536,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
           symptoms: rxSymptoms.trim() || undefined,
           items: validItems.map((i) => ({
             medicineName: i.medicineName.trim(),
+            medicineType: i.mode === 'CUSTOM' ? 'CUSTOM' : 'INVENTORY',
             dose: i.dose.trim() || '1 Tablet',
             frequency: i.frequency.trim() || '1-0-1',
             duration: i.duration.trim() || '5 Days',
@@ -546,7 +554,9 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
         setRxMessage(`Prescription draft ${res.prescription.id.slice(0, 8)} saved successfully.`);
       }
 
-      setRxItems([{ medicineName: '', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' }]);
+      setRxItems([
+        { medicineName: '', mode: 'SELECT', dose: '1 Tablet', frequency: '1-0-1', duration: '5 Days' },
+      ]);
       const visitDetail = await fetchVisitById(rxAdmission.visitId, authToken);
       setExistingPrescriptions(visitDetail.prescriptions || []);
     } catch (err) {
@@ -1907,7 +1917,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
               <div className="space-y-3 p-3.5 rounded-xl border border-indigo-200 bg-indigo-50/40">
                 <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
                   <label className="text-xs font-bold text-indigo-900 block">
-                    Prescribed Medicines (from Inventory Stock) *
+                    Prescribed Medicines *
                   </label>
                   <button
                     type="button"
@@ -1926,22 +1936,56 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                       className="p-2.5 rounded-lg border border-gray-200 bg-white space-y-2"
                     >
                       <div className="flex items-center gap-2">
-                        <select
-                          value={item.medicineName}
-                          onChange={(e) => handleRxItemChange(idx, 'medicineName', e.target.value)}
-                          disabled={rxSubmitting || rxLoading}
-                          className="w-full px-3 py-1.5 border border-gray-300 rounded text-xs bg-white flex-1 truncate font-medium"
+                        {item.mode === 'SELECT' ? (
+                          <select
+                            value={item.medicineName}
+                            onChange={(e) => {
+                              if (e.target.value === '__CUSTOM__') {
+                                handleRxItemChange(idx, 'mode', 'CUSTOM');
+                                handleRxItemChange(idx, 'medicineName', '');
+                              } else {
+                                handleRxItemChange(idx, 'medicineName', e.target.value);
+                              }
+                            }}
+                            disabled={rxSubmitting || rxLoading}
+                            className="w-full px-3 py-1.5 border border-gray-300 rounded text-xs bg-white flex-1 truncate font-medium"
+                          >
+                            <option value="">-- Select Available Stock Medicine --</option>
+                            {availableMedicines.map((m) => {
+                              const label = `${m.genericName}${m.brandName ? ` (${m.brandName})` : ''} - ${m.strength}`;
+                              return (
+                                <option key={m.id} value={m.genericName}>
+                                  {label}
+                                </option>
+                              );
+                            })}
+                            <option value="__CUSTOM__">✍️ Custom Medicine (Not in Stock / Free Text)...</option>
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Type custom medicine name (e.g. Amoxicillin 500mg)..."
+                            value={item.medicineName}
+                            onChange={(e) => handleRxItemChange(idx, 'medicineName', e.target.value)}
+                            disabled={rxSubmitting}
+                            className="w-full px-3 py-1.5 border border-gray-300 rounded text-xs bg-white flex-1 font-medium"
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => toggleRxItemMode(idx)}
+                          disabled={rxSubmitting}
+                          className="px-2 py-1.5 text-[10px] font-bold border border-gray-300 rounded bg-gray-50 hover:bg-gray-100 text-gray-600 flex items-center gap-1 shrink-0 transition-all"
+                          title={item.mode === 'SELECT' ? 'Switch to Custom Free Text' : 'Switch to Stock Dropdown'}
                         >
-                          <option value="">-- Select Available Stock Medicine --</option>
-                          {availableMedicines.map((m) => {
-                            const label = `${m.genericName}${m.brandName ? ` (${m.brandName})` : ''} - ${m.strength}`;
-                            return (
-                              <option key={m.id} value={m.genericName}>
-                                {label}
-                              </option>
-                            );
-                          })}
-                        </select>
+                          {item.mode === 'SELECT' ? (
+                            <Edit className="w-3 h-3 text-indigo-500" />
+                          ) : (
+                            <List className="w-3 h-3 text-emerald-500" />
+                          )}
+                          <span>{item.mode === 'SELECT' ? 'Custom' : 'Stock'}</span>
+                        </button>
 
                         {rxItems.length > 1 && (
                           <button
@@ -2054,9 +2098,16 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
                         </div>
                         <div className="space-y-1">
                           {p.items?.map((it: any) => (
-                            <div key={it.id} className="flex justify-between text-[11px] text-gray-700 bg-white p-1.5 rounded border border-gray-200">
-                              <span className="font-semibold">{it.medicineName}</span>
-                              <span className="text-gray-500 font-mono">{it.dose} · {it.frequency} · {it.duration}</span>
+                            <div key={it.id} className="flex items-center justify-between text-[11px] text-gray-700 bg-white p-1.5 rounded border border-gray-200 gap-2">
+                              <span className="font-semibold flex items-center gap-1.5">
+                                {it.medicineName}
+                                {it.medicineType === 'CUSTOM' && (
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                    Custom — Not in Inventory
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-gray-500 font-mono shrink-0">{it.dose} · {it.frequency} · {it.duration}</span>
                             </div>
                           ))}
                         </div>

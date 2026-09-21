@@ -1,4 +1,4 @@
-import { ReceiptDetailForPdf, LabReportForPdf, HospitalBranding } from './pdf-templates.types';
+import { ReceiptDetailForPdf, LabReportForPdf, HospitalBranding, PatientHistoryForPdf } from './pdf-templates.types';
 
 const escapeHtml = (s: unknown): string =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -152,6 +152,140 @@ export function renderLabReportHtml(branding: HospitalBranding, r: LabReportForP
   `;
 
   return shell(branding, 'Laboratory Report', body);
+}
+
+const fmtDateTime = (iso: string | null | undefined, recorded: boolean): string => {
+  if (!iso || !recorded) return 'Time not recorded';
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timePart = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${datePart} • ${timePart}`;
+};
+
+const EVENT_TYPE_LABEL: Record<string, string> = {
+  REGISTRATION: 'Registration',
+  VISIT: 'Visit',
+  QUEUE: 'Queue',
+  CONSULTATION: 'Consultation',
+  LAB_ORDER: 'Lab Order',
+  LAB_RESULT: 'Lab Result',
+  PRESCRIPTION: 'Prescription',
+  MEDICINE_DISPENSED: 'Medicine Dispensed',
+  PROCEDURE: 'Procedure',
+  THERAPY_SESSION: 'Therapy',
+  ADMISSION: 'Admission',
+  BED_MOVEMENT: 'Bed Movement',
+  PROGRESS_NOTE: 'Progress Note',
+  DISCHARGE: 'Discharge',
+  PAYMENT: 'Payment',
+};
+
+/**
+ * The complete patient clinical report PDF (Feature: "Build Complete Patient
+ * Clinical Timeline, Treatment History & Downloadable PDF"). Every row here
+ * is exactly what `PatientHistoryService.getPatientTimeline` returned —
+ * "Time not recorded" is rendered verbatim wherever `timeRecorded` is false,
+ * never a guessed date.
+ */
+export function renderPatientHistoryHtml(branding: HospitalBranding, r: PatientHistoryForPdf): string {
+  const summaryCells = [
+    ['Total Visits', r.summary.totalVisits],
+    ['Total Admissions', r.summary.totalAdmissions],
+    ['Total Consultations', r.summary.totalConsultations],
+    ['Total Lab Orders', r.summary.totalLabOrders],
+    ['Total Prescriptions', r.summary.totalPrescriptions],
+    ['Total Medicines', r.summary.totalMedicines],
+    ['Total Procedures', r.summary.totalProcedures],
+    ['Total Therapy Sessions', r.summary.totalTherapySessions],
+    ...(r.billing.authorized ? [['Total Bills', r.summary.totalBills] as [string, number]] : []),
+  ]
+    .map(([label, value]) => `<div class="stat-box"><div class="stat-value">${value}</div><div class="stat-label">${escapeHtml(label)}</div></div>`)
+    .join('');
+
+  const timelineRows = r.events
+    .map(
+      (e) => `<tr>
+        <td style="white-space:nowrap;">${fmtDateTime(e.timestamp, e.timeRecorded)}</td>
+        <td>${escapeHtml(EVENT_TYPE_LABEL[e.type] ?? e.type)}</td>
+        <td>
+          <strong>${escapeHtml(e.title)}</strong>
+          ${e.status ? `<br><span style="color:#666;">Status: ${escapeHtml(e.status)}</span>` : ''}
+        </td>
+        <td>${escapeHtml(e.department ?? e.location ?? '—')}</td>
+        <td>${escapeHtml(e.performedBy ?? '—')}${e.performedByRole ? ` <span style="color:#888;">(${escapeHtml(e.performedByRole)})</span>` : ''}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const stageLabel: Record<string, string> = { PRESCRIBED: 'Prescribed', DISPENSED: 'Dispensed', ADMINISTERED: 'Administered' };
+  const medicationRows = r.medicationHistory
+    .map(
+      (m) => `<tr>
+        <td style="white-space:nowrap;">${fmtDateTime(m.timestamp, m.timeRecorded)}</td>
+        <td>${escapeHtml(m.medicineName)}${m.medicineType === 'CUSTOM' ? ' <span style="font-size:9px;color:#b45309;">(Custom)</span>' : ''}</td>
+        <td>${escapeHtml(stageLabel[m.stage] ?? m.stage)}</td>
+        <td>${m.quantity !== null ? escapeHtml(String(m.quantity)) : escapeHtml([m.dose, m.frequency, m.duration].filter(Boolean).join(' · ') || '—')}</td>
+        <td>${escapeHtml(m.by ?? (m.notRecordedReason ? 'Not recorded' : '—'))}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const body = `
+    <div class="section-title">Patient Information</div>
+    <div class="meta-grid">
+      <div><span class="label">UHID</span>${escapeHtml(r.patient.uhid ?? '—')}</div>
+      <div><span class="label">Employee ID</span>${escapeHtml(r.patient.employeeId)}</div>
+      <div><span class="label">Name</span>${escapeHtml(r.patient.name)}</div>
+      <div><span class="label">Age / Gender</span>${escapeHtml(r.patient.age)} / ${escapeHtml(r.patient.gender)}</div>
+      <div><span class="label">Date of Birth</span>${escapeHtml(r.patient.dob)}</div>
+      <div><span class="label">Employment Type</span>${escapeHtml(r.patient.employmentType)}</div>
+      <div><span class="label">Contact</span>${escapeHtml(r.patient.mobile)}</div>
+      <div><span class="label">Address</span>${escapeHtml(r.patient.address)}</div>
+      <div><span class="label">Hospital</span>${escapeHtml(r.hospitalName)}</div>
+      <div><span class="label">Report Generated</span>${new Date(r.generatedAt).toLocaleString('en-IN')}</div>
+    </div>
+
+    <div class="section-title">Report Period</div>
+    <p style="margin:0 0 10px;">
+      ${r.period.from ? new Date(r.period.from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+      &nbsp;to&nbsp;
+      ${r.period.to ? new Date(r.period.to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+    </p>
+
+    <div class="section-title">Summary</div>
+    <div class="stat-grid">${summaryCells}</div>
+
+    <div class="section-title" style="page-break-before:always;">Complete Clinical Timeline</div>
+    <table>
+      <thead><tr><th style="width:16%;">Date &amp; Time</th><th style="width:12%;">Type</th><th>Event</th><th style="width:16%;">Department / Location</th><th style="width:16%;">By</th></tr></thead>
+      <tbody>${timelineRows || '<tr><td colspan="5" style="text-align:center;color:#888;">No events recorded.</td></tr>'}</tbody>
+    </table>
+
+    <div class="section-title" style="page-break-before:always;">Medication History — Prescribed / Dispensed / Administered</div>
+    <table>
+      <thead><tr><th style="width:16%;">Date &amp; Time</th><th>Medicine</th><th style="width:14%;">Event</th><th style="width:22%;">Dose / Frequency / Duration or Qty</th><th style="width:16%;">By</th></tr></thead>
+      <tbody>${medicationRows || '<tr><td colspan="5" style="text-align:center;color:#888;">No medicines recorded.</td></tr>'}</tbody>
+    </table>
+    <p style="margin-top:8px; font-size:10px; color:#666;">"Administered" rows read "Not recorded" for every medicine — this system does not currently track medication administration (MAR) separately from dispensing.</p>
+
+    ${
+      r.billing.authorized
+        ? `<div class="section-title" style="page-break-before:always;">Billing Summary</div>
+    <table class="totals">
+      <tr><td>Total Charges</td><td class="num">₹${r.billing.total.toFixed(2)}</td></tr>
+      <tr><td>Paid</td><td class="num">₹${r.billing.paid.toFixed(2)}</td></tr>
+      <tr class="grand"><td>Outstanding</td><td class="num">₹${r.billing.pending.toFixed(2)}</td></tr>
+    </table>`
+        : `<div class="section-title" style="page-break-before:always;">Billing Summary</div>
+    <p style="color:#888;">Not authorized to view billing information.</p>`
+    }
+  `;
+
+  return shell(
+    branding,
+    'Patient Clinical Report',
+    `<style>.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;}.stat-box{border:1px solid #ddd;border-radius:4px;padding:8px;text-align:center;}.stat-value{font-size:16px;font-weight:bold;}.stat-label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.03em;}</style>${body}`,
+  );
 }
 
 export interface StatementForPdf {

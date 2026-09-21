@@ -15,11 +15,11 @@ import {
   Mail,
   ChevronLeft,
   ChevronRight,
+  UserCog,
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AccountCreatedModal } from '../components/AccountCreatedModal';
-import { CreateDefaultRolesModal } from '../components/CreateDefaultRolesModal';
 import {
   fetchAllStaffForAdmin,
   createStaff,
@@ -28,6 +28,7 @@ import {
   resetStaffPassword,
   setStaffLocked,
   resendStaffActivation,
+  impersonateStaff,
   StaffProfile,
   StaffRole,
   STAFF_ROLES,
@@ -77,12 +78,16 @@ const emptyForm = (): StaffFormState => ({
 });
 
 export const StaffManagementPage: React.FC = () => {
+  const { user: currentUser, impersonation, startImpersonation } = useAuth();
   const [roleFilter, setRoleFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
-  const [meta, setMeta] = useState<{ total: number; totalPages: number }>({ total: 0, totalPages: 1 });
+  const [meta, setMeta] = useState<{ total: number; totalPages: number }>({
+    total: 0,
+    totalPages: 1,
+  });
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +98,13 @@ export const StaffManagementPage: React.FC = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [form, setForm] = useState<StaffFormState>(emptyForm());
 
-  const [accountCreated, setAccountCreated] = useState<{ name: string; staffId?: string; role?: string; email: string; password: string } | null>(null);
+  const [accountCreated, setAccountCreated] = useState<{
+    name: string;
+    staffId?: string;
+    role?: string;
+    email: string;
+    password: string;
+  } | null>(null);
 
   const [pendingToggle, setPendingToggle] = useState<StaffProfile | null>(null);
   const [toggling, setToggling] = useState(false);
@@ -110,10 +121,10 @@ export const StaffManagementPage: React.FC = () => {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
-  const [showBulkModal, setShowBulkModal] = useState(false);
-
   useEffect(() => {
-    fetchDepartments().then(setDepartments).catch(() => undefined);
+    fetchDepartments()
+      .then(setDepartments)
+      .catch(() => undefined);
   }, []);
 
   const loadStaff = () => {
@@ -277,6 +288,38 @@ export const StaffManagementPage: React.FC = () => {
     }
   };
 
+  const confirmImpersonate = async () => {
+    if (!pendingImpersonate) return;
+    setImpersonating(true);
+    setImpersonateError(null);
+    try {
+      const session = await impersonateStaff(pendingImpersonate.id);
+      startImpersonation(session.accessToken, session.target);
+      setPendingImpersonate(null);
+    } catch (err: unknown) {
+      setImpersonateError((err as Error).message || 'Failed to start impersonation');
+    } finally {
+      setImpersonating(false);
+    }
+  };
+
+  /**
+   * UX-only gate -- every one of these rules is re-checked, authoritatively,
+   * by the backend (AccountLifecycleService.impersonate()). Hiding the
+   * button here just avoids offering an action that would only 403/400
+   * anyway; it grants nothing by itself.
+   */
+  const canImpersonate = (s: StaffProfile): boolean => {
+    if (impersonation) return false; // already impersonating -- no nested impersonation
+    if (!currentUser) return false;
+    const requesterRole = currentUser.role;
+    if (requesterRole !== 'Administrator' && requesterRole !== 'SuperAdmin') return false;
+    if (currentUser.id === s.id) return false; // self
+    if (!s.active || s.locked || s.mustChangePassword) return false;
+    if (s.role === 'Administrator' && requesterRole !== 'SuperAdmin') return false; // Hospital Admin may not impersonate a peer Administrator
+    return true;
+  };
+
   const groupedStaff = useMemo(() => {
     const groups: Record<string, StaffProfile[]> = {};
     staff.forEach((s) => {
@@ -311,7 +354,11 @@ export const StaffManagementPage: React.FC = () => {
               className="input text-sm py-2 pl-8 w-64"
             />
           </div>
-          <select value={roleFilter} onChange={(e) => updateFilter(setRoleFilter)(e.target.value)} className="input text-sm py-2">
+          <select
+            value={roleFilter}
+            onChange={(e) => updateFilter(setRoleFilter)(e.target.value)}
+            className="input text-sm py-2"
+          >
             <option value="All">All Roles</option>
             {STAFF_ROLES.map((r) => (
               <option key={r} value={r}>
@@ -319,7 +366,11 @@ export const StaffManagementPage: React.FC = () => {
               </option>
             ))}
           </select>
-          <select value={statusFilter} onChange={(e) => updateFilter(setStatusFilter)(e.target.value)} className="input text-sm py-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => updateFilter(setStatusFilter)(e.target.value)}
+            className="input text-sm py-2"
+          >
             <option value="">All Statuses</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
@@ -342,6 +393,7 @@ export const StaffManagementPage: React.FC = () => {
       {toggleError && <div className="alert-danger">{toggleError}</div>}
       {resetError && <div className="alert-danger">{resetError}</div>}
       {lockError && <div className="alert-danger">{lockError}</div>}
+      {impersonateError && <div className="alert-danger">{impersonateError}</div>}
       {resendMessage && <div className="alert-success">{resendMessage}</div>}
 
       {isLoading ? (
@@ -369,7 +421,9 @@ export const StaffManagementPage: React.FC = () => {
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h3 className="text-sm font-bold text-[var(--color-text-primary)]">{s.name}</h3>
+                        <h3 className="text-sm font-bold text-[var(--color-text-primary)]">
+                          {s.name}
+                        </h3>
                         <p className="text-[11px] text-[var(--color-text-tertiary)] uppercase tracking-wider font-semibold mt-1">
                           {s.staffId ?? '—'}
                         </p>
@@ -394,22 +448,52 @@ export const StaffManagementPage: React.FC = () => {
                     </div>
 
                     <div className="pt-3 mt-1 flex items-center gap-1.5 flex-wrap">
-                      <button onClick={() => openEdit(s)} className="btn btn-secondary btn-sm gap-1">
+                      <button
+                        onClick={() => openEdit(s)}
+                        className="btn btn-secondary btn-sm gap-1"
+                      >
                         <Pencil className="w-3.5 h-3.5" />
                         Edit
                       </button>
-                      <button onClick={() => setPendingReset(s)} className="btn btn-secondary btn-sm gap-1">
+                      <button
+                        onClick={() => setPendingReset(s)}
+                        className="btn btn-secondary btn-sm gap-1"
+                      >
                         <KeyRound className="w-3.5 h-3.5" />
                         Reset Password
                       </button>
-                      <button onClick={() => setPendingLock(s)} className="btn btn-secondary btn-sm gap-1">
-                        {s.locked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                      <button
+                        onClick={() => setPendingLock(s)}
+                        className="btn btn-secondary btn-sm gap-1"
+                      >
+                        {s.locked ? (
+                          <Unlock className="w-3.5 h-3.5" />
+                        ) : (
+                          <Lock className="w-3.5 h-3.5" />
+                        )}
                         {s.locked ? 'Unlock' : 'Lock'}
                       </button>
-                      <button onClick={() => setPendingToggle(s)} className="btn btn-secondary btn-sm gap-1">
-                        {s.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                      <button
+                        onClick={() => setPendingToggle(s)}
+                        className="btn btn-secondary btn-sm gap-1"
+                      >
+                        {s.active ? (
+                          <Ban className="w-3.5 h-3.5" />
+                        ) : (
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        )}
                         {s.active ? 'Deactivate' : 'Reactivate'}
                       </button>
+                      {canImpersonate(s) && (
+                        <button
+                          onClick={() => setPendingImpersonate(s)}
+                          className="btn btn-secondary btn-sm gap-1"
+                          title="Sign in as this user -- recorded in the audit log"
+                        >
+                          <UserCog className="w-3.5 h-3.5" />
+                          Impersonate
+                        </button>
+                      )}
                       {s.mustChangePassword && (
                         <button
                           onClick={() => handleResendActivation(s.id)}
@@ -464,8 +548,14 @@ export const StaffManagementPage: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overlay-backdrop">
           <div className="card w-full max-w-lg p-6 animate-scale-in max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold">{editingId ? `Edit ${form.name}` : 'Add New Staff Member'}</h2>
-              <button type="button" onClick={() => setShowModal(false)} className="btn btn-ghost btn-icon">
+              <h2 className="text-lg font-bold">
+                {editingId ? `Edit ${form.name}` : 'Add New Staff Member'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="btn btn-ghost btn-icon"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -499,11 +589,15 @@ export const StaffManagementPage: React.FC = () => {
                     ))}
                   </select>
                   {editingId && (
-                    <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1">Role cannot be changed after creation.</p>
+                    <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1">
+                      Role cannot be changed after creation.
+                    </p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1">Email (login identifier)</label>
+                  <label className="block text-sm font-semibold mb-1">
+                    Email (login identifier)
+                  </label>
                   <input
                     required
                     type="email"
@@ -531,14 +625,20 @@ export const StaffManagementPage: React.FC = () => {
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-semibold mb-1">
-                    Assigned Department(s) <span className="font-normal text-[var(--color-text-tertiary)]">(optional, structured)</span>
+                    Assigned Department(s){' '}
+                    <span className="font-normal text-[var(--color-text-tertiary)]">
+                      (optional, structured)
+                    </span>
                   </label>
                   <select
                     multiple
                     className="input w-full h-24"
                     value={form.departmentIds}
                     onChange={(e) =>
-                      setForm({ ...form, departmentIds: Array.from(e.target.selectedOptions, (o) => o.value) })
+                      setForm({
+                        ...form,
+                        departmentIds: Array.from(e.target.selectedOptions, (o) => o.value),
+                      })
                     }
                   >
                     {departments.map((d) => (
@@ -548,7 +648,8 @@ export const StaffManagementPage: React.FC = () => {
                     ))}
                   </select>
                   <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1">
-                    Ctrl/Cmd-click to select multiple. The first selected becomes the primary department.
+                    Ctrl/Cmd-click to select multiple. The first selected becomes the primary
+                    department.
                   </p>
                 </div>
                 <div>
@@ -581,7 +682,11 @@ export const StaffManagementPage: React.FC = () => {
               {saveError && <div className="alert-danger">{saveError}</div>}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-[var(--color-border)] mt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="btn btn-secondary"
+                >
                   Cancel
                 </button>
                 <button type="submit" disabled={saving} className="btn btn-primary">
@@ -615,7 +720,11 @@ export const StaffManagementPage: React.FC = () => {
 
       {pendingToggle && (
         <ConfirmModal
-          title={pendingToggle.active ? `Deactivate ${pendingToggle.name}?` : `Reactivate ${pendingToggle.name}?`}
+          title={
+            pendingToggle.active
+              ? `Deactivate ${pendingToggle.name}?`
+              : `Reactivate ${pendingToggle.name}?`
+          }
           message={
             pendingToggle.active
               ? 'They will no longer be able to sign in. Historical records already created by them are unaffected.'
@@ -643,17 +752,37 @@ export const StaffManagementPage: React.FC = () => {
 
       {pendingLock && (
         <ConfirmModal
-          title={pendingLock.locked ? `Unlock ${pendingLock.name}'s account?` : `Lock ${pendingLock.name}'s account?`}
+          title={
+            pendingLock.locked
+              ? `Unlock ${pendingLock.name}'s account?`
+              : `Lock ${pendingLock.name}'s account?`
+          }
           message={
             pendingLock.locked
               ? 'They will be able to sign in again immediately, and any automatic failed-attempt lockout is cleared too.'
-              : "They will be unable to sign in until an administrator unlocks the account again, regardless of their password."
+              : 'They will be unable to sign in until an administrator unlocks the account again, regardless of their password.'
           }
           confirmLabel={pendingLock.locked ? 'Unlock' : 'Lock'}
           danger={!pendingLock.locked}
           busy={locking}
           onConfirm={confirmLock}
           onCancel={() => setPendingLock(null)}
+        />
+      )}
+
+      {pendingImpersonate && (
+        <ConfirmModal
+          title="Impersonate User?"
+          message={
+            `You are about to access the system as:\n\n${pendingImpersonate.name}\n${pendingImpersonate.email}\n\n` +
+            `Role: ${ROLE_LABELS[pendingImpersonate.role] ?? pendingImpersonate.role}\n\n` +
+            'Your actions will be recorded in the audit log.'
+          }
+          confirmLabel="Continue"
+          danger
+          busy={impersonating}
+          onConfirm={confirmImpersonate}
+          onCancel={() => setPendingImpersonate(null)}
         />
       )}
     </div>

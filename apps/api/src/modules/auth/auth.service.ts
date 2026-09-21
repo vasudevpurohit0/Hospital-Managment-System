@@ -13,6 +13,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto, ResetPasswordWithTokenDto } from './dto/forgot-password.dto';
+import { randomUUID } from 'crypto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { PlatformJwtPayload } from './strategies/platform-jwt.strategy';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
@@ -20,7 +21,7 @@ import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
 import { JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, JWT_PLATFORM_SECRET } from '../../common/config/jwt-secrets';
 import { runWithTenant } from '../../common/tenant/tenant-context';
-import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { AuthenticatedUser, ImpersonationClaims } from '../../common/decorators/current-user.decorator';
 import { generateResetToken, hashResetToken } from '../../common/security/password.util';
 import { EmailService } from '../../common/email/email.service';
 import { ActivateAccountDto } from './dto/activate-account.dto';
@@ -634,6 +635,122 @@ export class AuthService {
     await this.platformPrisma.activationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } });
 
     return { status: 'success', message: 'Account activated. You can now log in with your new password.' };
+  }
+
+  /**
+   * Mints an access token for AccountLifecycleService.impersonate(): every
+   * claim except `impersonation` itself is the TARGET user's own (their real
+   * sub/roleId/roleName/tokenVersion), so JwtStrategy, RbacGuard and every
+   * permission check downstream evaluate this exactly as if the target had
+   * logged in themselves -- effective privileges are never the
+   * impersonator's. Deliberately shorter-lived than a real login (60m vs
+   * 8h) and carries no refresh token, so a leaked/forgotten impersonation
+   * session can't outlive a normal one; the admin can always start a fresh
+   * one for a nested-impersonation-free re-grant.
+   *
+   * Fails closed: this only returns once the `auth.impersonation_started`
+   * audit row is actually committed, per requirement that every
+   * impersonation be audited -- unlike most audit writes elsewhere in this
+   * app, which are fire-and-forget.
+   */
+  async issueImpersonationSession(params: {
+    target: { id: string; identifier: string; roleId: string; roleName: string; tokenVersion: number };
+    hospitalId: string;
+    schemaName: string;
+    impersonator: { id: string; identifier: string; roleName: string; type: 'hospital' | 'platform' };
+    meta?: RequestMeta;
+  }): Promise<{ accessToken: string; expiresIn: string; sessionId: string }> {
+    const { browser, os, device } = parseUserAgent(params.meta?.userAgent);
+    const sessionId = randomUUID();
+    const impersonation: ImpersonationClaims = {
+      sessionId,
+      impersonatorId: params.impersonator.id,
+      impersonatorType: params.impersonator.type,
+      impersonatorRoleName: params.impersonator.roleName,
+      impersonatorIdentifier: params.impersonator.identifier,
+      startedAt: new Date().toISOString(),
+    };
+
+    const payload: JwtPayload = {
+      sub: params.target.id,
+      identifier: params.target.identifier,
+      roleId: params.target.roleId,
+      roleName: params.target.roleName,
+      hospitalId: params.hospitalId,
+      schemaName: params.schemaName,
+      tokenVersion: params.target.tokenVersion,
+      type: 'access',
+      impersonation,
+    };
+
+    const expiresIn = process.env.JWT_IMPERSONATION_EXPIRES_IN || '60m';
+    let accessToken: string;
+    try {
+      accessToken = this.jwtService.sign(payload, { secret: JWT_ACCESS_SECRET, expiresIn: expiresIn as any });
+    } catch (err: unknown) {
+      this.logger.error(`JWT signing error while starting impersonation of "${params.target.identifier}":`, err);
+      throw new InternalServerErrorException('Failed to start impersonation session.');
+    }
+
+    // Deliberately NOT fire-and-forget (contrast every other audit write in
+    // this file): "every impersonation is audited" is a hard requirement,
+    // so a failed write here must fail the whole start rather than silently
+    // handing out a working session with no trail.
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: params.impersonator.type === 'platform' ? null : params.impersonator.id,
+        actorRole:
+          params.impersonator.type === 'platform'
+            ? `SuperAdmin (${params.impersonator.identifier})`
+            : params.impersonator.roleName,
+        action: 'auth.impersonation_started',
+        entityType: 'User',
+        entityId: params.target.id,
+        severity: 'HIGH',
+        description: `Started impersonating "${params.target.identifier}" (${params.target.roleName}), session ${sessionId}`,
+        ipAddress: params.meta?.ip,
+        browser,
+        os,
+        device,
+        // Explicitly null, not omitted: this event's actor IS the
+        // impersonator, so TenantClientFactory's audit middleware must not
+        // also stamp these (it only fills in an `undefined` value).
+        impersonatorActorId: null,
+        impersonatorRoleLabel: null,
+      },
+    });
+
+    return { accessToken, expiresIn, sessionId };
+  }
+
+  /**
+   * Ends the caller's own impersonation session. Purely an audit event --
+   * the impersonation access token itself keeps working (RbacGuard/JwtStrategy
+   * have no session-blacklist mechanism, same as every other token in this
+   * app) until it naturally expires; the frontend is expected to stop
+   * sending it and restore the administrator's own original token instead,
+   * which it already holds (never handed to, or trusted from, the server --
+   * see StaffManagementPage/useAuth for how the client keeps both).
+   */
+  async endImpersonation(user: AuthenticatedUser): Promise<{ status: 'success' }> {
+    if (!user.impersonation) {
+      throw new BadRequestException('You are not currently impersonating another user.');
+    }
+    const imp = user.impersonation;
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: imp.impersonatorType === 'platform' ? null : imp.impersonatorId,
+        actorRole: imp.impersonatorType === 'platform' ? `SuperAdmin (${imp.impersonatorIdentifier})` : imp.impersonatorRoleName,
+        action: 'auth.impersonation_ended',
+        entityType: 'User',
+        entityId: user.id,
+        severity: 'HIGH',
+        description: `Ended impersonation of "${user.identifier}", session ${imp.sessionId}`,
+        impersonatorActorId: null,
+        impersonatorRoleLabel: null,
+      },
+    });
+    return { status: 'success' };
   }
 
   private async issueAccessTokenFromRefresh(payload: RefreshPayload) {

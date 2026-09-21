@@ -30,6 +30,7 @@ export interface MedicineListEntry {
   id: string;
   name: string;
   brandName: string;
+  medicineType: string;
   prescribedQty: number;
   dispensedQty: number;
   status: PrescriptionItemStatus;
@@ -738,7 +739,8 @@ export class PatientService {
   /**
    * 7. Fetch Complete Medical History (Longitudinal Record)
    */
-  async getPatientMedicalHistory(identifier: string) {
+  async getPatientMedicalHistory(identifier: string, opts?: { canViewBilling?: boolean }) {
+    const canViewBilling = opts?.canViewBilling ?? true;
     const trimmed = identifier.trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
     const orConditions: Prisma.EmployeeWhereInput[] = [
@@ -818,11 +820,17 @@ export class PatientService {
     // everything Feature 5 asks for: clinical AND financial, connected by
     // the one permanent UHID.
     const timeline = employee.visits.map((v) => {
-      const grossAmount = v.chargeItems.reduce((a, c) => a.add(c.grossAmount), new Prisma.Decimal(0));
-      const netAmount = v.chargeItems.reduce((a, c) => a.add(c.netAmount), new Prisma.Decimal(0));
-      const outstandingAmount = v.chargeItems
-        .filter((c) => c.status === 'PENDING')
-        .reduce((a, c) => a.add(c.netAmount), new Prisma.Decimal(0));
+      const grossAmount = canViewBilling
+        ? v.chargeItems.reduce((a, c) => a.add(c.grossAmount), new Prisma.Decimal(0))
+        : new Prisma.Decimal(0);
+      const netAmount = canViewBilling
+        ? v.chargeItems.reduce((a, c) => a.add(c.netAmount), new Prisma.Decimal(0))
+        : new Prisma.Decimal(0);
+      const outstandingAmount = canViewBilling
+        ? v.chargeItems
+            .filter((c) => c.status === 'PENDING')
+            .reduce((a, c) => a.add(c.netAmount), new Prisma.Decimal(0))
+        : new Prisma.Decimal(0);
 
       return {
         visitId: v.id,
@@ -865,7 +873,8 @@ export class PatientService {
           grossAmount: grossAmount.toString(),
           netAmount: netAmount.toString(),
           outstandingAmount: outstandingAmount.toString(),
-          chargeCount: v.chargeItems.length,
+          chargeCount: canViewBilling ? v.chargeItems.length : 0,
+          authorized: canViewBilling,
         },
       };
     });
@@ -973,7 +982,8 @@ export class PatientService {
     return this.getPatientByEmployeeId(employee.employeeId);
   }
 
-  async getPatientMasterRecord(id: string) {
+  async getPatientMasterRecord(id: string, opts?: { canViewBilling?: boolean }) {
+    const canViewBilling = opts?.canViewBilling ?? true;
     // 1. Fetch employee details with full relations
     const employee = await this.prisma.employee.findUnique({
       where: { id },
@@ -1123,6 +1133,7 @@ export class PatientService {
             id: item.id,
             name: item.medicineName || 'Medicine',
             brandName: '—',
+            medicineType: item.medicineType,
             prescribedQty: item.dispensedQuantity || 0, // Fallback if no separate prescribed field is defined
             dispensedQty,
             status: item.dispenseStatus,
@@ -1139,7 +1150,11 @@ export class PatientService {
     // patient was actually billed or had actually paid. There is exactly one
     // billing computation in the system now, and every screen that shows a
     // rupee figure resolves it from here.
-    const ledger = await this.chargeService.patientLedger(employee.employeeId);
+    //
+    // Gated on Charge:read exactly like PatientHistoryService's timeline:
+    // a role with PatientHistory:read but not Charge:read (Pathologist)
+    // gets zeroed figures plus billingAuthorized:false, never real amounts.
+    const ledger = canViewBilling ? await this.chargeService.patientLedger(employee.employeeId) : null;
     const categoryBucket = (categoryName: string): 'consultation' | 'pharmacy' | 'lab' | 'therapy' | 'other' => {
       if (categoryName === 'Consultation') return 'consultation';
       if (categoryName === 'Pharmacy') return 'pharmacy';
@@ -1149,8 +1164,10 @@ export class PatientService {
     };
 
     const bucketTotals = { consultation: 0, pharmacy: 0, lab: 0, therapy: 0, other: 0 };
-    for (const txn of ledger.transactions) {
-      bucketTotals[categoryBucket(txn.category)] += Number(txn.totalAmount);
+    if (ledger) {
+      for (const txn of ledger.transactions) {
+        bucketTotals[categoryBucket(txn.category)] += Number(txn.totalAmount);
+      }
     }
 
     const billingSummary = {
@@ -1159,9 +1176,10 @@ export class PatientService {
       lab: bucketTotals.lab,
       therapy: bucketTotals.therapy,
       other: bucketTotals.other,
-      total: Number(ledger.summary.totalAmount),
-      paid: Number(ledger.summary.paidAmount),
-      pending: Number(ledger.summary.outstandingAmount),
+      total: ledger ? Number(ledger.summary.totalAmount) : 0,
+      paid: ledger ? Number(ledger.summary.paidAmount) : 0,
+      pending: ledger ? Number(ledger.summary.outstandingAmount) : 0,
+      authorized: canViewBilling,
     };
     const pendingAmount = billingSummary.pending;
 
@@ -1275,13 +1293,16 @@ export class PatientService {
     });
 
     // Payments (Feature 3/4/15) — one event per receipt actually issued,
-    // from the same ledger the billing summary above resolves.
+    // from the same ledger the billing summary above resolves. Hidden
+    // entirely when the caller lacks Charge:read (ledger is null then).
     const receiptTotals = new Map<string, { amount: number; date: Date }>();
-    for (const txn of ledger.transactions) {
-      if (!txn.receiptNumber) continue;
-      const existing = receiptTotals.get(txn.receiptNumber);
-      const amount = (existing?.amount ?? 0) + Number(txn.totalAmount);
-      receiptTotals.set(txn.receiptNumber, { amount, date: existing?.date ?? txn.date });
+    if (ledger) {
+      for (const txn of ledger.transactions) {
+        if (!txn.receiptNumber) continue;
+        const existing = receiptTotals.get(txn.receiptNumber);
+        const amount = (existing?.amount ?? 0) + Number(txn.totalAmount);
+        receiptTotals.set(txn.receiptNumber, { amount, date: existing?.date ?? txn.date });
+      }
     }
     for (const [receiptNumber, { amount, date }] of receiptTotals) {
       timelineEvents.push({

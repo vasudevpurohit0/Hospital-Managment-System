@@ -10,7 +10,10 @@ import { Badge } from '../components/ui/Badge';
 import { searchPatients, getPatientMasterRecord, updatePatientProfile } from '../api/patient.api';
 import { fetchDepartments, Department } from '../api/opd.api';
 import { downloadStatementPdf } from '../api/ledger.api';
-import { formatDateMedium, formatDateTimeMedium } from '../utils/date';
+import { fetchPatientTimeline, downloadPatientTimelinePdf, PatientHistoryReport } from '../api/patient-history.api';
+import { PatientClinicalTimeline } from '../components/patient/PatientClinicalTimeline';
+import { PatientMedicationHistory } from '../components/patient/PatientMedicationHistory';
+import { formatDateMedium } from '../utils/date';
 
 /* ═══════════════════════════════════════════════════════════
    Patient Master / Central Records Module
@@ -36,7 +39,14 @@ export const PatientRecordsPage: React.FC = () => {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [detailData, setDetailData] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'visits' | 'admissions' | 'medicines' | 'billing'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'visits' | 'admissions' | 'medicines' | 'timeline' | 'medications' | 'billing'
+  >('overview');
+
+  // Complete clinical timeline (Feature: Patient Clinical Timeline & PDF Report)
+  const [historyReport, setHistoryReport] = useState<PatientHistoryReport | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   
   // Edit Profile form state (Receptionist/Admin only)
   const [editMode, setEditMode] = useState(false);
@@ -98,6 +108,9 @@ export const PatientRecordsPage: React.FC = () => {
     setSelectedPatientId(patientId);
     setDetailLoading(true);
     setEditMode(false);
+    setActiveTab('overview');
+    setHistoryReport(null);
+    setHistoryError(null);
     try {
       const data = await getPatientMasterRecord(patientId, authToken);
       setDetailData(data);
@@ -111,6 +124,28 @@ export const PatientRecordsPage: React.FC = () => {
       console.error('Failed to load patient details', err);
     } finally {
       setDetailLoading(false);
+    }
+
+    // Separate call, not blocking the rest of the profile on it -- a
+    // Pathologist-type role that somehow fails this call still sees the
+    // core profile above.
+    try {
+      const report = await fetchPatientTimeline(patientId, authToken);
+      setHistoryReport(report);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : 'Failed to load clinical timeline');
+    }
+  };
+
+  const handleDownloadClinicalReport = async () => {
+    if (!detailData) return;
+    setDownloadingPdf(true);
+    try {
+      await downloadPatientTimelinePdf(selectedPatientId!, detailData.personalInfo.employeeId, authToken);
+    } catch (err) {
+      console.error('Failed to download clinical report PDF', err);
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -404,31 +439,47 @@ export const PatientRecordsPage: React.FC = () => {
                   </div>
                   <div className="bg-[var(--color-surface-secondary)] p-2.5 rounded-lg border border-[var(--color-border)] text-center">
                     <span className="text-[10px] text-[var(--color-text-secondary)] uppercase tracking-wider block font-semibold">Pending Bill</span>
-                    <span className="text-base font-extrabold text-warning-600">₹{detailData.stats.pendingBills}</span>
+                    <span className="text-base font-extrabold text-warning-600">
+                      {detailData.billingSummary?.authorized === false ? '—' : `₹${detailData.stats.pendingBills}`}
+                    </span>
                   </div>
                 </div>
 
-                {/* TABS SELECTOR */}
-                <div className="flex border-b border-[var(--color-border)] text-xs font-semibold overflow-x-auto">
-                  {[
-                    { id: 'overview', label: 'Overview' },
-                    { id: 'visits', label: 'Visits' },
-                    { id: 'admissions', label: 'Admissions' },
-                    { id: 'medicines', label: 'Medicines' },
-                    { id: 'billing', label: 'Billing' },
-                  ].map((tab) => (
+                {/* TABS SELECTOR + Clinical Report PDF */}
+                <div className="flex items-center justify-between border-b border-[var(--color-border)] gap-2">
+                  <div className="flex text-xs font-semibold overflow-x-auto">
+                    {[
+                      { id: 'overview', label: 'Overview' },
+                      { id: 'visits', label: 'Visits' },
+                      { id: 'admissions', label: 'Admissions' },
+                      { id: 'medicines', label: 'Medicines' },
+                      { id: 'timeline', label: 'Timeline' },
+                      { id: 'medications', label: 'Medication History' },
+                      { id: 'billing', label: 'Billing' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={`py-2 px-3 border-b-2 whitespace-nowrap transition-colors ${
+                          activeTab === tab.id
+                            ? 'border-primary-500 text-primary-600'
+                            : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  {historyReport && (
                     <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id as any)}
-                      className={`py-2 px-3 border-b-2 whitespace-nowrap transition-colors ${
-                        activeTab === tab.id
-                          ? 'border-primary-500 text-primary-600'
-                          : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
-                      }`}
+                      onClick={handleDownloadClinicalReport}
+                      disabled={downloadingPdf}
+                      className="btn btn-secondary btn-sm text-[11px] gap-1.5 py-1 shrink-0 whitespace-nowrap disabled:opacity-50"
+                      title="Download the complete clinical history as a PDF"
                     >
-                      {tab.label}
+                      📄 {downloadingPdf ? 'Preparing...' : 'Download Clinical Report PDF'}
                     </button>
-                  ))}
+                  )}
                 </div>
 
                 {/* TAB CONTENT: OVERVIEW (Personal Info, Timeline & Stats) */}
@@ -551,26 +602,49 @@ export const PatientRecordsPage: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Timeline */}
-                    <div className="space-y-3">
-                      <h3 className="font-bold text-[var(--color-text-primary)]">Medical Timeline</h3>
-                      <div className="relative pl-6 space-y-4 border-l border-primary-100 ml-3 py-1">
-                        {detailData.timeline.map((event: any, idx: number) => (
-                          <div key={idx} className="relative">
-                            {/* Circle bullet node */}
-                            <div className="absolute -left-[31px] top-0.5 w-4.5 h-4.5 rounded-full bg-white border-2 border-primary-500 flex items-center justify-center">
-                              <div className="w-1.5 h-1.5 rounded-full bg-primary-500" />
-                            </div>
-                            <div>
-                              <span className="font-semibold block text-[var(--color-text-primary)]">{event.title}</span>
-                              <span className="text-[10px] text-[var(--color-text-secondary)] block">{event.description}</span>
-                              <span className="text-[9px] text-[var(--color-text-tertiary)] font-mono">{formatDateTimeMedium(event.date)}</span>
-                            </div>
-                          </div>
-                        ))}
+                    {/* Timeline teaser -- the full expandable/filterable/searchable
+                        clinical timeline now lives in its own tab (Feature:
+                        Complete Patient Clinical Timeline). */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold text-[var(--color-text-primary)]">Medical Timeline</h3>
+                        <button onClick={() => setActiveTab('timeline')} className="text-xs text-primary-600 hover:underline font-semibold">
+                          View full clinical timeline →
+                        </button>
                       </div>
+                      {historyError ? (
+                        <p className="text-xs text-red-600">{historyError}</p>
+                      ) : historyReport ? (
+                        <p className="text-xs text-[var(--color-text-secondary)]">
+                          {historyReport.events.length} recorded event(s) from {historyReport.period.from ? formatDateMedium(historyReport.period.from) : '—'} to {historyReport.period.to ? formatDateMedium(historyReport.period.to) : '—'}.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-[var(--color-text-tertiary)]">Loading timeline...</p>
+                      )}
                     </div>
                   </div>
+                )}
+
+                {/* TAB CONTENT: COMPLETE CLINICAL TIMELINE */}
+                {activeTab === 'timeline' && (
+                  historyError ? (
+                    <p className="text-xs text-red-600 py-4">{historyError}</p>
+                  ) : historyReport ? (
+                    <PatientClinicalTimeline report={historyReport} />
+                  ) : (
+                    <p className="text-xs text-[var(--color-text-tertiary)] py-8 text-center">Loading clinical timeline...</p>
+                  )
+                )}
+
+                {/* TAB CONTENT: MEDICATION HISTORY (prescribed / dispensed / administered) */}
+                {activeTab === 'medications' && (
+                  historyError ? (
+                    <p className="text-xs text-red-600 py-4">{historyError}</p>
+                  ) : historyReport ? (
+                    <PatientMedicationHistory report={historyReport} />
+                  ) : (
+                    <p className="text-xs text-[var(--color-text-tertiary)] py-8 text-center">Loading medication history...</p>
+                  )
                 )}
 
                 {/* TAB CONTENT: VISIT HISTORY */}
@@ -682,7 +756,14 @@ export const PatientRecordsPage: React.FC = () => {
                             detailData.medicines.map((med: any) => (
                               <tr key={med.id}>
                                 <td className="p-2.5 pl-3 font-medium">
-                                  <span className="block">{med.name}</span>
+                                  <span className="flex items-center gap-1.5">
+                                    {med.name}
+                                    {med.medicineType === 'CUSTOM' && (
+                                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                        Custom
+                                      </span>
+                                    )}
+                                  </span>
                                   <span className="text-[9px] text-[var(--color-text-secondary)]">{med.brandName}</span>
                                 </td>
                                 <td className="p-2.5 text-center font-mono">{med.prescribedQty}</td>
@@ -703,9 +784,18 @@ export const PatientRecordsPage: React.FC = () => {
 
                 {/* TAB CONTENT: BILLING SUMMARY — every figure below is a real
                     ChargeItem/Receipt aggregate (ChargeService.patientLedger),
-                    the same source the Patient Ledger screen reads. */}
+                    the same source the Patient Ledger screen reads. Hidden
+                    entirely for roles with PatientHistory:read but not
+                    Charge:read (e.g. Pathologist): the backend zeroes the
+                    figures and sets billingSummary.authorized=false. */}
                 {activeTab === 'billing' && (
                   <div className="space-y-4 text-xs">
+                    {detailData.billingSummary?.authorized === false ? (
+                      <p className="text-xs text-[var(--color-text-secondary)] py-6 text-center">
+                        Not authorized to view billing information.
+                      </p>
+                    ) : (
+                    <>
                     <div className="flex items-center justify-between border-b border-[var(--color-border)] pb-2">
                       <h3 className="font-bold text-xs text-[var(--color-text-primary)]">Billing Breakdown & Transactions</h3>
                       <button
@@ -755,6 +845,8 @@ export const PatientRecordsPage: React.FC = () => {
                         <span className="text-base font-extrabold font-mono mt-0.5">₹{detailData.billingSummary.pending}.00</span>
                       </div>
                     </div>
+                    </>
+                    )}
                   </div>
                 )}
               </>

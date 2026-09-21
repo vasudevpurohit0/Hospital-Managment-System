@@ -290,6 +290,15 @@ export const PERMISSION_GRANTS: PermissionGrant[] = [
   { roleName: 'Administrator', resource: 'Staff', action: 'read' },
   { roleName: 'Administrator', resource: 'Staff', action: 'update' },
   { roleName: 'Administrator', resource: 'Staff', action: 'delete' },
+  // Secure user impersonation. A Super Admin needs no seed row here at all
+  // (RbacGuard bypasses permission checks for a platform-type token
+  // entirely) -- these two grants are what let a hospital-local
+  // Administrator impersonate their own hospital's staff/doctors.
+  // AccountLifecycleService.impersonate() separately refuses an
+  // Administrator-type actor targeting another Administrator, so this grant
+  // alone does not let one Hospital Admin impersonate another.
+  { roleName: 'Administrator', resource: 'Staff', action: 'impersonate' },
+  { roleName: 'Administrator', resource: 'Doctor', action: 'impersonate' },
   { roleName: 'Administrator', resource: 'HospitalUID', action: 'create' },
   { roleName: 'Administrator', resource: 'HospitalUID', action: 'read' },
   { roleName: 'Administrator', resource: 'Inventory', action: 'create' },

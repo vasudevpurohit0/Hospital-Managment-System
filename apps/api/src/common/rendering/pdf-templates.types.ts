@@ -24,6 +24,59 @@ export interface ReceiptDetailForPdf {
   amountInWords: string;
 }
 
+export interface PatientHistoryForPdf {
+  patient: {
+    uhid: string | null;
+    employeeId: string;
+    name: string;
+    age: string;
+    gender: string;
+    dob: string;
+    mobile: string;
+    address: string;
+    employmentType: string;
+  };
+  hospitalName: string;
+  period: { from: string | null; to: string | null };
+  summary: {
+    totalVisits: number;
+    totalAdmissions: number;
+    totalConsultations: number;
+    totalLabOrders: number;
+    totalPrescriptions: number;
+    totalMedicines: number;
+    totalProcedures: number;
+    totalTherapySessions: number;
+    totalBills: number;
+  };
+  events: {
+    type: string;
+    title: string;
+    timestamp: string | null;
+    timeRecorded: boolean;
+    department: string | null;
+    location: string | null;
+    performedBy: string | null;
+    performedByRole: string | null;
+    status: string | null;
+  }[];
+  medicationHistory: {
+    medicineName: string;
+    medicineType: string;
+    stage: string;
+    timestamp: string | null;
+    timeRecorded: boolean;
+    dose: string | null;
+    frequency: string | null;
+    duration: string | null;
+    quantity: number | null;
+    by: string | null;
+    notRecordedReason?: string;
+  }[];
+  billing: { authorized: boolean; total: number; paid: number; pending: number };
+  generatedAt: string;
+}
+
 export interface LabReportForPdf {
   labNumber: string | null;
   status: string;

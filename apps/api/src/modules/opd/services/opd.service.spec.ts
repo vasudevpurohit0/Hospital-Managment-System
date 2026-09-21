@@ -274,6 +274,37 @@ describe('OpdService', () => {
     });
   });
 
+  describe('getHospitalQueue() -- hospital-wide queue for the public display', () => {
+    it('rejects a Doctor caller outright, same guard as getQueue()', async () => {
+      await expect(service.getHospitalQueue(doctorActor)).rejects.toThrow(ForbiddenException);
+      expect(mockPrisma.oPDVisit.findMany).not.toHaveBeenCalled();
+    });
+
+    it('queries active-status visits across every department in one call, ordered by department then the same priority/position/createdAt rules as getQueue()', async () => {
+      mockPrisma.oPDVisit.findMany.mockResolvedValue([]);
+      await service.getHospitalQueue(adminActor);
+
+      expect(mockPrisma.oPDVisit.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: { in: ['WAITING', 'CALLED', 'IN_CONSULTATION'] } },
+          orderBy: [
+            { departmentId: 'asc' },
+            { priority: 'desc' },
+            { queuePosition: 'asc' },
+            { createdAt: 'asc' },
+          ],
+        }),
+      );
+    });
+
+    it('runs a single query regardless of how many departments the hospital has (no N+1)', async () => {
+      mockPrisma.oPDVisit.findMany.mockResolvedValue([]);
+      await service.getHospitalQueue(adminActor);
+      expect(mockPrisma.oPDVisit.findMany).toHaveBeenCalledTimes(1);
+      expect(mockDepartmentService.findById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('createOpdVisit (regression: missing visitId existence check)', () => {
     it('rejects an unresolved visitId with NotFoundException before ever entering the transaction', async () => {
       mockPrisma.visit.findUnique.mockResolvedValue(null);

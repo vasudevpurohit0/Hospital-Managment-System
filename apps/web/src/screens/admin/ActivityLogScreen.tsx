@@ -374,6 +374,11 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = () => {
                             {actorDisplayName(entry)}
                           </button>
                           <Badge variant="neutral">{entry.actorRole.toUpperCase()}</Badge>
+                          {entry.impersonatorRoleLabel && (
+                            <span title="This action was taken during an impersonation session">
+                              <Badge variant="warning">Impersonated by {entry.impersonatorRoleLabel}</Badge>
+                            </span>
+                          )}
                           <Badge variant={actionBadgeVariant(entry.action)}>
                             {actionVerb(entry.action)}
                           </Badge>
@@ -458,7 +463,17 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = () => {
                       <span className="text-[var(--color-text-tertiary)]">System</span>
                     )}
                   </td>
-                  <td className="p-3">{entry.actorRole}</td>
+                  <td className="p-3">
+                    {entry.actorRole}
+                    {entry.impersonatorRoleLabel && (
+                      <span
+                        className="block text-[10px] font-semibold text-amber-700"
+                        title="This action was taken during an impersonation session"
+                      >
+                        via {entry.impersonatorRoleLabel}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3">
                     <Badge variant={actionBadgeVariant(entry.action)}>
                       {actionVerb(entry.action)}

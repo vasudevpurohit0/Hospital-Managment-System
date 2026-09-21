@@ -655,8 +655,9 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({ authToken }) =
 
     const validItems = items
       .filter((i) => i.medicineName && i.medicineName.trim() !== '')
-      .map(({ medicineName, dose, frequency, duration }) => ({
+      .map(({ medicineName, mode, dose, frequency, duration }) => ({
         medicineName: medicineName.trim(),
+        medicineType: mode === 'CUSTOM' ? ('CUSTOM' as const) : ('INVENTORY' as const),
         dose: dose.trim() || '1 Tablet',
         frequency: frequency.trim() || '1-0-1',
         duration: duration.trim() || '5 Days',

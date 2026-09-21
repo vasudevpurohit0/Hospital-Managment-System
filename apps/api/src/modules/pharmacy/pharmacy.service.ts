@@ -72,6 +72,16 @@ export class PharmacyService {
     const result: Record<string, any[]> = {};
 
     for (const item of rx.items) {
+      // A CUSTOM item is free text the doctor typed for a medicine the
+      // hospital doesn't stock -- fuzzy-matching it against the catalogue
+      // would be meaningless (and could wrongly surface an unrelated batch),
+      // so it always resolves to "no stock options" rather than running the
+      // lookup below.
+      if ((item as any).medicineType === 'CUSTOM') {
+        result[item.id] = [];
+        continue;
+      }
+
       // Extract primary medicine term (e.g. "Azithromycin" from "Azithromycin (Azee 500) - 500mg")
       const primaryTerm = item.medicineName.split(/[\(\-]/)[0].trim();
       const firstWord = primaryTerm.split(' ')[0].trim();
@@ -152,85 +162,110 @@ export class PharmacyService {
         // Single Benefit Rule call (Phase 6 engine)
         const outcome = await this.benefitRuleService.evaluate(empTypeCode);
 
-        // Fetch batch & check FEFO/expiry
-        const batch = await tx.medicineBatch.findUnique({
-          where: { id: payloadItem.medicineBatchId },
-        });
+        const isCustom = rxItem.medicineType === 'CUSTOM';
+        let batch: any = null;
+        let unitRate: number | any;
 
-        if (!batch) {
-          throw new BadRequestException(
-            `Medicine batch not found: ${payloadItem.medicineBatchId}`,
-          );
-        }
+        if (isCustom) {
+          // A CUSTOM item was never in inventory, so there is no batch to
+          // select and no catalogue price to charge from -- the pharmacist
+          // enters the price at dispense time instead (FR-PHM-07 stock
+          // safety rules below simply don't apply: nothing is deducted).
+          if (payloadItem.unitRate === undefined || payloadItem.unitRate === null) {
+            throw new BadRequestException(
+              `A dispense price is required for custom medicine "${rxItem.medicineName}" (not in hospital inventory).`,
+            );
+          }
+          unitRate = payloadItem.unitRate;
+        } else {
+          if (!payloadItem.medicineBatchId) {
+            throw new BadRequestException(
+              `A medicine batch must be selected to dispense inventory item "${rxItem.medicineName}".`,
+            );
+          }
 
-        if (
-          batch.stockStatus === StockStatus.EXPIRED ||
-          batch.stockStatus === StockStatus.QUARANTINED ||
-          batch.stockStatus === StockStatus.DISPOSED ||
-          batch.expiryDate <= new Date()
-        ) {
-          throw new BadRequestException(
-            `Batch ${batch.batchNumber} is expired or quarantined and cannot be dispensed (FR-PHM-07).`,
-          );
-        }
+          // Fetch batch & check FEFO/expiry
+          batch = await tx.medicineBatch.findUnique({
+            where: { id: payloadItem.medicineBatchId },
+          });
 
-        if (batch.currentStock < payloadItem.dispenseQuantity) {
-          throw new BadRequestException(
-            `Insufficient stock in batch ${batch.batchNumber}. Available: ${batch.currentStock}, Requested: ${payloadItem.dispenseQuantity}`,
-          );
-        }
+          if (!batch) {
+            throw new BadRequestException(
+              `Medicine batch not found: ${payloadItem.medicineBatchId}`,
+            );
+          }
 
-        // Atomically deduct inventory -- a conditional `updateMany` guarded
-        // by the current stock level, not a read-then-write `update`, so two
-        // concurrent dispense requests against the same batch can't both
-        // pass the check above and jointly oversell it.
-        const deducted = await tx.medicineBatch.updateMany({
-          where: { id: batch.id, currentStock: { gte: payloadItem.dispenseQuantity } },
-          data: { currentStock: { decrement: payloadItem.dispenseQuantity } },
-        });
-        if (deducted.count === 0) {
-          throw new ConflictException(
-            `Batch ${batch.batchNumber} no longer has enough stock for this dispense (concurrent update) — requested ${payloadItem.dispenseQuantity}.`,
-          );
-        }
+          if (
+            batch.stockStatus === StockStatus.EXPIRED ||
+            batch.stockStatus === StockStatus.QUARANTINED ||
+            batch.stockStatus === StockStatus.DISPOSED ||
+            batch.expiryDate <= new Date()
+          ) {
+            throw new BadRequestException(
+              `Batch ${batch.batchNumber} is expired or quarantined and cannot be dispensed (FR-PHM-07).`,
+            );
+          }
 
-        // Reconciles the location-level PharmacyStock ledger against what
-        // actually left the batch, so the Pharmacy location's on-hand figure
-        // doesn't silently drift upward forever after a Central->Pharmacy
-        // transfer. MedicineBatch.currentStock (just decremented above)
-        // remains the sole source of truth for whether a dispense is
-        // allowed at all -- this is a best-effort reconciliation, so it
-        // never blocks or fails the dispense if the PHARMACY-location row is
-        // missing or already smaller than the dispensed quantity (e.g. a
-        // batch dispensed straight from Central Store without ever being
-        // transferred out).
-        const pharmacyLocationStock = await tx.pharmacyStock.findFirst({
-          where: { medicineBatchId: batch.id, location: PharmacyLocation.PHARMACY },
-        });
-        if (pharmacyLocationStock) {
-          await tx.pharmacyStock.update({
-            where: { id: pharmacyLocationStock.id },
-            data: {
-              quantity: {
-                decrement: Math.min(payloadItem.dispenseQuantity, pharmacyLocationStock.quantity),
+          if (batch.currentStock < payloadItem.dispenseQuantity) {
+            throw new BadRequestException(
+              `Insufficient stock in batch ${batch.batchNumber}. Available: ${batch.currentStock}, Requested: ${payloadItem.dispenseQuantity}`,
+            );
+          }
+
+          // Atomically deduct inventory -- a conditional `updateMany` guarded
+          // by the current stock level, not a read-then-write `update`, so two
+          // concurrent dispense requests against the same batch can't both
+          // pass the check above and jointly oversell it.
+          const deducted = await tx.medicineBatch.updateMany({
+            where: { id: batch.id, currentStock: { gte: payloadItem.dispenseQuantity } },
+            data: { currentStock: { decrement: payloadItem.dispenseQuantity } },
+          });
+          if (deducted.count === 0) {
+            throw new ConflictException(
+              `Batch ${batch.batchNumber} no longer has enough stock for this dispense (concurrent update) — requested ${payloadItem.dispenseQuantity}.`,
+            );
+          }
+
+          // Reconciles the location-level PharmacyStock ledger against what
+          // actually left the batch, so the Pharmacy location's on-hand figure
+          // doesn't silently drift upward forever after a Central->Pharmacy
+          // transfer. MedicineBatch.currentStock (just decremented above)
+          // remains the sole source of truth for whether a dispense is
+          // allowed at all -- this is a best-effort reconciliation, so it
+          // never blocks or fails the dispense if the PHARMACY-location row is
+          // missing or already smaller than the dispensed quantity (e.g. a
+          // batch dispensed straight from Central Store without ever being
+          // transferred out).
+          const pharmacyLocationStock = await tx.pharmacyStock.findFirst({
+            where: { medicineBatchId: batch.id, location: PharmacyLocation.PHARMACY },
+          });
+          if (pharmacyLocationStock) {
+            await tx.pharmacyStock.update({
+              where: { id: pharmacyLocationStock.id },
+              data: {
+                quantity: {
+                  decrement: Math.min(payloadItem.dispenseQuantity, pharmacyLocationStock.quantity),
+                },
               },
+            });
+          }
+
+          // Append-only audit record
+          await tx.stockTransaction.create({
+            data: {
+              type: StockTransactionType.DISPENSE,
+              medicineBatchId: batch.id,
+              quantity: -payloadItem.dispenseQuantity, // Negative for dispense
+              prescriptionItemId: rxItem.id,
+              performedBy: userId,
             },
           });
+
+          // Trigger automatic low stock check/requisition
+          await this.procurementService.checkAndTriggerLowStockRequisition(batch.id, tx, userId);
+
+          unitRate = batch.issuePrice;
         }
-
-        // Append-only audit record
-        await tx.stockTransaction.create({
-          data: {
-            type: StockTransactionType.DISPENSE,
-            medicineBatchId: batch.id,
-            quantity: -payloadItem.dispenseQuantity, // Negative for dispense
-            prescriptionItemId: rxItem.id,
-            performedBy: userId,
-          },
-        });
-
-        // Trigger automatic low stock check/requisition
-        await this.procurementService.checkAndTriggerLowStockRequisition(batch.id, tx, userId);
 
         const newDispensed = rxItem.dispensedQuantity + payloadItem.dispenseQuantity;
         await tx.prescriptionItem.update({
@@ -249,9 +284,9 @@ export class PharmacyService {
           {
             visitId: rx.visitId,
             prescriptionItemId: rxItem.id,
-            medicineBatchId: batch.id,
+            medicineBatchId: batch?.id,
             quantity: payloadItem.dispenseQuantity,
-            unitRate: batch.issuePrice,
+            unitRate,
             benefitOutcome: outcome,
             medicineName: rxItem.medicineName,
             actorUserId: userId,
