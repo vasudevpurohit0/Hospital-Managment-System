@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -16,7 +16,7 @@ export class BillingController {
 
   @Get('receipts/:id')
   @RequirePermission('Billing', 'read')
-  async getReceipt(@Param('id') id: string) {
+  async getReceipt(@Param('id', ParseUUIDPipe) id: string) {
     return this.billingService.getReceipt(id);
   }
 }

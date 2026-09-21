@@ -7,12 +7,13 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GRNItemDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   medicineId!: string;
 
@@ -50,7 +51,7 @@ export class GRNItemDto {
 }
 
 export class CreateGRNDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   purchaseOrderId!: string;
 

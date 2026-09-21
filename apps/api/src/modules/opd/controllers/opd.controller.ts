@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Post, Get, Patch, Body, Query, Param, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Controller, Post, Get, Patch, Body, Query, Param, ParseUUIDPipe, UseInterceptors } from '@nestjs/common';
 import { OpdService } from '../services/opd.service';
 import { CreateOpdVisitDto } from '../dto/create-opd-visit.dto';
 import { TransferOpdVisitDto } from '../dto/transfer-opd-visit.dto';
@@ -56,44 +56,44 @@ export class OpdController {
 
   @Post(':id/call')
   @RequirePermission('OPDVisit', 'call')
-  async callToken(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async callToken(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.callToken(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/start-consultation')
   @RequirePermission('OPDVisit', 'update')
-  async startConsultation(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async startConsultation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.startConsultation(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/complete')
   @RequirePermission('OPDVisit', 'update')
-  async completeConsultation(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async completeConsultation(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.completeConsultation(id, { id: user.id, roleName: user.roleName, type: user.type });
   }
 
   @Patch(':id/no-show')
   @RequirePermission('OPDVisit', 'update')
-  async markNoShow(@Param('id') id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+  async markNoShow(@Param('id', ParseUUIDPipe) id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.markNoShow(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/skip')
   @RequirePermission('OPDVisit', 'update')
-  async skip(@Param('id') id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+  async skip(@Param('id', ParseUUIDPipe) id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.skip(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/cancel')
   @RequirePermission('OPDVisit', 'cancel')
-  async cancel(@Param('id') id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
+  async cancel(@Param('id', ParseUUIDPipe) id: string, @Body('reason') reason: string | undefined, @CurrentUser() user: AuthenticatedUser) {
     return this.opdService.cancel(id, { id: user.id, roleName: user.roleName, type: user.type }, reason);
   }
 
   @Patch(':id/transfer')
   @RequirePermission('OPDVisit', 'transfer')
   async transfer(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: TransferOpdVisitDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
@@ -108,7 +108,7 @@ export class OpdController {
 
   @Post(':id/close')
   @RequirePermission('OPDVisit', 'update')
-  async closeOpdVisit(@Param('id') id: string) {
+  async closeOpdVisit(@Param('id', ParseUUIDPipe) id: string) {
     return this.opdService.closeOpdVisit(id);
   }
 }

@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   IsArray,
   ValidateNested,
   IsInt,
@@ -12,7 +13,7 @@ import { ApprovalDecision } from '@prisma/client';
 import { Type } from 'class-transformer';
 
 export class UpdateRequisitionItemDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   itemId!: string;
 

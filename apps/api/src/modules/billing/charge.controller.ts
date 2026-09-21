@@ -7,6 +7,7 @@ import {
   HttpStatus,
   NotFoundException,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Res,
@@ -87,7 +88,7 @@ export class ChargeController {
   /** All charges for one visit — the raw material behind a receipt or statement. */
   @Get('visits/:visitId/charges')
   @RequirePermission('Charge', 'read')
-  async visitCharges(@Param('visitId') visitId: string) {
+  async visitCharges(@Param('visitId', ParseUUIDPipe) visitId: string) {
     return this.charges.listByVisit(visitId);
   }
 
@@ -175,7 +176,7 @@ export class ChargeController {
   @Post('charges/:id/cancel')
   @RequirePermission('Charge', 'cancel')
   async cancelCharge(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CancelChargeDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
@@ -199,7 +200,7 @@ export class ChargeController {
 
   @Get('receipts/:id')
   @RequirePermission('Receipt', 'read')
-  async getReceipt(@Param('id') id: string) {
+  async getReceipt(@Param('id', ParseUUIDPipe) id: string) {
     return this.receipts.getById(id);
   }
 
@@ -207,7 +208,7 @@ export class ChargeController {
   @RequirePermission('Receipt', 'read')
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Header('Content-Type', 'application/pdf')
-  async getReceiptPdf(@Param('id') id: string, @Res() res: Response) {
+  async getReceiptPdf(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
     const receipt = await this.receipts.getById(id);
     const branding = await this.documentRender.getBranding();
     const pdf = await this.documentRender.renderPdf(renderReceiptHtml(branding, receipt));

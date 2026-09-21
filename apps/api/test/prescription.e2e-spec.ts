@@ -6,6 +6,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Digital Prescription & Doctor Immutability (e2e)', () => {
@@ -63,7 +64,10 @@ describe('Digital Prescription & Doctor Immutability (e2e)', () => {
     prescription: {
       create: jest.fn().mockImplementation(async ({ data }) => {
         const item = {
-          id: `rx-${Date.now()}`,
+          // Real Postgres issues a UUID for Prescription.id (`@db.Uuid` in
+          // prisma/schema.prisma); this id flows into `PUT /prescriptions/:id`
+          // and `/:id/sign`, which now run through `ParseUUIDPipe`.
+          id: randomUUID(),
           status: 'DRAFT',
           signedAt: null,
           items: [],
@@ -172,7 +176,7 @@ describe('Digital Prescription & Doctor Immutability (e2e)', () => {
         .post('/api/prescriptions')
         .set('Authorization', `Bearer ${doctorToken}`)
         .send({
-          visitId: '00000000-0000-0000-0000-000000000100',
+          visitId: '99999999-9999-4999-8999-999999999999',
           diagnosisText: 'Acute Bronchitis',
           admissionRecommended: true,
           items: [

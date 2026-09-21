@@ -45,7 +45,7 @@ describe('client RBAC mirror', () => {
     ['lab:enterResults', ['LabTechnician', 'Pathologist'], ['Doctor', 'Administrator']],
     ['lab:verifyReport', ['Pathologist'], ['LabTechnician', 'Doctor', 'Administrator']],
     ['therapy:order', ['Doctor', 'Reception', 'Administrator'], ['Nurse', 'LabTechnician']],
-    ['therapy:markPerformed', ['Nurse'], ['Doctor', 'Reception', 'Administrator']],
+    ['therapy:markPerformed', ['Nurse', 'Administrator'], ['Doctor', 'Reception']],
   ] as [Capability, string[], string[]][])(
     '%s matches the seeded grant',
     (capability, allowed, denied) => {

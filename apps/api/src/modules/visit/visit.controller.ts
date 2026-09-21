@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { VisitService } from './visit.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -15,13 +15,13 @@ export class VisitController {
 
   @Get('employee/:employeeId')
   @RequirePermission('Employee', 'read')
-  async findVisitsByEmployee(@Param('employeeId') employeeId: string) {
+  async findVisitsByEmployee(@Param('employeeId', ParseUUIDPipe) employeeId: string) {
     return this.visitService.findVisitsByEmployee(employeeId);
   }
 
   @Get(':id')
   @RequirePermission('Visit', 'read')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.visitService.findOne(id);
   }
 }

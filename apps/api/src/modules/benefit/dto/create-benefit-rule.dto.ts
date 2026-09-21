@@ -1,8 +1,8 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, IsBoolean } from 'class-validator';
 import { BenefitOutcome } from '@prisma/client';
 
 export class CreateBenefitRuleDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   employmentTypeId!: string;
 

@@ -1,16 +1,16 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsUUID } from 'class-validator';
 
 export class CreateOpdVisitDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   visitId!: string;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   departmentId!: string;
 
   /** Validated against DoctorService's eligibility rule (active, Doctor role, has a profile, belongs to this department) before the visit is created. */
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   doctorId!: string;
 }

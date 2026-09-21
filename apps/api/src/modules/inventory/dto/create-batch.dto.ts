@@ -1,7 +1,7 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateBatchDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   medicineId!: string;
 
@@ -13,7 +13,7 @@ export class CreateBatchDto {
   @IsNotEmpty()
   manufacturer!: string;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   supplierId?: string;
 

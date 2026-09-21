@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { BenefitRuleService } from './benefit-rule.service';
 import { CreateBenefitRuleDto } from './dto/create-benefit-rule.dto';
 import { UpdateBenefitRuleDto } from './dto/update-benefit-rule.dto';
@@ -25,7 +25,7 @@ export class BenefitController {
 
   @Put(':id')
   @RequirePermission('BenefitRule', 'update')
-  async updateRule(@Param('id') id: string, @Body() dto: UpdateBenefitRuleDto) {
+  async updateRule(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateBenefitRuleDto) {
     return this.benefitRuleService.update(id, dto);
   }
 

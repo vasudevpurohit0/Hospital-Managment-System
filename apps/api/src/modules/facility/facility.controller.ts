@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { FacilityEligibilityService } from './facility.service';
 import { CreateFacilityRuleDto } from './dto/create-facility-rule.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -25,7 +25,7 @@ export class FacilityController {
   @Put(':id')
   @RequirePermission('FacilityEligibilityRule', 'update')
   async updateRule(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateFacilityRuleDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {

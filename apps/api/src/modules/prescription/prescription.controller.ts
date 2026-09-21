@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Get, Body, Param, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Put, Get, Body, Param, ParseUUIDPipe, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { PrescriptionService } from './prescription.service';
 import { CreatePrescriptionDto } from './dto/create-prescription.dto';
 import { UpdatePrescriptionDto } from './dto/update-prescription.dto';
@@ -20,13 +20,13 @@ export class PrescriptionController {
 
   @Put(':id')
   @RequirePermission('Prescription', 'update')
-  async updatePrescription(@Param('id') id: string, @Body() dto: UpdatePrescriptionDto) {
+  async updatePrescription(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePrescriptionDto) {
     return this.prescriptionService.updatePrescription(id, dto);
   }
 
   @Post(':id/sign')
   @RequirePermission('Prescription', 'sign')
-  async signPrescription(@Param('id') id: string, @Req() req: any) {
+  async signPrescription(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     // No fallback default: JwtAuthGuard has already verified this request and
     // AuthenticatedUser.roleName is always populated for an authenticated
     // caller. Defaulting a missing/unexpected role to 'Doctor' here would
@@ -38,7 +38,7 @@ export class PrescriptionController {
 
   @Get('visit/:visitId')
   @RequirePermission('Employee', 'read')
-  async findByVisit(@Param('visitId') visitId: string) {
+  async findByVisit(@Param('visitId', ParseUUIDPipe) visitId: string) {
     return this.prescriptionService.findByVisit(visitId);
   }
 }

@@ -24,7 +24,7 @@ describe('Employment-Type Benefit Rules Engine (e2e)', () => {
   const usersStore: any[] = [];
   const rulesStore: any[] = [
     {
-      id: 'r-contractual-e2e',
+      id: '33333333-3333-4333-8333-333333333333',
       employmentTypeId: 'emp-contractual',
       medicineCategory: null,
       outcome: 'PAID',
@@ -175,7 +175,7 @@ describe('Employment-Type Benefit Rules Engine (e2e)', () => {
   describe('2. Rule Admin Editing & Version Discipline', () => {
     it('should allow Admin to update a BenefitRule and increment rule version', async () => {
       const res = await request(app.getHttpServer())
-        .put('/api/benefit-rules/r-contractual-e2e')
+        .put('/api/benefit-rules/33333333-3333-4333-8333-333333333333')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ outcome: 'COVERED' })
         .expect(200);

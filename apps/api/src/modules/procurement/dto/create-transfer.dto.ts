@@ -1,8 +1,8 @@
-import { IsEnum, IsInt, IsNotEmpty, IsPositive, IsString } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsPositive, IsUUID } from 'class-validator';
 import { PharmacyLocation } from '@prisma/client';
 
 export class CreateTransferDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   medicineBatchId!: string;
 

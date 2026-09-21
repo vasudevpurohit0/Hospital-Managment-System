@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, ParseUUIDPipe, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { PharmacyService } from './pharmacy.service';
 import { DispenseMedicineDto } from './dto/dispense-medicine.dto';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
@@ -17,7 +17,7 @@ export class PharmacyController {
 
   @Get('prescriptions/:id/batches')
   @RequirePermission('Prescription', 'read')
-  async getBatchOptions(@Param('id') id: string) {
+  async getBatchOptions(@Param('id', ParseUUIDPipe) id: string) {
     return this.pharmacyService.getBatchOptions(id);
   }
 

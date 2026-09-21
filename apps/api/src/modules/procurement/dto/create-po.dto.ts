@@ -1,8 +1,8 @@
-import { IsArray, IsInt, IsNotEmpty, IsNumber, IsPositive, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsNotEmpty, IsNumber, IsPositive, IsUUID, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class POItemDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   medicineId!: string;
 
@@ -16,11 +16,11 @@ export class POItemDto {
 }
 
 export class CreatePODto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   requisitionId!: string;
 
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   supplierId!: string;
 

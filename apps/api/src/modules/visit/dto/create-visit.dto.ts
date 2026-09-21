@@ -1,8 +1,8 @@
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsUUID, IsBoolean } from 'class-validator';
 import { VisitType } from '@prisma/client';
 
 export class CreateVisitDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   employeeId!: string;
 

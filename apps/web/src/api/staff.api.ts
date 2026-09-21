@@ -194,3 +194,15 @@ export async function createDefaultRoles(
   });
   return unwrap(res, 'Failed to create default role accounts');
 }
+
+export interface StaffImpersonationSession {
+  accessToken: string;
+  expiresIn: string;
+  target: { id: string; identifier: string; role: string; name: string };
+}
+
+/** Starts a secure impersonation session -- every eligibility rule (self, active/locked/pending status, nested impersonation) is enforced server-side; this call simply surfaces whichever one failed. */
+export async function impersonateStaff(id: string): Promise<StaffImpersonationSession> {
+  const res = await apiFetch(`/api/staff/${id}/impersonate`, { method: 'POST' });
+  return unwrap(res, 'Failed to start impersonation');
+}

@@ -5,13 +5,14 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreatePrescriptionItemDto } from './create-prescription-item.dto';
 
 export class CreatePrescriptionDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   visitId!: string;
 

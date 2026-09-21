@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, ParseUUIDPipe, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import { ProcurementService } from './procurement.service';
 import { CreateRequisitionDto } from './dto/create-requisition.dto';
 import { ApproveRequisitionDto } from './dto/approve-requisition.dto';
@@ -30,7 +30,7 @@ export class ProcurementController {
   @Post('requisitions/:id/approve')
   @RequirePermission('Approval', 'approve')
   async approveRequisition(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ApproveRequisitionDto,
     @Req() req: any,
   ) {

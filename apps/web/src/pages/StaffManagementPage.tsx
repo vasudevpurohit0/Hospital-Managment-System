@@ -17,9 +17,11 @@ import {
   ChevronRight,
   UserCog,
 } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 import { Badge } from '../components/ui/Badge';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AccountCreatedModal } from '../components/AccountCreatedModal';
+import { CreateDefaultRolesModal } from '../components/CreateDefaultRolesModal';
 import {
   fetchAllStaffForAdmin,
   createStaff,
@@ -120,6 +122,12 @@ export const StaffManagementPage: React.FC = () => {
 
   const [resendingId, setResendingId] = useState<string | null>(null);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
+
+  const [showBulkModal, setShowBulkModal] = useState(false);
+
+  const [pendingImpersonate, setPendingImpersonate] = useState<StaffProfile | null>(null);
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDepartments()

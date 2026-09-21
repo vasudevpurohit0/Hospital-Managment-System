@@ -1,5 +1,9 @@
 import ExcelJS from 'exceljs';
 
+/** Safety limits (client validation is never trusted) -- mirrors the Employee Directory bulk-import limits (`employee-csv.util.ts`). */
+export const MEDICINE_IMPORT_MAX_ROWS = 1000;
+export const MEDICINE_IMPORT_MAX_BYTES = 2 * 1024 * 1024; // 2 MB
+
 /**
  * F-25/audit finding: this file used to hand-roll its own ZIP/CRC32/OOXML
  * writer and its own regex-based .xlsx/.xls reader from scratch (560 lines)
@@ -122,6 +126,12 @@ async function parseXlsxBuffer(buffer: Buffer): Promise<Array<{ rowNum: number; 
  * Universally parses any Excel (.xlsx, .csv) buffer into row objects.
  */
 export async function parseMedicineSpreadsheet(buffer: Buffer): Promise<ParsedMedicineRow[]> {
+  if (buffer.byteLength > MEDICINE_IMPORT_MAX_BYTES) {
+    throw new Error(
+      `Uploaded file is too large (${buffer.byteLength} bytes). Maximum is ${MEDICINE_IMPORT_MAX_BYTES} bytes.`,
+    );
+  }
+
   let rawRows: Array<{ rowNum: number; cells: string[] }>;
 
   // Check magic bytes for ZIP (.xlsx)
@@ -183,6 +193,12 @@ export async function parseMedicineSpreadsheet(buffer: Buffer): Promise<ParsedMe
       strength: cells[colMap.strength] ?? '',
       dosageForm: cells[colMap.dosageForm] ?? '',
     });
+  }
+
+  if (dataRows.length > MEDICINE_IMPORT_MAX_ROWS) {
+    throw new Error(
+      `Too many rows: ${dataRows.length}. The maximum per import is ${MEDICINE_IMPORT_MAX_ROWS}.`,
+    );
   }
 
   return dataRows;

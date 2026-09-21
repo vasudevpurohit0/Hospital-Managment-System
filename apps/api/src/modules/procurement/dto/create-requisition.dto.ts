@@ -6,12 +6,13 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class RequisitionItemDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   medicineId!: string;
 

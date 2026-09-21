@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { AdmissionService } from './admission.service';
 import { AllocateBedDto } from './dto/allocate-bed.dto';
 import { CreateNoteDto } from './dto/create-note.dto';
@@ -20,19 +20,19 @@ export class AdmissionController {
 
   @Get(':id')
   @RequirePermission('Admission', 'read')
-  async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.service.findOne(id, user);
   }
 
   @Post(':id/resolve')
   @RequirePermission('Admission', 'update')
-  async resolveEligibility(@Param('id') id: string) {
+  async resolveEligibility(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.resolveEligibility(id);
   }
 
   @Get(':id/eligible-beds')
   @RequirePermission('Admission', 'read')
-  async findAvailableBeds(@Param('id') id: string) {
+  async findAvailableBeds(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.findAvailableBeds(id);
   }
 
@@ -61,20 +61,20 @@ export class AdmissionController {
 
   @Delete('wards/:id')
   @RequirePermission('Admission', 'update')
-  async deleteWard(@Param('id') id: string) {
+  async deleteWard(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.deleteWard(id);
   }
 
   @Delete('beds/:id')
   @RequirePermission('Admission', 'update')
-  async deleteBed(@Param('id') id: string) {
+  async deleteBed(@Param('id', ParseUUIDPipe) id: string) {
     return this.service.deleteBed(id);
   }
 
   @Post(':id/allocate')
   @RequirePermission('Admission', 'update')
   async allocateBed(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AllocateBedDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
@@ -84,7 +84,7 @@ export class AdmissionController {
   @Post(':id/notes')
   @RequirePermission('AdmissionNote', 'create')
   async addNote(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateNoteDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
@@ -97,7 +97,7 @@ export class AdmissionController {
   @Post(':id/discharge')
   @RequirePermission('Admission', 'approve')
   async discharge(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: DischargeDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {

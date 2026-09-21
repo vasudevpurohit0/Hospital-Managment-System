@@ -21,7 +21,7 @@ describe('Expiry & FEFO Automation (e2e)', () => {
 
   const batchesStore: any[] = [
     {
-      id: 'batch-p-500-01',
+      id: '22222222-2222-4222-8222-222222222222',
       medicineId: 'med-1',
       batchNumber: 'P500-01',
       currentStock: 40,
@@ -132,7 +132,7 @@ describe('Expiry & FEFO Automation (e2e)', () => {
 
   it('POST /api/inventory/batches/:id/quarantine quarantines a batch', async () => {
     const res = await request(app.getHttpServer())
-      .post('/api/inventory/batches/batch-p-500-01/quarantine')
+      .post('/api/inventory/batches/22222222-2222-4222-8222-222222222222/quarantine')
       .set('Authorization', `Bearer ${jwtToken}`)
       .send({ reason: 'Preemptive quarantine' })
       .expect(201);
@@ -142,7 +142,7 @@ describe('Expiry & FEFO Automation (e2e)', () => {
 
   it('POST /api/inventory/batches/:id/dispose executes approved disposal with audit log', async () => {
     const res = await request(app.getHttpServer())
-      .post('/api/inventory/batches/batch-p-500-01/dispose')
+      .post('/api/inventory/batches/22222222-2222-4222-8222-222222222222/dispose')
       .set('Authorization', `Bearer ${jwtToken}`)
       .send({
         disposalReason: 'Expired past safe threshold',

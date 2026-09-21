@@ -34,7 +34,7 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
   const usersStore: any[] = [];
   const employeesStore: any[] = [
     {
-      id: '00000000-0000-0000-0000-000000000100',
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       employeeId: 'EMP-1001',
       name: 'Rajesh Kumar',
       department: 'Public Works Department',
@@ -226,7 +226,7 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
         .post('/api/visits')
         .set('Authorization', `Bearer ${receptionistToken}`)
         .send({
-          employeeId: '00000000-0000-0000-0000-000000000100',
+          employeeId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           type: 'OPD',
         })
         .expect(201);
@@ -242,7 +242,7 @@ describe('Repeat Visit Lookup & History (e2e)', () => {
         .post('/api/visits')
         .set('Authorization', `Bearer ${receptionistToken}`)
         .send({
-          employeeId: '00000000-0000-0000-0000-000000000100',
+          employeeId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           type: 'IPD',
         })
         .expect(201);

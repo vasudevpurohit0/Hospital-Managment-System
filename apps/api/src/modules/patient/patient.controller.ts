@@ -5,6 +5,7 @@ import {
   Put,
   Body,
   Param,
+  ParseUUIDPipe,
   Query,
   HttpCode,
   HttpStatus,
@@ -88,7 +89,7 @@ export class PatientController {
   // is granted only to Doctor/Nurse/Administrator/Pathologist.
   @Get(':id/history')
   @RequirePermission('PatientHistory', 'read')
-  async getPatientMedicalHistory(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async getPatientMedicalHistory(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.patientService.getPatientMedicalHistory(id, {
       canViewBilling: hasPermission(user.permissions, 'Charge', 'read'),
     });
@@ -96,7 +97,7 @@ export class PatientController {
 
   @Get(':id/master')
   @RequirePermission('PatientHistory', 'read')
-  async getPatientMasterRecord(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async getPatientMasterRecord(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.patientService.getPatientMasterRecord(id, {
       canViewBilling: hasPermission(user.permissions, 'Charge', 'read'),
     });
@@ -111,7 +112,7 @@ export class PatientController {
   // never the real figures.
   @Get(':id/timeline')
   @RequirePermission('PatientHistory', 'read')
-  async getPatientTimeline(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async getPatientTimeline(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.patientHistoryService.getPatientTimeline(id, {
       canViewBilling: hasPermission(user.permissions, 'Charge', 'read'),
     });
@@ -123,7 +124,7 @@ export class PatientController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Header('Content-Type', 'application/pdf')
   async getPatientTimelinePdf(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
     @Res() res: Response,
   ) {
@@ -149,7 +150,7 @@ export class PatientController {
   @Put(':id')
   @RequirePermission('Employee', 'update')
   async updatePatientProfile(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdatePatientProfileDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {

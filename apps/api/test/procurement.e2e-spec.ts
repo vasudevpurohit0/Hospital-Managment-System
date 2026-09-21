@@ -6,6 +6,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { PlatformPrismaService } from '../src/common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../src/common/tenant/tenant-client-factory';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-auth-mock';
 
 describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
@@ -39,8 +40,8 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
   const grnStore: any[] = [];
   const medicineBatchesStore: any[] = [
     {
-      id: 'batch-p-500-01',
-      medicineId: 'med-paracetamol',
+      id: '99999999-1111-4111-8111-111111111111',
+      medicineId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
       currentStock: 40,
       minimumStockLevel: 0,
       reorderLevel: 10,
@@ -48,12 +49,17 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
     },
   ];
   const pharmacyStockStore: any[] = [
-    { id: 'ps-central-1', medicineBatchId: 'batch-p-500-01', location: 'CENTRAL_STORE', quantity: 200 },
+    { id: 'ps-central-1', medicineBatchId: '99999999-1111-4111-8111-111111111111', location: 'CENTRAL_STORE', quantity: 200 },
   ];
   const storeTransfersStore: any[] = [];
 
-  let seq = 0;
-  const nextId = (prefix: string) => `${prefix}-${(++seq).toString().padStart(4, '0')}`;
+  // Real Postgres always issues UUID-shaped ids (every model's `id` column is
+  // `@db.Uuid` in prisma/schema.prisma) -- entities created through the
+  // mocked stores below must match that shape, since ids that reach a real
+  // HTTP request (e.g. the `:id` in POST requisitions/:id/approve) now pass
+  // through `ParseUUIDPipe` in the real controller and would 400 on a
+  // human-readable placeholder like `req-0001`.
+  const nextId = (_prefix: string) => randomUUID();
 
   const mockPrismaService = {
     $connect: jest.fn().mockResolvedValue(undefined),
@@ -243,7 +249,7 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
       .post('/api/procurement/requisitions')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        items: [{ medicineId: 'med-paracetamol', quantity: 500 }],
+        items: [{ medicineId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', quantity: 500 }],
         triggeredByAlert: false,
       })
       .expect(201);
@@ -259,7 +265,7 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
       .post('/api/procurement/requisitions')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        items: [{ medicineId: 'med-paracetamol', quantity: 200 }],
+        items: [{ medicineId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', quantity: 200 }],
       });
 
     const unapprovedReqId = reqRes.body.id;
@@ -269,8 +275,8 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
       .set('Authorization', `Bearer ${authToken}`)
       .send({
         requisitionId: unapprovedReqId,
-        supplierId: 'sup-01',
-        items: [{ medicineId: 'med-paracetamol', quantity: 200, unitPrice: 10 }],
+        supplierId: 'cccccccc-1111-4111-8111-111111111111',
+        items: [{ medicineId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', quantity: 200, unitPrice: 10 }],
       })
       .expect(400); // Bad Request (FR-SCM-03 approval check)
   });
@@ -294,8 +300,8 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
       .set('Authorization', `Bearer ${authToken}`)
       .send({
         requisitionId: createdRequisitionId,
-        supplierId: 'sup-01',
-        items: [{ medicineId: 'med-paracetamol', quantity: 500, unitPrice: 10 }],
+        supplierId: 'cccccccc-1111-4111-8111-111111111111',
+        items: [{ medicineId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', quantity: 500, unitPrice: 10 }],
       })
       .expect(201);
 
@@ -312,7 +318,7 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
         purchaseOrderId: createdPOId,
         items: [
           {
-            medicineId: 'med-paracetamol',
+            medicineId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
             batchNumber: 'GRN-E2E-2026-B1',
             manufacturer: 'Cipla',
             quantity: 500,
@@ -334,7 +340,7 @@ describe('Procurement Module (E2E - Phase 12 Supply Chain)', () => {
       .post('/api/procurement/transfers')
       .set('Authorization', `Bearer ${authToken}`)
       .send({
-        medicineBatchId: 'batch-p-500-01',
+        medicineBatchId: '99999999-1111-4111-8111-111111111111',
         fromLocation: 'CENTRAL_STORE',
         toLocation: 'PHARMACY',
         quantity: 100,

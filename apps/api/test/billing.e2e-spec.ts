@@ -17,7 +17,7 @@ describe('Billing Module (E2E - Phase 13 Billing & Benefit Ledger)', () => {
   const usersStore: any[] = [];
 
   const chargeItem = {
-    id: 'charge-e2e-1',
+    id: '44444444-4444-4444-8444-444444444444',
     prescriptionItemId: 'item-e2e-1',
     description: 'Paracetamol',
     categoryName: 'Pharmacy',

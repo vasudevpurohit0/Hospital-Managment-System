@@ -30,7 +30,7 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
   const usersStore: any[] = [];
   const batchesStore: any[] = [
     {
-      id: 'b-fefo-1',
+      id: '66666666-6666-4666-8666-666666666666',
       medicineId: 'med-1',
       batchNumber: 'EARLY-EXP-101',
       manufacturer: 'Cipla',
@@ -41,7 +41,7 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
       stockStatus: 'IN_STOCK',
     },
     {
-      id: 'b-fefo-2',
+      id: '77777777-7777-4777-8777-777777777777',
       medicineId: 'med-1',
       batchNumber: 'LATER-EXP-202',
       manufacturer: 'Cipla',
@@ -51,7 +51,7 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
       stockStatus: 'IN_STOCK',
     },
     {
-      id: 'b-expired-1',
+      id: '88888888-8888-4888-8888-888888888888',
       medicineId: 'med-1',
       batchNumber: 'EXPIRED-BATCH',
       manufacturer: 'Bad Labs',
@@ -64,14 +64,14 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
 
   const prescriptionsStore: any[] = [
     {
-      id: 'rx-signed-e2e-1',
+      id: '11111111-1111-4111-8111-111111111111',
       visitId: 'v-e2e-1',
       status: 'SIGNED',
       signedAt: new Date(),
       items: [
         {
-          id: 'item-e2e-1',
-          prescriptionId: 'rx-signed-e2e-1',
+          id: '55555555-5555-4555-8555-555555555555',
+          prescriptionId: '11111111-1111-4111-8111-111111111111',
           medicineName: 'Paracetamol',
           dose: '500mg',
           frequency: '1-0-1',
@@ -283,11 +283,11 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
 
     it('should return usable batch options ordered by FEFO and EXCLUDE expired batches (FR-PHM-07)', async () => {
       const res = await request(app.getHttpServer())
-        .get('/api/pharmacy/prescriptions/rx-signed-e2e-1/batches')
+        .get('/api/pharmacy/prescriptions/11111111-1111-4111-8111-111111111111/batches')
         .set('Authorization', `Bearer ${pharmacistToken}`)
         .expect(200);
 
-      const itemBatches = res.body['item-e2e-1'];
+      const itemBatches = res.body['55555555-5555-4555-8555-555555555555'];
       expect(itemBatches).toBeDefined();
       expect(itemBatches[0].batchNumber).toBe('EARLY-EXP-101'); // Earliest expiry batch first (FEFO)
 
@@ -302,9 +302,9 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
         .post('/api/pharmacy/dispense')
         .set('Authorization', `Bearer ${receptionToken}`)
         .send({
-          prescriptionId: 'rx-signed-e2e-1',
+          prescriptionId: '11111111-1111-4111-8111-111111111111',
           items: [
-            { prescriptionItemId: 'item-e2e-1', medicineBatchId: 'b-fefo-1', dispenseQuantity: 2 },
+            { prescriptionItemId: '55555555-5555-4555-8555-555555555555', medicineBatchId: '66666666-6666-4666-8666-666666666666', dispenseQuantity: 2 },
           ],
         })
         .expect(403);
@@ -315,9 +315,9 @@ describe('Pharmacy Dispensing & Inventory Enforcement (e2e)', () => {
         .post('/api/pharmacy/dispense')
         .set('Authorization', `Bearer ${pharmacistToken}`)
         .send({
-          prescriptionId: 'rx-signed-e2e-1',
+          prescriptionId: '11111111-1111-4111-8111-111111111111',
           items: [
-            { prescriptionItemId: 'item-e2e-1', medicineBatchId: 'b-fefo-1', dispenseQuantity: 2 },
+            { prescriptionItemId: '55555555-5555-4555-8555-555555555555', medicineBatchId: '66666666-6666-4666-8666-666666666666', dispenseQuantity: 2 },
           ],
         })
         .expect(201);

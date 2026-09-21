@@ -39,6 +39,17 @@ export class DocumentRenderService implements OnModuleDestroy {
             this.browserPromise = null; // let the next call relaunch
           });
           return browser;
+        })
+        .catch((err) => {
+          // A rejected promise is still a truthy value, so without this the
+          // `if (!this.browserPromise)` guard above would never see a falsy
+          // value again after the first failed launch -- every subsequent
+          // call would just re-await the same cached rejection forever,
+          // permanently wedging PDF generation until the whole process was
+          // restarted, even after whatever caused the failure (e.g. a
+          // missing system dependency) was fixed live.
+          this.browserPromise = null;
+          throw err;
         });
     }
     return this.browserPromise;

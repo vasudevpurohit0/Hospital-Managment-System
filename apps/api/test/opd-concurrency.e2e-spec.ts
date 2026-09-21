@@ -40,11 +40,11 @@ describe('OPD Daily Token Concurrency (e2e)', () => {
 
   const usersStore: any[] = [];
   const deptCardio = {
-    id: '00000000-0000-0000-0000-000000000050',
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     name: 'Cardiology',
     code: 'CARDIO',
   };
-  const doctorId = '00000000-0000-0000-0000-0000000000d1';
+  const doctorId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
   const opdVisitsStore: any[] = [];
 
@@ -180,7 +180,7 @@ describe('OPD Daily Token Concurrency (e2e)', () => {
         .post('/api/opd-visits')
         .set('Authorization', `Bearer ${receptionistToken}`)
         .send({
-          visitId: `00000000-0000-0000-0000-${(index + 1).toString().padStart(12, '0')}`,
+          visitId: `44444444-4444-4444-8444-${(index + 1).toString().padStart(12, '0')}`,
           departmentId: deptCardio.id,
           doctorId,
         }),

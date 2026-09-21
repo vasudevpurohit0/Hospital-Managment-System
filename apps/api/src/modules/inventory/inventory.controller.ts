@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  ParseUUIDPipe,
   Query,
   Res,
   UseGuards,
@@ -56,7 +57,11 @@ export class InventoryController {
     }
     const cleanBase64 = body.fileBase64.replace(/^data:.*?;base64,/, '');
     const buffer = Buffer.from(cleanBase64, 'base64');
-    return this.inventoryService.validateMedicineImport(buffer);
+    try {
+      return await this.inventoryService.validateMedicineImport(buffer);
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : 'Could not read the uploaded file.');
+    }
   }
 
   @Post('medicines/import/confirm')
@@ -134,13 +139,13 @@ export class InventoryController {
 
   @Post('batches/:id/quarantine')
   @RequirePermission('MedicineBatch', 'update')
-  async quarantineBatch(@Param('id') id: string, @Body('reason') reason?: string) {
+  async quarantineBatch(@Param('id', ParseUUIDPipe) id: string, @Body('reason') reason?: string) {
     return this.inventoryService.quarantineBatch(id, reason);
   }
 
   @Post('batches/:id/dispose')
   @RequirePermission('MedicineBatch', 'update')
-  async disposeBatch(@Param('id') id: string, @Body() dto: DisposeBatchDto, @Req() req: any) {
+  async disposeBatch(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DisposeBatchDto, @Req() req: any) {
     const userId = req.user?.id || req.user?.sub;
     if (!userId) throw new UnauthorizedException('User context missing');
     return this.inventoryService.disposeBatch(id, dto, userId);

@@ -1,7 +1,7 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
 
 export class TransferOpdVisitDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   doctorId!: string;
 

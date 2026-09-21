@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, HttpCode, HttpStatus, ForbiddenException, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, ParseUUIDPipe, Put, HttpCode, HttpStatus, ForbiddenException, BadRequestException, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { EmployeeService } from './employee.service';
 import {
@@ -135,14 +135,14 @@ export class EmployeeController {
 
   @Get(':id')
   @RequirePermission('Employee', 'read')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.employeeService.findOne(id);
   }
 
   @Put(':id')
   @RequirePermission('Employee', 'update')
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateEmployeeDto,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
