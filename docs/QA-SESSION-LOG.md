@@ -1359,10 +1359,59 @@ read-only/live-GET-only against existing data), so no re-run needed.
 
 **Still not done:** full ~20-stage patient journey walkthrough, billing-reconciliation audit (ledger =
 payment = reporting totals for one real patient), multi-hospital *UI* isolation testing (API-level cross-
-tenant isolation is now proven, above), clean-checkout production build test (backend + frontend),
-browser/device/screen-size testing (no browser-automation tool available this session), downloadable-
-artifact verification (PDF/Excel/CSV — open and inspect, not just download), audit-log coverage check
-against the checklist's specific action list, one real backup/restore test, a concurrency/performance
-smoke test, a final security scan (CORS/rate-limit config review, injection, file uploads), and final
-repo cleanup pass (this session's own scratch scripts under `prisma/seeds/_*.ts` were already deleted
-after use — confirmed `git status` clean of them).
+tenant isolation is now proven, above), browser/device/screen-size testing (no browser-automation tool
+available this session), downloadable-artifact verification (PDF/Excel/CSV — open and inspect, not just
+download), audit-log coverage check against the checklist's specific action list, one real backup/restore
+test, a concurrency/performance smoke test, a final security scan (CORS/rate-limit config review,
+injection, file uploads), and final repo cleanup pass (this session's own scratch scripts under
+`prisma/seeds/_*.ts` were already deleted after use — confirmed `git status` clean of them). Also noted
+but deliberately deferred (all require a live-DB write, correctly blocked by the auto-mode classifier as
+a shared-resource modification): re-running `prisma db seed` against the 3 existing hospitals' schemas
+to create the missing `therapy@` demo user, then `pnpm run backfill:login-identifiers` (an existing,
+git-tracked, idempotent, purpose-built script — `apps/api/scripts/backfill-login-identifiers.ts` — this
+is how the other ~60 identifiers got registered previously, not an ad-hoc manual fix as first guessed)
+to register it.
+
+## Session 3 continued — Phase 5 (clean-checkout production build test): found + fixed a real deploy-blocking bug
+
+Ran the exact sequence the NIC checklist specifies: `git clone` (local clone of this repo into a throwaway
+temp directory, equivalent to a fresh clone from the remote) → `pnpm install` → `pnpm --filter @esic-hms/api build` →
+`pnpm --filter web build` → boot the compiled output directly (`node dist/main.js`, i.e. what `pnpm start`
+actually runs), against a second throwaway fresh Postgres container (separate from the one used for the
+Phase 1 migration fix, same disposable-container pattern).
+
+- **Install**: clean, all postinstall Prisma generation steps (both schemas) succeeded.
+- **Backend build** (`prisma generate` × 2 → `nest build`): clean, `dist/main.js` produced, zero errors.
+- **Frontend build** (`tsc -b && vite build`): clean, zero TypeScript errors, zero build errors. One
+  non-blocking perf note: the main JS chunk is 1.35 MB (344 KB gzipped) — Vite's own "consider code-
+  splitting" warning, not a correctness issue, not acted on (out of scope for a release-readiness pass,
+  flagging for awareness only).
+- **Compiled boot, take 1: hard crash.** `node dist/main.js` failed immediately with `Error: Cannot find
+  module 'express'`. Root cause: `apps/api/src/main.ts` does a real runtime `import express from 'express'`
+  (not just `import type`), and several other files import `Request`/`Response`/`NextFunction` types from
+  it too — but `express` itself is only a *transitive* dependency (pulled in by `@nestjs/platform-express`)
+  and was never declared in `apps/api/package.json`'s own `dependencies`. Confirmed via the pnpm virtual
+  store: `express@4.21.2` *was* present under `node_modules/.pnpm/express@4.21.2`, but pnpm's strict
+  isolation correctly never symlinked it into `apps/api/node_modules/express` because the app never asked
+  for it directly — a classic "phantom dependency" that only ever worked in the existing long-lived
+  `node_modules` (leftover from before this became a clean pnpm workspace, or from `shamefully-hoist`-style
+  drift). **This would have hard-crashed on NIC's very first `pnpm install && pnpm start` on a fresh
+  machine** — exactly the class of bug a clean-room build test exists to catch, and did.
+  - **Fix:** added `"express": "4.21.2"` (pinned to the exact version already resolved and locked
+    transitively, so nothing else moves) to `apps/api/package.json`'s `dependencies`.
+  - **Re-verified on the same clean checkout**: re-ran `pnpm install` (picked up the new direct dependency,
+    `express` now correctly symlinked into `apps/api/node_modules/`), re-booted `node dist/main.js` against
+    the fresh DB — clean boot, `🚀 Local Application is running on: http://localhost:4098/api`, and a real
+    HTTP request through the compiled binary got a correct validated response (not a crash).
+  - **Regression**: 62/64 unit suites clean after the `package.json` change (same 2 pre-existing
+    parallel-execution flaky suites as before, `billing/receipt.service.spec.ts` re-confirmed passing
+    10/10 in isolation) — the dependency addition is inert everywhere except the module-resolution path
+    it fixes.
+  - All throwaway containers/directories from this check were torn down; nothing left running.
+
+**Phase 5 still open:** backend clean-checkout build/boot is now proven end-to-end (this was the
+highest-value, most NIC-relevant unchecked item — "the app doesn't even start after a fresh
+`git clone && pnpm install`" would have been a first-day blocker). Frontend build is proven but not yet
+served/smoke-tested (`vite preview` / actual browser load). Remaining Phase 5 items (patient journey,
+billing reconciliation, browser/device testing, backup/restore, concurrency smoke test, final security
+scan, final repo cleanup) are unchanged from the list above.
