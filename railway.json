@@ -5,7 +5,7 @@
     "dockerfilePath": "apps/api/Dockerfile"
   },
   "deploy": {
-    "startCommand": "./node_modules/.bin/prisma migrate deploy && ./node_modules/.bin/prisma migrate deploy --schema=prisma/platform/schema.prisma && node dist/main",
+    "startCommand": "echo MARKER_BEGIN_TENANT && date -u && ./node_modules/.bin/prisma migrate deploy 2>&1; echo \"MARKER_TENANT_EXIT=$?\" && date -u && echo MARKER_BEGIN_PLATFORM && ./node_modules/.bin/prisma migrate deploy --schema=prisma/platform/schema.prisma 2>&1; echo \"MARKER_PLATFORM_EXIT=$?\" && date -u && echo MARKER_STARTING_APP && node dist/main",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
