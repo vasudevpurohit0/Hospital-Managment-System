@@ -1412,6 +1412,82 @@ Phase 1 migration fix, same disposable-container pattern).
 **Phase 5 still open:** backend clean-checkout build/boot is now proven end-to-end (this was the
 highest-value, most NIC-relevant unchecked item — "the app doesn't even start after a fresh
 `git clone && pnpm install`" would have been a first-day blocker). Frontend build is proven but not yet
-served/smoke-tested (`vite preview` / actual browser load). Remaining Phase 5 items (patient journey,
-billing reconciliation, browser/device testing, backup/restore, concurrency smoke test, final security
-scan, final repo cleanup) are unchanged from the list above.
+served/smoke-tested (`vite preview` / actual browser load).
+
+## Session 3 continued — Phase 5: backup/restore, concurrency smoke test, security config review, audit-log coverage, repo-cleanup survey
+
+**Backup/restore test (real, not simulated).** `pg_dump -Fc` of the live `esic_hms` database (read-only
+against the source, the dump itself written to the container's own `/tmp` then copied out), restored via
+`pg_restore` into a brand-new throwaway `postgres:16-alpine` container. Verified row counts match exactly
+between source and restored copy across both the platform schema and a tenant schema
+(`hospitals`=3, `login_identifiers`=64, `hospital_apollo_indore.employees`=9,
+`hospital_apollo_indore.opd_visits`=1, identical on both sides). Confirms the schema-per-tenant model dumps
+and restores cleanly as a single logical backup — no per-tenant special-casing needed for DR. Throwaway
+container and dump file deleted after.
+
+**Concurrency/performance smoke test.** 20 concurrent authenticated GET requests (5 each across
+`/employees`, `/doctors`, `/inventory/medicines`, `/admissions`) against the live dev API: all 20 returned
+`200` in 0.5s wall-clock, container memory flat (708MiB → 709MiB), CPU unchanged, no restart/crash
+(`docker ps` showed uninterrupted uptime throughout). Not a full load test, but confirms no obvious
+connection-pool exhaustion or crash-on-concurrency at this modest scale.
+
+**Security config review (read-only code review, not a penetration test).**
+- CORS: real allowlist (`resolveCorsOrigins()`, driven by `CORS_ORIGINS`/`FRONTEND_URL` env), not a
+  wildcard-reflect — already fixed per an earlier documented finding (V-03).
+- Security headers: hand-rolled but complete (`SecurityMiddleware`) — HSTS, CSP (`default-src 'self'`),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`. A prior CSRF-token
+  "protection" was deliberately removed (V-14) after being shown to be a no-op (minted a token for anyone
+  missing one, never bound to a client) — correctly reasoned as inapplicable given this API is
+  Bearer-token authenticated, not cookie-based, so classic CSRF doesn't apply; correctly *not*
+  reintroduced without real session/cookie auth to bind it to.
+- Rate limiting: global `ThrottlerModule` (120 req/min default), confirmed *actually firing* live during
+  this session's own RBAC sweep (got a real `429 ThrottlerException` from rapid sequential logins).
+- File uploads: no `multer`/`FileInterceptor`/raw file-upload endpoints exist anywhere in the codebase —
+  the employee/inventory "import" endpoints take a JSON body with a base64-encoded field, size-checked
+  server-side (`assertImportSizeOk`) before decoding. No arbitrary-file-write attack surface to review.
+- SQL injection: not separately re-audited this pass (Prisma's parameterized query builder is used
+  throughout everywhere sampled; no raw `$queryRawUnsafe`/`$executeRawUnsafe` calls were seen outside the
+  hospital-onboarding schema-DDL path, which is regex-validated against `SCHEMA_NAME_RE` before use).
+
+**Audit-log coverage check.** Enumerated every distinct `action:` string passed to `auditLog.create()`
+across the codebase (~45 distinct actions). Confirms coverage of every category the NIC checklist calls
+out: auth events (login success/failure, impersonation start/end, password change/reset), staff and
+doctor lifecycle (created, locked/unlocked, password reset, email changed, activation resent), hospital
+admin actions (create/update/delete/status-change/resume-provisioning, platform-admin and hospital-admin
+account creation), RBAC changes (`permission.post`/`permission.delete`), pricing changes
+(`service_price.change`), and patient/visit lifecycle (register, update, OPD completed/no-show/transferred).
+No gap found against the checklist's list.
+
+**Final repo-cleanup survey (read-only — nothing deleted without confirmation, per the checklist's own
+"do not blindly delete everything" instruction).** Found real candidates for removal, all confirmed
+actually tracked in git (so they do ship to anyone who clones the repo, including NIC):
+- `pricing/` at repo root — 9 WhatsApp-exported JPEGs and a PDF ("New Doc 08-27-2026 12.58.pdf"), clearly
+  informal reference material shared over WhatsApp, not application assets.
+- `BUGS-SS/` at repo root — 6 bug-report screenshots (`Screenshot 2026-08-31 ....png`).
+- `changes.txt`, `features.txt` — informal working notes at repo root.
+- `esic_hms_master_guide_and_issues.html`, `esic_hms_system_audit_and_issues.html` — appear to be earlier
+  audit-report exports (possibly the "pre-existing audit reports" this session's Session 1 baseline
+  referenced) — likely worth *keeping*, but probably belong under `docs/` rather than repo root.
+- `Emblem_of_India.svg` and `esic logo.png` at repo root — confirmed (via grep) to be **unused
+  duplicates**: the app's `LoginPage.tsx` references `/Emblem_of_India.svg`, which Vite serves from
+  `apps/web/public/Emblem_of_India.svg` (a separate, correctly-placed copy) — the root-level copies of
+  both files are dead weight.
+- `package-lock.json` at repo root, alongside `pnpm-lock.yaml` — this is a pnpm workspace
+  (`pnpm-workspace.yaml`, `packageManager: pnpm@9.15.4`); a stray `package-lock.json` (npm's lockfile
+  format) sitting next to it is very likely leftover from before pnpm was adopted, not something either
+  package manager is actually reading in normal use — worth confirming unused and removing to avoid
+  confusing a future contributor about which package manager is authoritative.
+
+**Not deleted yet — flagged for the user's explicit sign-off before removal**, since several of these
+(the audit-report HTMLs, `changes.txt`/`features.txt`) could be intentional project history rather than
+junk, and the checklist itself explicitly warns against blind deletion.
+
+**Regression:** no source-code changes in this half of the session (all read-only or against throwaway
+infrastructure); no re-run needed.
+
+**Still not done:** the full ~20-stage patient journey walkthrough, the billing-reconciliation audit
+(ledger = payment = reporting totals for one real patient), multi-hospital *UI* isolation testing
+(API-level is proven), browser/device/screen-size testing (no browser-automation tool available this
+session), and downloadable-artifact verification (opening actual PDF/Excel/CSV output, not just checking
+the download succeeds). These are the only checklist items genuinely blocked by tooling (browser
+automation) or requiring extended live-workflow time rather than something this session chose to skip.
