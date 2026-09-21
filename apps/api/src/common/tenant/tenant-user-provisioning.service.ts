@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { TenantClientFactory } from './tenant-client-factory';
 import { LoginDirectoryService } from './login-directory.service';
@@ -47,6 +47,27 @@ export class TenantUserProvisioningService {
     } catch (err) {
       await this.loginDirectory.remove(normalizedIdentifier).catch(() => undefined);
       throw err;
+    }
+  }
+
+  /**
+   * `prisma/seed.ts` creates its demo/reference User rows with a plain
+   * tenant-schema PrismaClient -- it has no PlatformPrismaService to call
+   * loginDirectory.register() with -- so every account it just seeded for a
+   * newly onboarded hospital would otherwise resolve() to null and get a
+   * permanent 401, no matter how correct the password. Called once right
+   * after the seed step so those accounts work the same day the hospital
+   * goes live. Idempotent: an identifier already registered (e.g. a rerun
+   * via resumeProvisioning) is skipped rather than treated as a failure.
+   */
+  async registerSeededIdentifiers(schemaName: string, hospitalId: string): Promise<void> {
+    const client = await this.tenantClients.getClient(schemaName);
+    const users = await client.user.findMany({ select: { identifier: true } });
+    for (const { identifier } of users) {
+      await this.loginDirectory.register(identifier, hospitalId).catch((err) => {
+        if (err instanceof ConflictException) return;
+        throw err;
+      });
     }
   }
 }

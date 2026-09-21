@@ -99,6 +99,7 @@ export class HospitalsService {
       await this.platformPrisma.$executeRawUnsafe(`CREATE SCHEMA "${schemaName}"`);
       await this.runMigrateDeploy(schemaName);
       await this.runSeed(schemaName);
+      await this.userProvisioning.registerSeededIdentifiers(schemaName, hospital.id);
       await this.userProvisioning.provisionAdministrator(schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
 
       const activated = await this.platformPrisma.hospital.update({
@@ -141,6 +142,7 @@ export class HospitalsService {
       await this.platformPrisma.$executeRawUnsafe(`CREATE SCHEMA IF NOT EXISTS "${hospital.schemaName}"`);
       await this.runMigrateDeploy(hospital.schemaName);
       await this.runSeed(hospital.schemaName);
+      await this.userProvisioning.registerSeededIdentifiers(hospital.schemaName, hospital.id);
       await this.userProvisioning.provisionAdministrator(hospital.schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
 
       const activated = await this.platformPrisma.hospital.update({

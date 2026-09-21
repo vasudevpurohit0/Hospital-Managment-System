@@ -1209,3 +1209,94 @@ either found a safer alternative that still made progress (e.g. using read-only 
 ID for the cross-tenant IDOR check instead of logging in as a second tenant) or built-and-documented
 the fix for the user to apply themselves. This is the correct pattern for any future session hitting
 the same class of block.
+
+## Session 3 — 2026-09-21 (NIC release-readiness Phase 1: fresh-database migrate → seed → boot → login)
+
+The user supplied a 20-point, 5-phase NIC ("AAYUSH SAARTHI") release-readiness checklist and flagged
+**"Release Blocker #1"**: a claim that a genuinely fresh/empty database fails platform migration with
+`relation "login_identifiers" does not exist`. This session reproduced it for real (spun up a throwaway
+`postgres:16-alpine` container, ran `prisma migrate deploy --schema=prisma/platform/schema.prisma`
+against it) and root-caused, fixed, and re-verified both the reported bug and a second, deeper bug it
+was masking. Neither fix touches the live/shared dev database's data — only a migration-folder rename
+(reconciled against the live DB's `_prisma_migrations` history, see below) and two application source
+files.
+
+**Bug 1 — migration folder misordered relative to its own dependency (the reported blocker).**
+`prisma/platform/migrations/20260918220610_password_reset_and_manual_lock/migration.sql` runs
+`ALTER TABLE "login_identifiers" ADD COLUMN "manually_locked_at" ...`, but the table itself is only
+created by `20260918221734_add_login_identifiers/migration.sql` — a *later*-numbered (by Prisma's
+filename-sort application order) migration. On a fresh DB, `migrate deploy` applies strictly by
+filename order, so the ALTER runs before the CREATE and deploy aborts with error `P3018` /
+Postgres `42P01`. Confirmed via the live dev DB's own `_prisma_migrations.finished_at` timestamps
+that `add_login_identifiers` was actually *applied* a full day before `password_reset_and_manual_lock`
+in real development history — the folder's timestamp-in-name just doesn't match that history, almost
+certainly a manual-rename/typo when the folder was created.
+  - **Fix:** renamed the folder to `20260918221800_password_reset_and_manual_lock` (after
+    `add_login_identifiers`, before the next migration `20260919072100_add_activation_tokens`) via
+    `git mv` — content unchanged, so checksums are untouched.
+  - **Live dev DB reconciliation still needed (blocked by the auto-mode classifier as a
+    Modify-Shared-Resources write — correctly; not worked around):** the live dev Postgres
+    (`esic-hms-postgres`, `esic_hms` DB) has a `_prisma_migrations` row under the OLD folder name.
+    Before anyone runs `prisma migrate deploy --schema=prisma/platform/schema.prisma` against that
+    database again, run this one command yourself (the migration SQL content is unchanged, this is
+    purely a bookkeeping rename to match):
+    `docker exec esic-hms-postgres psql -U esic_user -d esic_hms -c "UPDATE public._prisma_migrations SET migration_name = '20260918221800_password_reset_and_manual_lock' WHERE migration_name = '20260918220610_password_reset_and_manual_lock';"`
+    (equivalently: `npx prisma migrate resolve --applied 20260918221800_password_reset_and_manual_lock --schema=prisma/platform/schema.prisma` with `PLATFORM_DATABASE_URL` pointed at that DB).
+    Until this runs, a `migrate deploy` against the live dev DB specifically would try to re-apply the
+    renamed migration and fail on "column already exists" — `migrate dev` (used day-to-day) is
+    unaffected either way.
+  - **Verified the fix on a genuinely fresh, empty database** (`postgres:16-alpine` in Docker, never
+    touched by any prior migration): all 4 platform migrations now apply cleanly in order
+    (`init_platform` → `add_login_identifiers` → `password_reset_and_manual_lock` →
+    `add_activation_tokens`), producing all 8 expected tables including `login_identifiers`. Also ran
+    the 24-migration tenant `migrate deploy` against a fresh tenant schema on the same fresh DB — clean,
+    zero errors.
+
+**Bug 2 — seeded demo/reference staff accounts are never registered in the login directory (found
+while proving the fix, not in the original report; this would have surfaced the moment anyone tried
+to log in as anything other than the platform Super Admin or the hospital's real Administrator on a
+freshly onboarded hospital).** `HospitalsService.createHospital()`/`resumeProvisioning()` run
+`prisma/seed.ts` (`runSeed()`) as part of onboarding every real hospital — this creates ~20 demo/
+reference `User` rows per hospital (one per role: Doctor, Nurse, Pharmacist, LabTechnician, ... plus
+8 named sample doctors), per that file's own docstring, "runs for every real hospital onboarded
+through the platform... not just local dev." But `seed.ts` only has a tenant-schema `PrismaClient` —
+it has no way to reach the platform DB's `login_identifiers` table, so none of those ~20 accounts were
+ever registered with `LoginDirectoryService`. `AuthService.login()` → `loginDirectory.resolve()`
+returns `null` for an unregistered identifier → unconditional `401 Invalid credentials`, regardless of
+password correctness. Only the one real Administrator identifier (`provisionAdministrator()`, called
+right after `runSeed()`) was ever registered — so on any newly onboarded hospital, only that one admin
+account could log in; every seeded role account was permanently locked out. (The 3 existing live
+hospitals — apollo-indore, dolphin-hospital, hospital3 — have all their seeded identifiers registered
+already, confirmed by a read-only query; that must have been a manual one-off backfill outside any
+git-tracked script, since no such script exists in the repo. This bug would hit hospital #4 onward,
+and blocks exactly the "test all 13 roles" phase of the NIC checklist on a genuinely fresh install.)
+  - **Fix:** added `TenantUserProvisioningService.registerSeededIdentifiers(schemaName, hospitalId)`
+    (`apps/api/src/common/tenant/tenant-user-provisioning.service.ts`) — reads every `User.identifier`
+    already created in the tenant schema and registers each one via `loginDirectory.register()`,
+    skipping (not failing on) any already-registered identifier. Wired into both onboarding paths in
+    `apps/api/src/modules/platform/hospitals.service.ts` (`createHospital()` and
+    `resumeProvisioning()`), called right after `runSeed()` and before `provisionAdministrator()`.
+  - **Verified end-to-end on the same fresh database**: ran the tenant seed (21 demo users created),
+    ran the new registration logic, then actually booted the compiled NestJS app
+    (`ts-node src/main.ts`) against the fresh DB and made real HTTP `POST /api/auth/login` calls —
+    both `doctor@freshtest.esic.gov.in` / `DoctorPass123!` (a seeded role account, previously would
+    have 401'd forever) and `superadmin@platform.local` / `SuperAdminPlatform123!` (platform seed
+    default) returned valid JWTs. This is the first real proof in this project's history of the full
+    chain the user asked for: **empty database → platform migrate → tenant migrate → generate →
+    platform seed → tenant seed → onboarding registration → boot → login**, for both a platform user
+    and ordinary hospital staff, all the way through.
+
+**Regression:** full suite re-run after both fixes — 61/64 unit suites clean (3 pre-existing flaky
+suites — `receipt.service.spec.ts`, `analytics.service.spec.ts`, `lab.service.spec.ts` — failed under
+parallel execution on a unique-constraint race, confirmed pre-existing and unrelated by re-running all
+three in isolation with `--runInBand`: 27/27 pass); e2e unaffected, 27/27 suites, 170/170 tests green.
+
+**Not yet done from the NIC checklist (everything past Phase 1):** the 13-role UI/API RBAC matrix, the
+full ~20-stage patient journey, the billing-reconciliation audit, configurable-pricing/hardcoded-value
+grep, multi-hospital isolation testing, direct-API RBAC testing, code/dev-garbage cleanup, secrets scan,
+clean-checkout production build test (backend + frontend), browser/device testing, downloadable-artifact
+verification, audit-log coverage check, backup/restore test, concurrency smoke test, final security scan,
+and final repo cleanup. Per the user's own phase ordering ("until this works, everything else is
+secondary"), Phase 1 — the infra blocker — is now the one item in this list that's actually done and
+proven; the next session picking this up should move to Phase 2 (13-role functional + RBAC pass) unless
+the user redirects.
