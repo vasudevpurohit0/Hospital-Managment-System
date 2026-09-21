@@ -41,6 +41,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SecurityMiddleware } from './common/middleware/security.middleware';
 import { TenantResolutionMiddleware } from './common/middleware/tenant-resolution.middleware';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { PinoLoggerService } from './common/logging/pino-logger.service';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
   ],
   controllers: [BrandingController, HospitalSettingsController],
   providers: [
+    PinoLoggerService,
     // JwtAuthGuard runs first now (not the throttler) so req.user is already
     // populated by the time UserAwareThrottlerGuard's getTracker() needs it,
     // letting authenticated per-user @Throttle()s (billing, lab, PDF/report

@@ -5,6 +5,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express';
 import express from 'express';
 import { resolveCorsOrigins } from './common/config/cors.util';
+import { PinoLoggerService } from './common/logging/pino-logger.service';
 
 const server = express();
 let isAppInitialized = false;
@@ -12,7 +13,8 @@ let nestApp: any;
 
 async function bootstrapServer() {
   if (!isAppInitialized) {
-    nestApp = await NestFactory.create(AppModule, new ExpressAdapter(server));
+    nestApp = await NestFactory.create(AppModule, new ExpressAdapter(server), { bufferLogs: true });
+    nestApp.useLogger(nestApp.get(PinoLoggerService));
     // Patient registration posts photos as base64 data URLs (100KB+); the
     // Express default JSON limit (100kb) 500s those requests before any
     // guard/validation runs. 10MB comfortably fits a downscaled photo while
@@ -54,7 +56,8 @@ export default async (req: any, res: any) => {
 async function bootstrapLocal() {
   // If not running inside Vercel environment, start listening on local port
   if (!process.env.VERCEL) {
-    const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+    app.useLogger(app.get(PinoLoggerService));
     // Same raised body limit as the serverless bootstrap above -- patient
     // registration posts photos as base64 data URLs (100KB+), which the
     // Express default JSON limit (100kb) rejects with a 500.
