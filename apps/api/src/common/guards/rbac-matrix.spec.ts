@@ -275,6 +275,11 @@ const ALLOWED_PUBLIC: { file: string; method: string; reason: string }[] = [
     reason: 'Infrastructure health probe (load balancer / Docker healthcheck) — must work with no credentials.',
   },
   {
+    file: 'health/health.controller.ts',
+    method: 'dependencies',
+    reason: 'Redis connectivity status for dashboards/humans — same no-credentials-required reasoning as check(); carries no tenant/patient data.',
+  },
+  {
     file: 'modules/auth/auth.controller.ts',
     method: 'login',
     reason: 'Credential exchange — the caller has no token yet by definition.',

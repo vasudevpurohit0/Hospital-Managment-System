@@ -3,6 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
 import { TenantModule } from './common/tenant/tenant.module';
 import { SequenceModule } from './common/sequence/sequence.module';
 import { EmailModule } from './common/email/email.module';
@@ -41,6 +42,7 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
 
 @Module({
   imports: [
+    RedisModule,
     ScheduleModule.forRoot(),
     // V-04: a single named profile applied to every route by the global
     // ThrottlerGuard below. Individual controllers override its limit
