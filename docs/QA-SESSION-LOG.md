@@ -1300,3 +1300,69 @@ and final repo cleanup. Per the user's own phase ordering ("until this works, ev
 secondary"), Phase 1 — the infra blocker — is now the one item in this list that's actually done and
 proven; the next session picking this up should move to Phase 2 (13-role functional + RBAC pass) unless
 the user redirects.
+
+## Session 3 continued — Phase 2/3 (direct-API RBAC sweep) + Phase 4 (static cleanup/secrets scan)
+
+**Direct-API RBAC matrix, live** — logged in as all 13 seeded roles on `apollo-indore` (real predictable
+dev passwords, e.g. `DoctorPass123!` — documented in `prisma/seed.ts` for exactly this purpose, not a
+credential guess) plus one cross-tenant account (`doctor@dolphin-hospital...`), against 13 representative
+sensitive endpoints (`/employees`, `/staff`, `/rbac/roles`, `/billing/transactions`, `/pharmacy/queue`,
+`/doctors`, `/admissions`, `/lab/queue`, `/therapy/sessions`, `/inventory/medicines`,
+`/reports/billing.csv`, `/audit-log`, `/procurement/requisitions`), plus one unauthenticated pass.
+Every single 200/403/401 result cross-checked directly against `PERMISSION_GRANTS` in `prisma/seed.ts`
+(the RBAC source of truth) — **zero drift, zero anomalies**. Unauthenticated correctly gets 401 on all 13.
+Cross-tenant IDOR check: fetched a real `apollo-indore` employee UUID (read-only) and requested it with
+the `dolphin-hospital` doctor's token — **404**, not 403 or 200 (tenant isolation is schema-scoped at the
+connection level, so a guessed/leaked ID from another hospital doesn't even resolve, it's not merely
+permission-denied). Also incidentally verified the login-endpoint rate limiter is live and working (hit
+`429 ThrottlerException` mid-sweep from rapid sequential logins — a real, working control, not a bug).
+Also ran the existing static `rbac-matrix.spec.ts` (P8 sweep) — still 5/5 green.
+
+**One real (data, not code) gap found:** `therapy@apollo-indore.esic.gov.in` (the THERAPY_STAFF demo
+account) gets a genuine `401` — confirmed read-only that no such row exists in either
+`hospital_apollo_indore.users` or `login_identifiers` for any of the 3 live hospitals. The THERAPY_STAFF
+role/seed block was evidently added to `prisma/seed.ts` after these 3 hospitals were originally
+onboarded, and `prisma db seed` (safe to re-run — every insert is an `upsert`) has never been re-run
+against them since. Not a code bug — re-running the tenant seed against each of the 3 existing schemas
+(which would also need `registerSeededIdentifiers` run against them, or a one-off directory backfill,
+since that fix only fires for *new* onboarding) would close this. Deferred: this is a live-database write
+outside this session's remit to do unprompted.
+
+**Phase 4 static scans (read-only, backend `apps/api/src` + frontend `apps/web/src`):**
+- `console.log`/`console.debug`/`debugger`/`TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable` in
+  non-test source: **zero hits, both frontend and backend.**
+- `mock`/`dummy`/`fake` in frontend source: one file, `DoctorWorkspace.tsx` — both hits are comments
+  explicitly documenting that mock data was *removed* ("real orders ... not local mock data"), not
+  leftover mock code. No action needed.
+- Hardcoded suspicious billing literals (100/150/200/500) grepped across billing/OPD/admission/lab/
+  therapy/pharmacy services: only two hits, both benign (`Math.round(value * 100) / 100` for 2-decimal
+  rounding, and a code-comment example medicine name "Azee 500"). No fabricated/hardcoded pricing found —
+  consistent with the app's actual architecture (a seeded `ServicePricingMaster` table), a good sign
+  against the user's specific worry about "previously fabricated billing calculations."
+- Secrets scan: no `.env*` files tracked in git (`.env.example` only), no AWS-key/private-key/Stripe-key
+  patterns anywhere in tracked files, no hardcoded `JWT_SECRET` literals in source.
+- No `node_modules/`, `dist/`, or `.sql`/`.dump`/`.bak` dump files tracked (aside from legitimate Prisma
+  migration `.sql` files, which belong in git).
+- **Dangerous-script audit** (the user's specific worry: "scripts that can delete production
+  employees/data"): `apps/api/prisma/cleanup.ts` and `delete-fake-emps.ts` do exist and do run
+  unconditional/broad `deleteMany()` calls — but a prior session (per their own header comment, "V-11")
+  already hardened both with `assertSafeToRunDestructiveScript()` (`apps/api/prisma/guard-destructive-
+  script.ts`): refuses if `NODE_ENV=production`, refuses unless `DATABASE_URL`'s host is on a
+  local/dev-only allowlist (`localhost`/`127.0.0.1`/`postgres`/`db` — nothing else, so no real/remote
+  prod host can ever match even if `NODE_ENV` were unset by mistake), and refuses without an explicit
+  `--yes` CLI flag. Neither script is wired into any `package.json` script or lifecycle hook — both
+  require a manual, deliberate invocation. `demo-seed.ts` is pure create/upsert, no deletes, no guard
+  needed. This fully addresses the checklist's concern; no further action needed here.
+
+**Regression:** no code changes made in this half of the session (RBAC sweep and cleanup scans were
+read-only/live-GET-only against existing data), so no re-run needed.
+
+**Still not done:** full ~20-stage patient journey walkthrough, billing-reconciliation audit (ledger =
+payment = reporting totals for one real patient), multi-hospital *UI* isolation testing (API-level cross-
+tenant isolation is now proven, above), clean-checkout production build test (backend + frontend),
+browser/device/screen-size testing (no browser-automation tool available this session), downloadable-
+artifact verification (PDF/Excel/CSV — open and inspect, not just download), audit-log coverage check
+against the checklist's specific action list, one real backup/restore test, a concurrency/performance
+smoke test, a final security scan (CORS/rate-limit config review, injection, file uploads), and final
+repo cleanup pass (this session's own scratch scripts under `prisma/seeds/_*.ts` were already deleted
+after use — confirmed `git status` clean of them).
