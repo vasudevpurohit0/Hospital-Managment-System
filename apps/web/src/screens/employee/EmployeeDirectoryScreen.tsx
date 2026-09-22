@@ -290,7 +290,7 @@ export const EmployeeDirectoryScreen: React.FC<EmployeeDirectoryScreenProps> = (
           <p className="text-xs text-[var(--color-text-tertiary)] py-6 text-center">No employees found.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-max min-w-full text-xs">
               <thead>
                 <tr className="text-left border-b border-[var(--color-border)] text-[var(--color-text-secondary)]">
                   <th className="py-2 pr-3">Employee ID</th>

@@ -262,7 +262,7 @@ export const PatientRecordsPage: React.FC = () => {
           {/* PATIENT LIST TABLE */}
           <div className="card overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-max min-w-full text-left text-xs border-collapse">
                 <thead className="bg-[var(--color-surface-secondary)] text-[var(--color-text-secondary)] border-b border-[var(--color-border)] uppercase tracking-wider font-semibold">
                   <tr>
                     <th className="p-3 pl-4">Patient details</th>

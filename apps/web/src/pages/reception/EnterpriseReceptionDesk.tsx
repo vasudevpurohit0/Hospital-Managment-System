@@ -1895,7 +1895,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
             {/* WORKFLOW: Registration / Visit Success View */}
             {activeWorkflow === 'success-slip' && registrationResult?.employee && (
-              <div className="card p-6 space-y-6 animate-fade-in">
+              <div className="card p-4 sm:p-6 space-y-6 animate-fade-in">
                 <div className="alert alert-success flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 text-success-600 shrink-0" />

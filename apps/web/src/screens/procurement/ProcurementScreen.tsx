@@ -216,7 +216,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
       {/* Header Banner */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
             <span>🚚</span> Supply Chain & Procurement Console
           </h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -311,7 +311,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
             </span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-max min-w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b">
                 <tr>
                   <th className="p-3">Req ID</th>
@@ -443,7 +443,7 @@ export const ProcurementScreen: React.FC<ProcurementScreenProps> = ({ authToken,
             </h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-max min-w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b">
                 <tr>
                   <th className="p-3">PO ID</th>

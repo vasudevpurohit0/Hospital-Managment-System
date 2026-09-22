@@ -73,7 +73,7 @@ export const OpdDisplayScreen: React.FC<{ authToken?: string | null }> = () => {
         <div className="flex items-center gap-4">
           <div className="text-3xl md:text-4xl font-black tracking-tight">Hospital OPD Queue</div>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-6">
           {departments.length > 6 && (
             <input
               type="text"
@@ -98,7 +98,7 @@ export const OpdDisplayScreen: React.FC<{ authToken?: string | null }> = () => {
 
       {/* Summary bar */}
       {snapshot && departments.length > 0 && (
-        <div className="flex items-center gap-8 px-8 py-3 border-b border-slate-800 bg-slate-900/30 text-sm md:text-base">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-4 sm:px-8 py-3 border-b border-slate-800 bg-slate-900/30 text-sm md:text-base">
           <span className="text-slate-300">
             <span className="font-bold text-white">{departments.length}</span> department
             {departments.length === 1 ? '' : 's'}
@@ -110,7 +110,7 @@ export const OpdDisplayScreen: React.FC<{ authToken?: string | null }> = () => {
       )}
 
       {/* Body */}
-      <main className="flex-1 p-6 md:p-8">
+      <main className="flex-1 p-4 sm:p-6 md:p-8">
         {!snapshot ? (
           <div className="h-full flex items-center justify-center">
             <span className="text-2xl text-slate-500">Loading queue…</span>
@@ -125,8 +125,10 @@ export const OpdDisplayScreen: React.FC<{ authToken?: string | null }> = () => {
           </div>
         ) : (
           <div
-            className="grid gap-6"
-            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}
+            className="grid gap-4 sm:gap-6"
+            /* min() lets the track collapse below 340px on narrow phones
+               instead of forcing a 340px column and overflowing the page. */
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))' }}
           >
             {filteredDepartments.map((dept) => (
               <DepartmentCard key={dept.id} department={dept} />

@@ -117,7 +117,7 @@ export const ExpiryManagementScreen: React.FC<ExpiryManagementScreenProps> = ({
       {/* Header Banner */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
             <span>⏰</span> Expiry & FEFO Automation Workstation
           </h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -212,7 +212,7 @@ export const ExpiryManagementScreen: React.FC<ExpiryManagementScreenProps> = ({
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-max min-w-full text-left text-xs">
               <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider font-bold">
                 <tr>
                   <th className="p-3.5">Medicine</th>
