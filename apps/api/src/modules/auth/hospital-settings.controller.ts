@@ -1,8 +1,14 @@
 import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
+import { HospitalSettings } from '@prisma/client';
 import { RequirePermission } from '../../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
+import { CacheKeys } from '../../common/redis/cache-keys.util';
+import { getTenantContext } from '../../common/tenant/tenant-context';
 import { UpdateHospitalSettingsDto } from './dto/update-hospital-settings.dto';
+
+const HOSPITAL_SETTINGS_CACHE_TTL_SECONDS = 300;
 
 export const DEFAULT_HOSPITAL_SETTINGS = {
   workingHoursStart: '09:00',
@@ -29,12 +35,21 @@ export const DEFAULT_HOSPITAL_SETTINGS = {
 @Controller('settings/hospital')
 @UseGuards(JwtAuthGuard)
 export class HospitalSettingsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   @Get()
   @RequirePermission('HospitalSettings', 'read')
   async getSettings() {
-    return this.prisma.hospitalSettings.findUnique({ where: { id: 'singleton' } });
+    const cacheKey = CacheKeys.hospitalSettings(getTenantContext().hospitalId);
+    const cached = await this.redis.getJson<HospitalSettings>(cacheKey);
+    if (cached) return cached;
+
+    const settings = await this.prisma.hospitalSettings.findUnique({ where: { id: 'singleton' } });
+    await this.redis.setJson(cacheKey, settings, HOSPITAL_SETTINGS_CACHE_TTL_SECONDS);
+    return settings;
   }
 
   @Put()
@@ -68,6 +83,8 @@ export class HospitalSettingsController {
         ...(body.sendTemporaryPasswordByEmail !== undefined && { sendTemporaryPasswordByEmail: body.sendTemporaryPasswordByEmail }),
       },
     });
+
+    await this.redis.del(CacheKeys.hospitalSettings(getTenantContext().hospitalId));
 
     return {
       status: 'success',

@@ -12,5 +12,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [PrismaModule, AuthModule],
   controllers: [UserController, DoctorController, StaffController],
   providers: [UserService, DoctorService, StaffService],
+  exports: [StaffService],
 })
 export class UserModule {}

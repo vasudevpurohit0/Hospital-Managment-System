@@ -1,0 +1,8 @@
+{
+  "installCommand": "cd ../.. && npx --yes pnpm@9.15.4 install --frozen-lockfile",
+  "buildCommand": "npx --yes pnpm@9.15.4 run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

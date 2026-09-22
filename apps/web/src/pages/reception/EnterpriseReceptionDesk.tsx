@@ -743,7 +743,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
               <div className="slip-divider" />
               <div className="slip-footer">
                 <p>Please proceed to the department OPD waiting area.</p>
-                <p className="footer-small">Sourced from AYUSH SARATHI Real-time Registry</p>
+                <p className="footer-small">Sourced from AAYUSH SAARTHI Real-time Registry</p>
               </div>
             </div>
           )}
@@ -1004,7 +1004,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
                           <span>Patient Already Registered</span>
                         </div>
                         <p className="text-gray-600">
-                          Patient is already registered in AYUSH SARATHI with UHID: <strong className="font-mono text-[13px] text-amber-950">{existingPatient.hospitalUid}</strong>.
+                          Patient is already registered in AAYUSH SAARTHI with UHID: <strong className="font-mono text-[13px] text-amber-950">{existingPatient.hospitalUid}</strong>.
                           Creating a new OPD/IPD visit instead of a duplicate registration record.
                         </p>
                       </div>
@@ -1895,7 +1895,7 @@ export const EnterpriseReceptionDesk: React.FC<EnterpriseReceptionDeskProps> = (
 
             {/* WORKFLOW: Registration / Visit Success View */}
             {activeWorkflow === 'success-slip' && registrationResult?.employee && (
-              <div className="card p-6 space-y-6 animate-fade-in">
+              <div className="card p-4 sm:p-6 space-y-6 animate-fade-in">
                 <div className="alert alert-success flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 text-success-600 shrink-0" />

@@ -116,15 +116,26 @@ export class AuditLogService {
     return { total, last24h: recentCount, critical: criticalCount, failedLogins: failedLoginCount };
   }
 
-  /** Same filters, no pagination cap beyond a hard ceiling -- an export is a deliberate one-off pull, not a paged UI. */
-  async exportCsv(filters: Omit<AuditLogFilters, 'page' | 'limit'>): Promise<string> {
+  /**
+   * Raw filtered rows for an export -- split out from exportCsv() so a
+   * cross-hospital caller (PlatformStaffAuditService) can merge rows from
+   * several tenant schemas before rendering ONE combined CSV (with its own
+   * added "Hospital" column), rather than getting back an already-rendered
+   * per-hospital CSV string it would have to re-parse.
+   */
+  async findRowsForExport(filters: Omit<AuditLogFilters, 'page' | 'limit'>, limit = 5000) {
     const where = this.buildWhere(filters);
-    const rows = await this.prisma.auditLog.findMany({
+    return this.prisma.auditLog.findMany({
       where,
       select: this.rowSelect,
       orderBy: { createdAt: 'desc' },
-      take: 5000,
+      take: limit,
     });
+  }
+
+  /** Same filters, no pagination cap beyond a hard ceiling -- an export is a deliberate one-off pull, not a paged UI. */
+  async exportCsv(filters: Omit<AuditLogFilters, 'page' | 'limit'>): Promise<string> {
+    const rows = await this.findRowsForExport(filters);
 
     return toCsv(
       ['Timestamp', 'Actor', 'Staff ID', 'Role', 'Impersonated By', 'Action', 'Module', 'Record ID', 'Status', 'Severity', 'IP Address', 'Browser', 'OS', 'Description', 'Reason'],

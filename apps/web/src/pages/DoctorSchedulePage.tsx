@@ -16,7 +16,6 @@ import {
   Unlock,
   ShieldCheck,
   ShieldQuestion,
-  Mail,
   UserCog,
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
@@ -32,7 +31,6 @@ import {
   setDoctorActive,
   resetDoctorPassword,
   setDoctorLocked,
-  resendDoctorActivation,
   impersonateDoctor,
   DoctorProfile,
   WeeklyScheduleEntry,
@@ -95,25 +93,9 @@ export const DoctorSchedulePage: React.FC = () => {
   const [locking, setLocking] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
 
-  const [resendingId, setResendingId] = useState<string | null>(null);
-  const [resendMessage, setResendMessage] = useState<string | null>(null);
-
   const [pendingImpersonate, setPendingImpersonate] = useState<DoctorProfile | null>(null);
   const [impersonating, setImpersonating] = useState(false);
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
-
-  const handleResendActivation = async (id: string) => {
-    setResendingId(id);
-    setResendMessage(null);
-    try {
-      await resendDoctorActivation(id);
-      setResendMessage('Activation email resent.');
-    } catch (err: unknown) {
-      setLockError((err as Error).message || 'Failed to resend activation email');
-    } finally {
-      setResendingId(null);
-    }
-  };
 
   const loadDoctors = () => {
     setIsLoading(true);
@@ -302,7 +284,7 @@ export const DoctorSchedulePage: React.FC = () => {
     <div className="space-y-6 animate-fade-in pb-12 max-w-5xl">
       <div className="card p-6 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             <Calendar className="w-6 h-6 text-primary-600" />
             Doctor Schedule
           </h1>
@@ -338,7 +320,6 @@ export const DoctorSchedulePage: React.FC = () => {
       {resetError && <div className="alert-danger">{resetError}</div>}
       {lockError && <div className="alert-danger">{lockError}</div>}
       {impersonateError && <div className="alert-danger">{impersonateError}</div>}
-      {resendMessage && <div className="alert-success">{resendMessage}</div>}
 
       <div className="space-y-8">
         {Object.entries(groupedDoctors).map(([specialty, docs]) => (
@@ -433,17 +414,6 @@ export const DoctorSchedulePage: React.FC = () => {
                           >
                             <UserCog className="w-3.5 h-3.5" />
                             Impersonate
-                          </button>
-                        )}
-                        {doc.mustChangePassword && (
-                          <button
-                            onClick={() => handleResendActivation(doc.id)}
-                            disabled={resendingId === doc.id}
-                            className="btn btn-secondary btn-sm gap-1"
-                            title="Resend the account-activation email"
-                          >
-                            <Mail className="w-3.5 h-3.5" />
-                            {resendingId === doc.id ? 'Sending...' : 'Resend Activation'}
                           </button>
                         )}
                       </div>

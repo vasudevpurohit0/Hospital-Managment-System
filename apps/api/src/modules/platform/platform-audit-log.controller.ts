@@ -1,31 +1,45 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
+import { Controller, Get, Header, Query, Res, UseGuards } from '@nestjs/common';
+import { Response } from 'express';
+import { PlatformAuditLogService } from './platform-audit-log.service';
 import { PlatformOnlyGuard } from '../../common/guards/platform-only.guard';
 
 @Controller('platform/audit-log')
 @UseGuards(PlatformOnlyGuard)
 export class PlatformAuditLogController {
-  constructor(private readonly platformPrisma: PlatformPrismaService) {}
+  constructor(private readonly platformAuditLogService: PlatformAuditLogService) {}
 
   @Get()
-  async list() {
-    const entries = await this.platformPrisma.platformAuditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        platformUser: { select: { email: true, name: true } },
-        hospital: { select: { name: true, slug: true } },
-      },
+  async findAll(
+    @Query('q') q?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.platformAuditLogService.findAll({
+      q,
+      dateFrom,
+      dateTo,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     });
-    return entries.map((e) => ({
-      id: e.id,
-      action: e.action,
-      method: e.method,
-      path: e.path,
-      createdAt: e.createdAt,
-      platformUserEmail: e.platformUser.email,
-      hospitalName: e.hospital?.name ?? null,
-      hospitalSlug: e.hospital?.slug ?? null,
-    }));
+  }
+
+  @Get('stats')
+  async getStats() {
+    return this.platformAuditLogService.getStats();
+  }
+
+  @Get('export.csv')
+  @Header('Content-Type', 'text/csv')
+  async exportCsv(
+    @Res() res: Response,
+    @Query('q') q?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    const csv = await this.platformAuditLogService.exportCsv({ q, dateFrom, dateTo });
+    res.setHeader('Content-Disposition', 'attachment; filename="platform-audit-log.csv"');
+    res.send(csv);
   }
 }

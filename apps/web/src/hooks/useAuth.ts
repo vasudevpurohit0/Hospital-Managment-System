@@ -25,13 +25,34 @@ export interface ImpersonationInfo {
   active: true;
   impersonatorRoleName: string;
   impersonatorIdentifier: string;
+  /**
+   * The actor who started the whole chain (e.g. a Super Admin), present only
+   * from the second hop onward -- a Super Admin impersonating a Hospital
+   * Admin who then impersonates a Doctor. Absent on a single-level session,
+   * where `impersonatorRoleName`/`impersonatorIdentifier` above already are
+   * the root. Mirrors the backend's ImpersonationClaims.root.
+   */
+  root?: { roleName: string; identifier: string };
 }
 
+/**
+ * The session being returned to on "Exit Impersonation". Recursive: when
+ * `impersonation` is present here, the session itself was mid-impersonation
+ * (a chained hop), so exiting restores both this session AND its own
+ * impersonation banner/state, rather than dropping straight to a fully
+ * unimpersonated session no matter how deep the chain was.
+ */
 interface OriginalSession {
   token: string;
   user: AuthUser;
   mode: AuthMode;
   activeHospital: ActiveHospital | null;
+  impersonation?: StoredImpersonation;
+}
+
+interface StoredImpersonation {
+  info: ImpersonationInfo;
+  original: OriginalSession;
 }
 
 interface AuthState {
@@ -86,10 +107,7 @@ interface StoredAuth {
   expiresAt: number;
   activeHospital?: ActiveHospital | null;
   /** Present only while impersonating -- carries both who's impersonating and the original session to restore on exit. */
-  impersonation?: {
-    info: ImpersonationInfo;
-    original: OriginalSession;
-  };
+  impersonation?: StoredImpersonation;
 }
 
 function getStoredAuth(): StoredAuth | null {
@@ -303,10 +321,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // impersonating a nurse would silently bump that nurse's own
     // tokenVersion and kill their unrelated real sessions. exitToken is an
     // explicit token override apiFetch already supports for exactly this.
+    // For a chained session (Super Admin -> Hospital Admin -> Doctor), the
+    // one real, persistent login is at the BOTTOM of the `original` chain --
+    // every level above the deepest one is itself just another short-lived
+    // impersonation token, not a session with its own tokenVersion to
+    // revoke -- so this walks all the way down rather than stopping at the
+    // immediate parent.
     const stored = getStoredAuth();
     if (stored?.impersonation) {
+      let root = stored.impersonation.original;
+      while (root.impersonation) {
+        root = root.impersonation.original;
+      }
       apiFetch('/api/auth/exit-impersonation', { method: 'POST' }).catch(() => undefined);
-      apiFetch('/api/auth/logout', { method: 'POST' }, stored.impersonation.original.token).catch(() => undefined);
+      apiFetch('/api/auth/logout', { method: 'POST' }, root.token).catch(() => undefined);
     } else {
       // V-02: best-effort -- revokes the session server-side (bumps
       // tokenVersion, invalidating every outstanding access/refresh token
@@ -328,23 +356,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  /**
+   * Starts (or extends) an impersonation session. Whether this is a fresh
+   * level-1 impersonation or one hop deeper into an existing chain (Super
+   * Admin -> Hospital Admin -> Doctor), the server has already decided
+   * eligibility server-side (see AccountLifecycleService.impersonate) by the
+   * time this is called -- the client never re-derives or enforces that
+   * chain rule itself, it just needs to stash whatever session it's leaving
+   * so `exitImpersonation` can unwind one level at a time.
+   */
   const startImpersonation = useCallback((accessToken: string, target: ImpersonationTarget) => {
     setState((prev) => {
-      if (!prev.token || !prev.user || !prev.mode || prev.impersonation) return prev; // no nested impersonation, client-side mirror of the server-side guard
+      if (!prev.token || !prev.user || !prev.mode) return prev;
       const targetUser = buildUserFromRole(target.role, target.identifier);
       targetUser.id = target.id;
       if (target.name) targetUser.name = target.name;
+
+      // When already impersonating, the chain's root is whatever the
+      // CURRENT impersonation says it is (or, on the first hop being
+      // extended, the current impersonator itself) -- never the caller
+      // (`prev.user`) below, which is only ever the immediate parent.
+      const root = prev.impersonation
+        ? (prev.impersonation.root ?? {
+            roleName: prev.impersonation.impersonatorRoleName,
+            identifier: prev.impersonation.impersonatorIdentifier,
+          })
+        : undefined;
 
       const info: ImpersonationInfo = {
         active: true,
         impersonatorRoleName: prev.user.role,
         impersonatorIdentifier: prev.user.email,
+        root,
       };
+
+      // Whatever is currently persisted as this session's own impersonation
+      // state (if `prev` was itself mid-impersonation) is carried forward
+      // wholesale as the new session's nested `original.impersonation` --
+      // this is what turns single "restore the original" into a real stack:
+      // each level's `original` points at the level below it, chain and all.
+      const currentlyStored = getStoredAuth();
       const original: OriginalSession = {
         token: prev.token,
         user: prev.user,
         mode: prev.mode,
         activeHospital: prev.activeHospital,
+        impersonation: prev.impersonation ? currentlyStored?.impersonation : undefined,
       };
 
       storeAuth('hospital', accessToken, targetUser, prev.activeHospital, { info, original });
@@ -352,6 +409,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  /**
+   * Ends the CURRENT (deepest) impersonation hop only, restoring the level
+   * directly beneath it -- which may itself still be an impersonation (e.g.
+   * Doctor -> Hospital Admin, still impersonating), not necessarily the
+   * original real actor. Calling this repeatedly walks back up the chain one
+   * level at a time, matching how it was built.
+   */
   const exitImpersonation = useCallback(() => {
     // Ends the session server-side (an audit event -- see
     // AuthService.endImpersonation) before dropping it locally. Best-effort:
@@ -364,7 +428,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const stored = getStoredAuth();
       const saved = stored?.impersonation?.original;
       if (!saved) return prev;
-      storeAuth(saved.mode, saved.token, saved.user, saved.activeHospital);
+      storeAuth(saved.mode, saved.token, saved.user, saved.activeHospital, saved.impersonation);
       return {
         token: saved.token,
         user: saved.user,
@@ -373,7 +437,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: true,
         isLoading: false,
         error: null,
-        impersonation: null,
+        impersonation: saved.impersonation?.info ?? null,
       };
     });
   }, []);

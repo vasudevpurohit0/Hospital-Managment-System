@@ -42,7 +42,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             onClick={onConfirm}
             disabled={busy}
             className={`px-4 h-10 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-50 ${
-              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-[#0B2545] hover:bg-[#13315C]'
+              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-[#062B4F] hover:bg-[#052340]'
             }`}
           >
             {busy ? 'Working…' : confirmLabel}

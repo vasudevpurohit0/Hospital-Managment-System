@@ -597,11 +597,11 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
 
   return (
     <>
-    <div className="max-w-6xl mx-auto p-6 space-y-6 print:hidden">
+    <div className="max-w-6xl mx-auto p-4 sm:p-4 sm:p-6 space-y-6 print:hidden">
       {/* Console Header */}
       <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 pb-4 border-b border-gray-200">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
             Ward & Inpatient Care Console
           </h2>
           <p className="text-sm text-gray-500">
@@ -627,10 +627,12 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-gray-200 gap-4">
+      {/* Horizontal scroll is scoped to this tab strip only -- the page itself
+          never scrolls sideways. Labels stay full-size and readable. */}
+      <div className="flex border-b border-gray-200 gap-4 overflow-x-auto scrollbar-thin -mx-4 px-4 sm:mx-0 sm:px-0">
         <button
           onClick={() => setActiveTab('rounds')}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex flex-shrink-0 items-center gap-2 whitespace-nowrap ${
             activeTab === 'rounds'
               ? 'border-esic-primary text-esic-primary'
               : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -640,7 +642,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
         </button>
         <button
           onClick={() => setActiveTab('management')}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+          className={`pb-3 text-sm font-bold border-b-2 transition-all flex flex-shrink-0 items-center gap-2 whitespace-nowrap ${
             activeTab === 'management'
               ? 'border-esic-primary text-esic-primary'
               : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -883,19 +885,19 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
               <span className="text-xs font-bold text-gray-400 uppercase">Hospital Wards</span>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{totalWards}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{totalWards}</p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
               <span className="text-xs font-bold text-gray-400 uppercase">Total Ward Beds</span>
-              <p className="text-2xl font-bold text-gray-900 mt-1">{totalBeds}</p>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 mt-1">{totalBeds}</p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
               <span className="text-xs font-bold text-gray-400 uppercase">Available Beds</span>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{availableBedsCount}</p>
+              <p className="text-xl sm:text-2xl font-bold text-emerald-600 mt-1">{availableBedsCount}</p>
             </div>
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
               <span className="text-xs font-bold text-gray-400 uppercase">Occupied Beds</span>
-              <p className="text-2xl font-bold text-amber-600 mt-1">{occupiedBedsCount}</p>
+              <p className="text-xl sm:text-2xl font-bold text-amber-600 mt-1">{occupiedBedsCount}</p>
             </div>
           </div>
 
@@ -1338,7 +1340,7 @@ export const WardStaffScreen: React.FC<WardStaffScreenProps> = ({ authToken, use
 
             <div className="p-8 overflow-y-auto print:p-0 print:overflow-visible text-black bg-white">
               <div className="text-center mb-6 border-b-2 border-black pb-4">
-                <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">{hospitalName}</h1>
+                <h1 className="text-xl sm:text-2xl font-bold uppercase tracking-wider mb-1">{hospitalName}</h1>
                 <h2 className="text-lg font-semibold uppercase mb-1">Inpatient Discharge Card</h2>
                 <p className="text-sm">Ministry of Labour &amp; Employment, Govt. of India</p>
               </div>

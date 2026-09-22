@@ -28,14 +28,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const errorMessage =
       exception instanceof Error ? exception.message : String(exception);
     const stack = exception instanceof Error ? exception.stack : '';
+    // Set by RequestIdMiddleware on every request; undefined only for a
+    // synthetic request object a unit test builds by hand without it.
+    const requestId = (request as Request & { id?: string }).id;
 
     if (status >= 500) {
       this.logger.error(
-        `[${request.method}] ${request.url} - Status ${status}: ${errorMessage}`,
+        `[${requestId ?? '-'}] [${request.method}] ${request.url} - Status ${status}: ${errorMessage}`,
         stack,
       );
     } else {
-      this.logger.warn(`[${request.method}] ${request.url} - Status ${status}: ${errorMessage}`);
+      this.logger.warn(`[${requestId ?? '-'}] [${request.method}] ${request.url} - Status ${status}: ${errorMessage}`);
     }
 
     let responsePayload: Record<string, unknown>;
@@ -45,6 +48,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         statusCode: status,
         timestamp: new Date().toISOString(),
         path: request.url,
+        requestId,
         ...(rawResponse as Record<string, unknown>),
       };
     } else if (typeof rawResponse === 'string') {
@@ -52,6 +56,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         statusCode: status,
         timestamp: new Date().toISOString(),
         path: request.url,
+        requestId,
         message: rawResponse,
       };
     } else {
@@ -62,6 +67,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message: 'An unexpected server error occurred. Please try again later.',
         timestamp: new Date().toISOString(),
         path: request.url,
+        requestId,
       };
     }
 

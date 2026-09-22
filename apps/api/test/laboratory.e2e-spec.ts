@@ -15,7 +15,7 @@ import { createPlatformAuthMocks, E2E_TEST_HOSPITAL_ID } from './utils/platform-
  * and the order status state machine's guards using pre-seeded orders at
  * each status (collectSample/enterResults themselves also post billing
  * charges via ChargeService/PricingService, already covered by
- * charge.service.spec.ts -- re-mocking that whole chain a third time this
+ * charge.service.integration.spec.ts -- re-mocking that whole chain a third time this
  * session wasn't worth it for what this spec needs to prove).
  */
 describe('Laboratory Module (e2e)', () => {

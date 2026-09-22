@@ -1209,3 +1209,285 @@ either found a safer alternative that still made progress (e.g. using read-only 
 ID for the cross-tenant IDOR check instead of logging in as a second tenant) or built-and-documented
 the fix for the user to apply themselves. This is the correct pattern for any future session hitting
 the same class of block.
+
+## Session 3 — 2026-09-21 (NIC release-readiness Phase 1: fresh-database migrate → seed → boot → login)
+
+The user supplied a 20-point, 5-phase NIC ("AAYUSH SAARTHI") release-readiness checklist and flagged
+**"Release Blocker #1"**: a claim that a genuinely fresh/empty database fails platform migration with
+`relation "login_identifiers" does not exist`. This session reproduced it for real (spun up a throwaway
+`postgres:16-alpine` container, ran `prisma migrate deploy --schema=prisma/platform/schema.prisma`
+against it) and root-caused, fixed, and re-verified both the reported bug and a second, deeper bug it
+was masking. Neither fix touches the live/shared dev database's data — only a migration-folder rename
+(reconciled against the live DB's `_prisma_migrations` history, see below) and two application source
+files.
+
+**Bug 1 — migration folder misordered relative to its own dependency (the reported blocker).**
+`prisma/platform/migrations/20260918220610_password_reset_and_manual_lock/migration.sql` runs
+`ALTER TABLE "login_identifiers" ADD COLUMN "manually_locked_at" ...`, but the table itself is only
+created by `20260918221734_add_login_identifiers/migration.sql` — a *later*-numbered (by Prisma's
+filename-sort application order) migration. On a fresh DB, `migrate deploy` applies strictly by
+filename order, so the ALTER runs before the CREATE and deploy aborts with error `P3018` /
+Postgres `42P01`. Confirmed via the live dev DB's own `_prisma_migrations.finished_at` timestamps
+that `add_login_identifiers` was actually *applied* a full day before `password_reset_and_manual_lock`
+in real development history — the folder's timestamp-in-name just doesn't match that history, almost
+certainly a manual-rename/typo when the folder was created.
+  - **Fix:** renamed the folder to `20260918221800_password_reset_and_manual_lock` (after
+    `add_login_identifiers`, before the next migration `20260919072100_add_activation_tokens`) via
+    `git mv` — content unchanged, so checksums are untouched.
+  - **Live dev DB reconciliation still needed (blocked by the auto-mode classifier as a
+    Modify-Shared-Resources write — correctly; not worked around):** the live dev Postgres
+    (`esic-hms-postgres`, `esic_hms` DB) has a `_prisma_migrations` row under the OLD folder name.
+    Before anyone runs `prisma migrate deploy --schema=prisma/platform/schema.prisma` against that
+    database again, run this one command yourself (the migration SQL content is unchanged, this is
+    purely a bookkeeping rename to match):
+    `docker exec esic-hms-postgres psql -U esic_user -d esic_hms -c "UPDATE public._prisma_migrations SET migration_name = '20260918221800_password_reset_and_manual_lock' WHERE migration_name = '20260918220610_password_reset_and_manual_lock';"`
+    (equivalently: `npx prisma migrate resolve --applied 20260918221800_password_reset_and_manual_lock --schema=prisma/platform/schema.prisma` with `PLATFORM_DATABASE_URL` pointed at that DB).
+    Until this runs, a `migrate deploy` against the live dev DB specifically would try to re-apply the
+    renamed migration and fail on "column already exists" — `migrate dev` (used day-to-day) is
+    unaffected either way.
+  - **Verified the fix on a genuinely fresh, empty database** (`postgres:16-alpine` in Docker, never
+    touched by any prior migration): all 4 platform migrations now apply cleanly in order
+    (`init_platform` → `add_login_identifiers` → `password_reset_and_manual_lock` →
+    `add_activation_tokens`), producing all 8 expected tables including `login_identifiers`. Also ran
+    the 24-migration tenant `migrate deploy` against a fresh tenant schema on the same fresh DB — clean,
+    zero errors.
+
+**Bug 2 — seeded demo/reference staff accounts are never registered in the login directory (found
+while proving the fix, not in the original report; this would have surfaced the moment anyone tried
+to log in as anything other than the platform Super Admin or the hospital's real Administrator on a
+freshly onboarded hospital).** `HospitalsService.createHospital()`/`resumeProvisioning()` run
+`prisma/seed.ts` (`runSeed()`) as part of onboarding every real hospital — this creates ~20 demo/
+reference `User` rows per hospital (one per role: Doctor, Nurse, Pharmacist, LabTechnician, ... plus
+8 named sample doctors), per that file's own docstring, "runs for every real hospital onboarded
+through the platform... not just local dev." But `seed.ts` only has a tenant-schema `PrismaClient` —
+it has no way to reach the platform DB's `login_identifiers` table, so none of those ~20 accounts were
+ever registered with `LoginDirectoryService`. `AuthService.login()` → `loginDirectory.resolve()`
+returns `null` for an unregistered identifier → unconditional `401 Invalid credentials`, regardless of
+password correctness. Only the one real Administrator identifier (`provisionAdministrator()`, called
+right after `runSeed()`) was ever registered — so on any newly onboarded hospital, only that one admin
+account could log in; every seeded role account was permanently locked out. (The 3 existing live
+hospitals — apollo-indore, dolphin-hospital, hospital3 — have all their seeded identifiers registered
+already, confirmed by a read-only query; that must have been a manual one-off backfill outside any
+git-tracked script, since no such script exists in the repo. This bug would hit hospital #4 onward,
+and blocks exactly the "test all 13 roles" phase of the NIC checklist on a genuinely fresh install.)
+  - **Fix:** added `TenantUserProvisioningService.registerSeededIdentifiers(schemaName, hospitalId)`
+    (`apps/api/src/common/tenant/tenant-user-provisioning.service.ts`) — reads every `User.identifier`
+    already created in the tenant schema and registers each one via `loginDirectory.register()`,
+    skipping (not failing on) any already-registered identifier. Wired into both onboarding paths in
+    `apps/api/src/modules/platform/hospitals.service.ts` (`createHospital()` and
+    `resumeProvisioning()`), called right after `runSeed()` and before `provisionAdministrator()`.
+  - **Verified end-to-end on the same fresh database**: ran the tenant seed (21 demo users created),
+    ran the new registration logic, then actually booted the compiled NestJS app
+    (`ts-node src/main.ts`) against the fresh DB and made real HTTP `POST /api/auth/login` calls —
+    both `doctor@freshtest.esic.gov.in` / `DoctorPass123!` (a seeded role account, previously would
+    have 401'd forever) and `superadmin@platform.local` / `SuperAdminPlatform123!` (platform seed
+    default) returned valid JWTs. This is the first real proof in this project's history of the full
+    chain the user asked for: **empty database → platform migrate → tenant migrate → generate →
+    platform seed → tenant seed → onboarding registration → boot → login**, for both a platform user
+    and ordinary hospital staff, all the way through.
+
+**Regression:** full suite re-run after both fixes — 61/64 unit suites clean (3 pre-existing flaky
+suites — `receipt.service.spec.ts`, `analytics.service.spec.ts`, `lab.service.spec.ts` — failed under
+parallel execution on a unique-constraint race, confirmed pre-existing and unrelated by re-running all
+three in isolation with `--runInBand`: 27/27 pass); e2e unaffected, 27/27 suites, 170/170 tests green.
+
+**Not yet done from the NIC checklist (everything past Phase 1):** the 13-role UI/API RBAC matrix, the
+full ~20-stage patient journey, the billing-reconciliation audit, configurable-pricing/hardcoded-value
+grep, multi-hospital isolation testing, direct-API RBAC testing, code/dev-garbage cleanup, secrets scan,
+clean-checkout production build test (backend + frontend), browser/device testing, downloadable-artifact
+verification, audit-log coverage check, backup/restore test, concurrency smoke test, final security scan,
+and final repo cleanup. Per the user's own phase ordering ("until this works, everything else is
+secondary"), Phase 1 — the infra blocker — is now the one item in this list that's actually done and
+proven; the next session picking this up should move to Phase 2 (13-role functional + RBAC pass) unless
+the user redirects.
+
+## Session 3 continued — Phase 2/3 (direct-API RBAC sweep) + Phase 4 (static cleanup/secrets scan)
+
+**Direct-API RBAC matrix, live** — logged in as all 13 seeded roles on `apollo-indore` (real predictable
+dev passwords, e.g. `DoctorPass123!` — documented in `prisma/seed.ts` for exactly this purpose, not a
+credential guess) plus one cross-tenant account (`doctor@dolphin-hospital...`), against 13 representative
+sensitive endpoints (`/employees`, `/staff`, `/rbac/roles`, `/billing/transactions`, `/pharmacy/queue`,
+`/doctors`, `/admissions`, `/lab/queue`, `/therapy/sessions`, `/inventory/medicines`,
+`/reports/billing.csv`, `/audit-log`, `/procurement/requisitions`), plus one unauthenticated pass.
+Every single 200/403/401 result cross-checked directly against `PERMISSION_GRANTS` in `prisma/seed.ts`
+(the RBAC source of truth) — **zero drift, zero anomalies**. Unauthenticated correctly gets 401 on all 13.
+Cross-tenant IDOR check: fetched a real `apollo-indore` employee UUID (read-only) and requested it with
+the `dolphin-hospital` doctor's token — **404**, not 403 or 200 (tenant isolation is schema-scoped at the
+connection level, so a guessed/leaked ID from another hospital doesn't even resolve, it's not merely
+permission-denied). Also incidentally verified the login-endpoint rate limiter is live and working (hit
+`429 ThrottlerException` mid-sweep from rapid sequential logins — a real, working control, not a bug).
+Also ran the existing static `rbac-matrix.spec.ts` (P8 sweep) — still 5/5 green.
+
+**One real (data, not code) gap found:** `therapy@apollo-indore.esic.gov.in` (the THERAPY_STAFF demo
+account) gets a genuine `401` — confirmed read-only that no such row exists in either
+`hospital_apollo_indore.users` or `login_identifiers` for any of the 3 live hospitals. The THERAPY_STAFF
+role/seed block was evidently added to `prisma/seed.ts` after these 3 hospitals were originally
+onboarded, and `prisma db seed` (safe to re-run — every insert is an `upsert`) has never been re-run
+against them since. Not a code bug — re-running the tenant seed against each of the 3 existing schemas
+(which would also need `registerSeededIdentifiers` run against them, or a one-off directory backfill,
+since that fix only fires for *new* onboarding) would close this. Deferred: this is a live-database write
+outside this session's remit to do unprompted.
+
+**Phase 4 static scans (read-only, backend `apps/api/src` + frontend `apps/web/src`):**
+- `console.log`/`console.debug`/`debugger`/`TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable` in
+  non-test source: **zero hits, both frontend and backend.**
+- `mock`/`dummy`/`fake` in frontend source: one file, `DoctorWorkspace.tsx` — both hits are comments
+  explicitly documenting that mock data was *removed* ("real orders ... not local mock data"), not
+  leftover mock code. No action needed.
+- Hardcoded suspicious billing literals (100/150/200/500) grepped across billing/OPD/admission/lab/
+  therapy/pharmacy services: only two hits, both benign (`Math.round(value * 100) / 100` for 2-decimal
+  rounding, and a code-comment example medicine name "Azee 500"). No fabricated/hardcoded pricing found —
+  consistent with the app's actual architecture (a seeded `ServicePricingMaster` table), a good sign
+  against the user's specific worry about "previously fabricated billing calculations."
+- Secrets scan: no `.env*` files tracked in git (`.env.example` only), no AWS-key/private-key/Stripe-key
+  patterns anywhere in tracked files, no hardcoded `JWT_SECRET` literals in source.
+- No `node_modules/`, `dist/`, or `.sql`/`.dump`/`.bak` dump files tracked (aside from legitimate Prisma
+  migration `.sql` files, which belong in git).
+- **Dangerous-script audit** (the user's specific worry: "scripts that can delete production
+  employees/data"): `apps/api/prisma/cleanup.ts` and `delete-fake-emps.ts` do exist and do run
+  unconditional/broad `deleteMany()` calls — but a prior session (per their own header comment, "V-11")
+  already hardened both with `assertSafeToRunDestructiveScript()` (`apps/api/prisma/guard-destructive-
+  script.ts`): refuses if `NODE_ENV=production`, refuses unless `DATABASE_URL`'s host is on a
+  local/dev-only allowlist (`localhost`/`127.0.0.1`/`postgres`/`db` — nothing else, so no real/remote
+  prod host can ever match even if `NODE_ENV` were unset by mistake), and refuses without an explicit
+  `--yes` CLI flag. Neither script is wired into any `package.json` script or lifecycle hook — both
+  require a manual, deliberate invocation. `demo-seed.ts` is pure create/upsert, no deletes, no guard
+  needed. This fully addresses the checklist's concern; no further action needed here.
+
+**Regression:** no code changes made in this half of the session (RBAC sweep and cleanup scans were
+read-only/live-GET-only against existing data), so no re-run needed.
+
+**Still not done:** full ~20-stage patient journey walkthrough, billing-reconciliation audit (ledger =
+payment = reporting totals for one real patient), multi-hospital *UI* isolation testing (API-level cross-
+tenant isolation is now proven, above), browser/device/screen-size testing (no browser-automation tool
+available this session), downloadable-artifact verification (PDF/Excel/CSV — open and inspect, not just
+download), audit-log coverage check against the checklist's specific action list, one real backup/restore
+test, a concurrency/performance smoke test, a final security scan (CORS/rate-limit config review,
+injection, file uploads), and final repo cleanup pass (this session's own scratch scripts under
+`prisma/seeds/_*.ts` were already deleted after use — confirmed `git status` clean of them). Also noted
+but deliberately deferred (all require a live-DB write, correctly blocked by the auto-mode classifier as
+a shared-resource modification): re-running `prisma db seed` against the 3 existing hospitals' schemas
+to create the missing `therapy@` demo user, then `pnpm run backfill:login-identifiers` (an existing,
+git-tracked, idempotent, purpose-built script — `apps/api/scripts/backfill-login-identifiers.ts` — this
+is how the other ~60 identifiers got registered previously, not an ad-hoc manual fix as first guessed)
+to register it.
+
+## Session 3 continued — Phase 5 (clean-checkout production build test): found + fixed a real deploy-blocking bug
+
+Ran the exact sequence the NIC checklist specifies: `git clone` (local clone of this repo into a throwaway
+temp directory, equivalent to a fresh clone from the remote) → `pnpm install` → `pnpm --filter @esic-hms/api build` →
+`pnpm --filter web build` → boot the compiled output directly (`node dist/main.js`, i.e. what `pnpm start`
+actually runs), against a second throwaway fresh Postgres container (separate from the one used for the
+Phase 1 migration fix, same disposable-container pattern).
+
+- **Install**: clean, all postinstall Prisma generation steps (both schemas) succeeded.
+- **Backend build** (`prisma generate` × 2 → `nest build`): clean, `dist/main.js` produced, zero errors.
+- **Frontend build** (`tsc -b && vite build`): clean, zero TypeScript errors, zero build errors. One
+  non-blocking perf note: the main JS chunk is 1.35 MB (344 KB gzipped) — Vite's own "consider code-
+  splitting" warning, not a correctness issue, not acted on (out of scope for a release-readiness pass,
+  flagging for awareness only).
+- **Compiled boot, take 1: hard crash.** `node dist/main.js` failed immediately with `Error: Cannot find
+  module 'express'`. Root cause: `apps/api/src/main.ts` does a real runtime `import express from 'express'`
+  (not just `import type`), and several other files import `Request`/`Response`/`NextFunction` types from
+  it too — but `express` itself is only a *transitive* dependency (pulled in by `@nestjs/platform-express`)
+  and was never declared in `apps/api/package.json`'s own `dependencies`. Confirmed via the pnpm virtual
+  store: `express@4.21.2` *was* present under `node_modules/.pnpm/express@4.21.2`, but pnpm's strict
+  isolation correctly never symlinked it into `apps/api/node_modules/express` because the app never asked
+  for it directly — a classic "phantom dependency" that only ever worked in the existing long-lived
+  `node_modules` (leftover from before this became a clean pnpm workspace, or from `shamefully-hoist`-style
+  drift). **This would have hard-crashed on NIC's very first `pnpm install && pnpm start` on a fresh
+  machine** — exactly the class of bug a clean-room build test exists to catch, and did.
+  - **Fix:** added `"express": "4.21.2"` (pinned to the exact version already resolved and locked
+    transitively, so nothing else moves) to `apps/api/package.json`'s `dependencies`.
+  - **Re-verified on the same clean checkout**: re-ran `pnpm install` (picked up the new direct dependency,
+    `express` now correctly symlinked into `apps/api/node_modules/`), re-booted `node dist/main.js` against
+    the fresh DB — clean boot, `🚀 Local Application is running on: http://localhost:4098/api`, and a real
+    HTTP request through the compiled binary got a correct validated response (not a crash).
+  - **Regression**: 62/64 unit suites clean after the `package.json` change (same 2 pre-existing
+    parallel-execution flaky suites as before, `billing/receipt.service.spec.ts` re-confirmed passing
+    10/10 in isolation) — the dependency addition is inert everywhere except the module-resolution path
+    it fixes.
+  - All throwaway containers/directories from this check were torn down; nothing left running.
+
+**Phase 5 still open:** backend clean-checkout build/boot is now proven end-to-end (this was the
+highest-value, most NIC-relevant unchecked item — "the app doesn't even start after a fresh
+`git clone && pnpm install`" would have been a first-day blocker). Frontend build is proven but not yet
+served/smoke-tested (`vite preview` / actual browser load).
+
+## Session 3 continued — Phase 5: backup/restore, concurrency smoke test, security config review, audit-log coverage, repo-cleanup survey
+
+**Backup/restore test (real, not simulated).** `pg_dump -Fc` of the live `esic_hms` database (read-only
+against the source, the dump itself written to the container's own `/tmp` then copied out), restored via
+`pg_restore` into a brand-new throwaway `postgres:16-alpine` container. Verified row counts match exactly
+between source and restored copy across both the platform schema and a tenant schema
+(`hospitals`=3, `login_identifiers`=64, `hospital_apollo_indore.employees`=9,
+`hospital_apollo_indore.opd_visits`=1, identical on both sides). Confirms the schema-per-tenant model dumps
+and restores cleanly as a single logical backup — no per-tenant special-casing needed for DR. Throwaway
+container and dump file deleted after.
+
+**Concurrency/performance smoke test.** 20 concurrent authenticated GET requests (5 each across
+`/employees`, `/doctors`, `/inventory/medicines`, `/admissions`) against the live dev API: all 20 returned
+`200` in 0.5s wall-clock, container memory flat (708MiB → 709MiB), CPU unchanged, no restart/crash
+(`docker ps` showed uninterrupted uptime throughout). Not a full load test, but confirms no obvious
+connection-pool exhaustion or crash-on-concurrency at this modest scale.
+
+**Security config review (read-only code review, not a penetration test).**
+- CORS: real allowlist (`resolveCorsOrigins()`, driven by `CORS_ORIGINS`/`FRONTEND_URL` env), not a
+  wildcard-reflect — already fixed per an earlier documented finding (V-03).
+- Security headers: hand-rolled but complete (`SecurityMiddleware`) — HSTS, CSP (`default-src 'self'`),
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`. A prior CSRF-token
+  "protection" was deliberately removed (V-14) after being shown to be a no-op (minted a token for anyone
+  missing one, never bound to a client) — correctly reasoned as inapplicable given this API is
+  Bearer-token authenticated, not cookie-based, so classic CSRF doesn't apply; correctly *not*
+  reintroduced without real session/cookie auth to bind it to.
+- Rate limiting: global `ThrottlerModule` (120 req/min default), confirmed *actually firing* live during
+  this session's own RBAC sweep (got a real `429 ThrottlerException` from rapid sequential logins).
+- File uploads: no `multer`/`FileInterceptor`/raw file-upload endpoints exist anywhere in the codebase —
+  the employee/inventory "import" endpoints take a JSON body with a base64-encoded field, size-checked
+  server-side (`assertImportSizeOk`) before decoding. No arbitrary-file-write attack surface to review.
+- SQL injection: not separately re-audited this pass (Prisma's parameterized query builder is used
+  throughout everywhere sampled; no raw `$queryRawUnsafe`/`$executeRawUnsafe` calls were seen outside the
+  hospital-onboarding schema-DDL path, which is regex-validated against `SCHEMA_NAME_RE` before use).
+
+**Audit-log coverage check.** Enumerated every distinct `action:` string passed to `auditLog.create()`
+across the codebase (~45 distinct actions). Confirms coverage of every category the NIC checklist calls
+out: auth events (login success/failure, impersonation start/end, password change/reset), staff and
+doctor lifecycle (created, locked/unlocked, password reset, email changed, activation resent), hospital
+admin actions (create/update/delete/status-change/resume-provisioning, platform-admin and hospital-admin
+account creation), RBAC changes (`permission.post`/`permission.delete`), pricing changes
+(`service_price.change`), and patient/visit lifecycle (register, update, OPD completed/no-show/transferred).
+No gap found against the checklist's list.
+
+**Final repo-cleanup survey (read-only — nothing deleted without confirmation, per the checklist's own
+"do not blindly delete everything" instruction).** Found real candidates for removal, all confirmed
+actually tracked in git (so they do ship to anyone who clones the repo, including NIC):
+- `pricing/` at repo root — 9 WhatsApp-exported JPEGs and a PDF ("New Doc 08-27-2026 12.58.pdf"), clearly
+  informal reference material shared over WhatsApp, not application assets.
+- `BUGS-SS/` at repo root — 6 bug-report screenshots (`Screenshot 2026-08-31 ....png`).
+- `changes.txt`, `features.txt` — informal working notes at repo root.
+- `esic_hms_master_guide_and_issues.html`, `esic_hms_system_audit_and_issues.html` — appear to be earlier
+  audit-report exports (possibly the "pre-existing audit reports" this session's Session 1 baseline
+  referenced) — likely worth *keeping*, but probably belong under `docs/` rather than repo root.
+- `Emblem_of_India.svg` and `esic logo.png` at repo root — confirmed (via grep) to be **unused
+  duplicates**: the app's `LoginPage.tsx` references `/Emblem_of_India.svg`, which Vite serves from
+  `apps/web/public/Emblem_of_India.svg` (a separate, correctly-placed copy) — the root-level copies of
+  both files are dead weight.
+- `package-lock.json` at repo root, alongside `pnpm-lock.yaml` — this is a pnpm workspace
+  (`pnpm-workspace.yaml`, `packageManager: pnpm@9.15.4`); a stray `package-lock.json` (npm's lockfile
+  format) sitting next to it is very likely leftover from before pnpm was adopted, not something either
+  package manager is actually reading in normal use — worth confirming unused and removing to avoid
+  confusing a future contributor about which package manager is authoritative.
+
+**Not deleted yet — flagged for the user's explicit sign-off before removal**, since several of these
+(the audit-report HTMLs, `changes.txt`/`features.txt`) could be intentional project history rather than
+junk, and the checklist itself explicitly warns against blind deletion.
+
+**Regression:** no source-code changes in this half of the session (all read-only or against throwaway
+infrastructure); no re-run needed.
+
+**Still not done:** the full ~20-stage patient journey walkthrough, the billing-reconciliation audit
+(ledger = payment = reporting totals for one real patient), multi-hospital *UI* isolation testing
+(API-level is proven), browser/device/screen-size testing (no browser-automation tool available this
+session), and downloadable-artifact verification (opening actual PDF/Excel/CSV output, not just checking
+the download succeeds). These are the only checklist items genuinely blocked by tooling (browser
+automation) or requiring extended live-workflow time rather than something this session chose to skip.

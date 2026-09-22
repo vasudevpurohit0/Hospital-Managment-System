@@ -296,7 +296,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
       {/* Header Banner */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
             <span>📦</span> Central Inventory & Medicine Master
           </h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -457,38 +457,38 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
                       No active batches recorded for this medicine.
                     </div>
                   ) : (
-                    <table className="w-full text-left text-xs">
+                    <table className="w-max min-w-full text-left text-xs">
                       <thead>
                         <tr className="border-b border-gray-200 text-gray-400 uppercase tracking-wider font-bold">
-                          <th className="pb-2">Batch #</th>
-                          <th className="pb-2">Manufacturer</th>
-                          <th className="pb-2">Expiry Date</th>
-                          <th className="pb-2">Stock Level</th>
-                          <th className="pb-2">Prices (Purchase / Issue)</th>
-                          <th className="pb-2">Location</th>
-                          <th className="pb-2">Stock Status</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Batch #</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Manufacturer</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Expiry Date</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Stock Level</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Prices (Purchase / Issue)</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Location</th>
+                          <th className="pb-2 pr-6 last:pr-0 whitespace-nowrap">Stock Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {med.batches.map((batch) => (
                           <tr key={batch.id} className="hover:bg-gray-50/50">
-                            <td className="py-2.5 font-bold text-gray-800">{batch.batchNumber}</td>
-                            <td className="py-2.5 text-gray-600">{batch.manufacturer}</td>
-                            <td className="py-2.5 text-gray-600 font-medium">
+                            <td className="py-2.5 pr-6 last:pr-0 font-bold text-gray-800">{batch.batchNumber}</td>
+                            <td className="py-2.5 pr-6 last:pr-0 text-gray-600">{batch.manufacturer}</td>
+                            <td className="py-2.5 pr-6 last:pr-0 text-gray-600 font-medium">
                               {formatDateDDMonYYYY(batch.expiryDate)}
                             </td>
-                            <td className="py-2.5 font-bold text-gray-900">
+                            <td className="py-2.5 pr-6 last:pr-0 font-bold text-gray-900">
                               {batch.currentStock}{' '}
                               <span className="text-gray-400 text-[10px]">units</span>
                             </td>
-                            <td className="py-2.5 text-gray-600">
+                            <td className="py-2.5 pr-6 last:pr-0 text-gray-600">
                               ₹{batch.purchasePrice} /{' '}
                               <strong className="text-gray-900">₹{batch.issuePrice}</strong>
                             </td>
-                            <td className="py-2.5 text-gray-500">
+                            <td className="py-2.5 pr-6 last:pr-0 text-gray-500">
                               {batch.storageLocation || 'Main Store'}
                             </td>
-                            <td className="py-2.5">{renderStockBadge(batch)}</td>
+                            <td className="py-2.5 pr-6 last:pr-0">{renderStockBadge(batch)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1022,15 +1022,15 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ authToken, tok
                 <div className="grid grid-cols-3 gap-3">
                   <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
                     <div className="text-xs text-emerald-700 font-medium">Successfully Imported</div>
-                    <div className="text-2xl font-bold text-emerald-800">{importResult.importedCount}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-emerald-800">{importResult.importedCount}</div>
                   </div>
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center">
                     <div className="text-xs text-amber-700 font-medium">Skipped (Duplicates)</div>
-                    <div className="text-2xl font-bold text-amber-800">{importResult.skippedCount}</div>
+                    <div className="text-xl sm:text-2xl font-bold text-amber-800">{importResult.skippedCount}</div>
                   </div>
                   <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl text-center">
                     <div className="text-xs text-gray-500 font-medium">Total Processed</div>
-                    <div className="text-2xl font-bold text-gray-900">
+                    <div className="text-xl sm:text-2xl font-bold text-gray-900">
                       {validationResult?.totalRows ?? importResult.importedCount + importResult.skippedCount}
                     </div>
                   </div>

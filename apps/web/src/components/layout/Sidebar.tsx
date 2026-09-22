@@ -335,6 +335,11 @@ interface SidebarProps {
   onNavigate: (page: PageId) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  /** Below `lg` the sidebar renders as an overlay drawer instead of a column. */
+  isMobileNav?: boolean;
+  /** Drawer visibility. Ignored unless `isMobileNav`. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -342,6 +347,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   collapsed,
   onToggleCollapse,
+  isMobileNav = false,
+  mobileOpen = false,
+  onMobileClose,
 }) => {
   const { user, logout } = useAuth();
   const userRole = user?.role || '';
@@ -364,39 +372,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
   })).filter((group) => group.items.length > 0);
 
   const toggleGroup = (title: string) => {
-    if (collapsed) return;
+    if (isCollapsed) return;
     setExpandedGroups((prev) => ({ ...prev, [title]: !prev[title] }));
   };
 
+  /* Mobile renders the full-width drawer regardless of `isCollapsed`: a 64px rail
+     of bare icons is not usable as the only navigation on a phone, and the
+     drawer overlays content so it costs no layout width either way.
+     `isCollapsed` (not the raw prop) drives every branch below -- otherwise the
+     drawer would be 260px wide but still render centred, unlabelled icons,
+     because AppShell auto-collapses at <1280px. */
+  const isCollapsed = isMobileNav ? false : collapsed;
+  const widthClass = isCollapsed
+    ? 'w-[var(--sidebar-width-collapsed)]'
+    : 'w-[var(--sidebar-width-expanded)]';
+
   return (
     <aside
-      className={`fixed left-0 top-0 bottom-0 flex flex-col sidebar-transition ${
-        collapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width-expanded)]'
+      className={`fixed bottom-0 left-0 top-0 flex flex-col sidebar-transition ${widthClass} ${
+        isMobileNav
+          ? `transition-transform duration-300 ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`
+          : 'translate-x-0'
       }`}
       style={{
         backgroundColor: 'var(--sidebar-bg)',
-        zIndex: 'var(--z-sidebar)' as unknown as number,
+        zIndex: (isMobileNav
+          ? 'var(--z-sidebar-drawer)'
+          : 'var(--z-sidebar)') as unknown as number,
       }}
+      // Hidden from the a11y tree while closed so screen readers don't announce
+      // off-screen links. (`inert` would also drop it from tab order, but it is
+      // not in React 18's JSX types -- revisit on the React 19 upgrade.)
+      aria-hidden={isMobileNav && !mobileOpen ? true : undefined}
     >
       {/* ── Brand Header ── */}
       <div
         className={`flex items-center h-[var(--topnav-height)] flex-shrink-0 border-b border-white/[0.06] ${
-          collapsed ? 'justify-center px-2' : 'px-4'
+          isCollapsed ? 'justify-center px-2' : 'px-4'
         }`}
       >
-        {collapsed ? (
-          <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center border border-white/20 shadow-xs">
-            <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-full h-full object-contain" />
+        {isCollapsed ? (
+          <div className="w-9 h-9 rounded-lg bg-white p-[3px] flex items-center justify-center border border-white/25 shadow-xs">
+            <img src="/mp-emblem.webp" alt="AAYUSH SAARTHI — Government of Madhya Pradesh" className="w-full h-full object-contain" />
           </div>
         ) : (
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center flex-shrink-0 border border-white/20 shadow-xs">
-              <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-full h-full object-contain" />
+            <div className="w-9 h-9 rounded-lg bg-white p-[3px] flex items-center justify-center flex-shrink-0 border border-white/25 shadow-xs">
+              <img src="/mp-emblem.webp" alt="AAYUSH SAARTHI — Government of Madhya Pradesh" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-[12px] font-extrabold text-white truncate">AYUSH SARATHI</h1>
-              <p className="text-[10px] text-amber-300 font-medium truncate">
-                Sign-On
+              <h1 className="text-[12.5px] font-extrabold tracking-tight truncate">
+                <span className="text-white">AAYUSH</span>{' '}
+                <span className="text-[var(--color-accent-500)]">SAARTHI</span>
+              </h1>
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.07em] text-white/50 truncate">
+                Department of AYUSH
               </p>
             </div>
           </div>
@@ -405,16 +435,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* ── Navigation ── */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 scrollbar-thin">
-        {!collapsed && SINGLE_PURPOSE_ROLES[userRole] && (
+        {!isCollapsed && SINGLE_PURPOSE_ROLES[userRole] && (
           <div className="mx-4 mb-3 flex items-start gap-2 rounded-lg bg-white/[0.06] border border-white/10 px-3 py-2.5 text-[10.5px] leading-snug text-[var(--sidebar-text)]">
-            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-[1px] text-amber-300" />
+            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-[1px] text-[var(--color-accent-400)]" />
             <span>{SINGLE_PURPOSE_ROLES[userRole]}</span>
           </div>
         )}
         {filteredGroups.map((group) => (
           <div key={group.title} className="mb-1">
             {/* Group Header */}
-            {!collapsed && (
+            {!isCollapsed && (
               <button
                 onClick={() => toggleGroup(group.title)}
                 className="w-full flex items-center justify-between px-5 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--sidebar-text)] opacity-40 hover:opacity-60 transition-opacity"
@@ -430,9 +460,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Group Items */}
             <AnimatePresence initial={false}>
-              {(collapsed || expandedGroups[group.title]) && (
+              {(isCollapsed || expandedGroups[group.title]) && (
                 <motion.div
-                  initial={collapsed ? false : { height: 0, opacity: 0 }}
+                  initial={isCollapsed ? false : { height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
@@ -445,11 +475,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     return (
                       <button
                         key={item.id}
-                        onClick={() => onNavigate(item.id)}
-                        title={collapsed ? item.label : (item.description || undefined)}
+                        onClick={() => {
+                          onNavigate(item.id);
+                          // Tapping a link on mobile should reveal the page, not
+                          // leave the drawer covering it.
+                          onMobileClose?.();
+                        }}
+                        title={isCollapsed ? item.label : (item.description || undefined)}
                         className={`
                           w-full flex items-center gap-3 sidebar-item-transition relative
-                          ${collapsed ? 'justify-center px-2 py-2.5 mx-auto' : 'px-5 py-2'}
+                          ${isCollapsed ? 'justify-center px-2 py-2.5 mx-auto' : 'px-5 py-2'}
                           ${
                             isActive
                               ? 'text-white bg-white/[0.08]'
@@ -467,10 +502,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         )}
 
                         <Icon
-                          className={`flex-shrink-0 ${collapsed ? 'w-5 h-5' : 'w-[18px] h-[18px]'}`}
+                          className={`flex-shrink-0 ${isCollapsed ? 'w-5 h-5' : 'w-[18px] h-[18px]'}`}
                         />
 
-                        {!collapsed && (
+                        {!isCollapsed && (
                           <span className="text-[13px] font-medium truncate">{item.label}</span>
                         )}
                       </button>
@@ -484,21 +519,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* ── Collapse Toggle ── */}
+      {/* Collapsing is a desktop-only affordance: the mobile drawer is always
+          full width and is dismissed via the backdrop, Escape or a nav tap. */}
       <button
-        onClick={onToggleCollapse}
+        onClick={isMobileNav ? onMobileClose : onToggleCollapse}
         className="flex items-center justify-center h-10 border-t border-b border-white/[0.06] text-[var(--sidebar-text)] hover:text-white hover:bg-[var(--sidebar-item-hover)] transition-colors"
-        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        title={isMobileNav ? 'Close menu' : isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
         <ChevronLeft
-          className={`w-4 h-4 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 transition-transform duration-300 ${
+            !isMobileNav && isCollapsed ? 'rotate-180' : ''
+          }`}
         />
       </button>
 
       {/* ── User & Logout ── */}
       <div
-        className={`flex-shrink-0 border-t border-white/[0.06] p-3 ${collapsed ? 'flex flex-col items-center gap-2' : ''}`}
+        className={`flex-shrink-0 border-t border-white/[0.06] p-3 ${isCollapsed ? 'flex flex-col items-center gap-2' : ''}`}
       >
-        {collapsed ? (
+        {isCollapsed ? (
           <>
             <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center text-xs font-bold text-primary-300">
               {user?.name?.charAt(0) || 'U'}
@@ -507,6 +546,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={logout}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--sidebar-text)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
               title="Sign Out"
+              aria-label="Sign out"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -526,6 +566,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={logout}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--sidebar-text)] hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
               title="Sign Out"
+              aria-label="Sign out"
             >
               <LogOut className="w-4 h-4" />
             </button>

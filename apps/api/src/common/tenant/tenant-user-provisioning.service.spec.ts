@@ -61,6 +61,14 @@ describe('TenantUserProvisioningService (regression: identifier case-mismatch lo
     );
   });
 
+  it('forces a password change on first login, matching every Staff/Doctor account (regression: this used to default to false, letting Administrators skip forced first-login setup)', async () => {
+    await service.provisionAdministrator('hospital_test', 'hosp-1', 'admin@hospital.com', 'password123');
+
+    expect(mockTenantClient.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ mustChangePassword: true }) }),
+    );
+  });
+
   it('rolls back the (normalized) directory registration if the tenant-side create fails', async () => {
     mockTenantClient.user.create.mockRejectedValueOnce(new Error('tenant create failed'));
 

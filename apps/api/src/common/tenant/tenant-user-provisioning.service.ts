@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { TenantClientFactory } from './tenant-client-factory';
 import { LoginDirectoryService } from './login-directory.service';
@@ -40,13 +40,46 @@ export class TenantUserProvisioningService {
       const client = await this.tenantClients.getClient(schemaName);
       const adminRole = await client.role.findUniqueOrThrow({ where: { name: 'Administrator' } });
       const passwordHash = await bcrypt.hash(password, 10);
+      // Same as every Staff/Doctor account: the caller (Super Admin /
+      // Hospital onboarding flow) chose this initial password, not the
+      // Administrator themselves, so it must be changed before real use --
+      // this used to default to `false` (schema default), silently letting
+      // Administrators skip the forced first-login password change every
+      // other role gets.
       const user = await client.user.create({
-        data: { identifier: normalizedIdentifier, passwordHash, roleId: adminRole.id, active: true },
+        data: {
+          identifier: normalizedIdentifier,
+          passwordHash,
+          roleId: adminRole.id,
+          active: true,
+          mustChangePassword: true,
+        },
       });
       return { id: user.id, identifier: user.identifier };
     } catch (err) {
       await this.loginDirectory.remove(normalizedIdentifier).catch(() => undefined);
       throw err;
+    }
+  }
+
+  /**
+   * `prisma/seed.ts` creates its demo/reference User rows with a plain
+   * tenant-schema PrismaClient -- it has no PlatformPrismaService to call
+   * loginDirectory.register() with -- so every account it just seeded for a
+   * newly onboarded hospital would otherwise resolve() to null and get a
+   * permanent 401, no matter how correct the password. Called once right
+   * after the seed step so those accounts work the same day the hospital
+   * goes live. Idempotent: an identifier already registered (e.g. a rerun
+   * via resumeProvisioning) is skipped rather than treated as a failure.
+   */
+  async registerSeededIdentifiers(schemaName: string, hospitalId: string): Promise<void> {
+    const client = await this.tenantClients.getClient(schemaName);
+    const users = await client.user.findMany({ select: { identifier: true } });
+    for (const { identifier } of users) {
+      await this.loginDirectory.register(identifier, hospitalId).catch((err) => {
+        if (err instanceof ConflictException) return;
+        throw err;
+      });
     }
   }
 }

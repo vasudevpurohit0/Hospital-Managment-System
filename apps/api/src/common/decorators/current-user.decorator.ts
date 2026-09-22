@@ -22,6 +22,22 @@ export interface ImpersonationClaims {
   impersonatorRoleName: string;
   impersonatorIdentifier: string;
   startedAt: string;
+  /**
+   * The actor who started this impersonation CHAIN, present only from the
+   * second hop onward (e.g. Super Admin -> Hospital Admin -> Doctor) --
+   * absent on a single-level impersonation, where the root and the
+   * immediate impersonator above are the same actor and `impersonator*`
+   * alone already says who to show/restore. Never changes across hops.
+   * This is what AccountLifecycleService.impersonate() checks to decide
+   * whether THIS session may itself start another impersonation one level
+   * deeper: only a chain rooted in a real Super Admin (type 'platform') may.
+   */
+  root?: {
+    id: string;
+    type: 'hospital' | 'platform';
+    roleName: string;
+    identifier: string;
+  };
 }
 
 export interface AuthenticatedUser {

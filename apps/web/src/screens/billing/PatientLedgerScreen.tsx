@@ -227,9 +227,9 @@ export const PatientLedgerScreen: React.FC<PatientLedgerScreenProps> = ({ authTo
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-4 sm:p-4 sm:p-6 space-y-6">
       <div className="pb-4 border-b border-gray-200">
-        <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Patient Financial Ledger</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Patient Financial Ledger</h2>
         <p className="text-sm text-gray-500">
           Every billable activity for one patient, across OPD, IPD, pharmacy and every other
           service — each charged at quantity × its configured service rate.
@@ -244,11 +244,11 @@ export const PatientLedgerScreen: React.FC<PatientLedgerScreenProps> = ({ authTo
           </div>
           <div className="mt-1 flex items-baseline gap-2">
             {totalExpensesLoading ? (
-              <span className="text-2xl font-bold text-gray-400 animate-pulse">Loading…</span>
+              <span className="text-xl sm:text-2xl font-bold text-gray-400 animate-pulse">Loading…</span>
             ) : totalExpensesError ? (
               <span className="text-sm text-red-600 font-medium">Failed to load: {totalExpensesError}</span>
             ) : (
-              <span className="text-2xl font-bold text-gray-900 tabular-nums">
+              <span className="text-xl sm:text-2xl font-bold text-gray-900 tabular-nums">
                 {rupees(totalExpenses)}
               </span>
             )}

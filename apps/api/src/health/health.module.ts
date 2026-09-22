@@ -2,11 +2,9 @@ import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
 
 /**
- * Health module — provides the /api/health endpoint.
- *
- * Phase 0: basic liveness check.
- * Phase 1+: will be extended with database and Redis connectivity checks
- * using @nestjs/terminus once those services are wired into the app.
+ * Health module — provides GET /api/health (pure liveness, no dependency
+ * checks -- see the comment on HealthController.dependencies() for why) and
+ * GET /api/health/dependencies (Redis connectivity, for dashboards/humans).
  */
 @Module({
   controllers: [HealthController],

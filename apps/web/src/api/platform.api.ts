@@ -17,10 +17,26 @@ export interface CreateHospitalPayload {
   name: string;
   slug: string;
   adminIdentifier: string;
-  adminPassword: string;
+  /** Used for the first Administrator AND shared as the onboarding password for every other auto-created role account (Nurse, Receptionist, Pharmacist, etc. -- never Doctor, which is never auto-created). */
+  initialPassword: string;
+  confirmPassword: string;
   contactEmail?: string;
   contactPhone?: string;
   address?: string;
+}
+
+export interface CreatedRoleAccount {
+  role: string;
+  identifier: string;
+}
+
+export interface CreateHospitalResult extends HospitalRecord {
+  adminIdentifier: string;
+  roleAccounts: {
+    created: CreatedRoleAccount[];
+    skipped: { role: string; identifier: string; reason: string }[];
+    failed: { role: string; identifier: string; reason: string }[];
+  };
 }
 
 export interface UpdateHospitalPayload {
@@ -50,12 +66,35 @@ export interface HospitalAdminRecord {
 export interface AuditLogEntry {
   id: string;
   action: string;
+  resource?: string | null;
   method: string | null;
   path: string | null;
+  metadata?: unknown;
   createdAt: string;
   platformUserEmail: string;
+  platformUserName?: string;
   hospitalName: string | null;
   hospitalSlug: string | null;
+}
+
+export interface PlatformAuditLogFilters {
+  q?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PlatformAuditLogPage {
+  items: AuditLogEntry[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+export interface PlatformAuditLogStats {
+  total: number;
+  last24h: number;
+  uniqueAdmins: number;
+  hospitalsTouched: number;
 }
 
 export interface HospitalMetrics {
@@ -106,12 +145,24 @@ export async function listHospitals(): Promise<HospitalRecord[]> {
   return unwrap(res, 'Failed to load hospitals');
 }
 
-export async function createHospital(payload: CreateHospitalPayload): Promise<HospitalRecord> {
+export async function createHospital(payload: CreateHospitalPayload): Promise<CreateHospitalResult> {
   const res = await apiFetch('/api/platform/hospitals', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
   return unwrap(res, 'Failed to create hospital');
+}
+
+export async function resetAllHospitalUserPasswords(
+  hospitalId: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<{ reset: true; affectedCount: number; identifiers: string[] }> {
+  const res = await apiFetch(`/api/platform/hospitals/${hospitalId}/reset-all-passwords`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword, confirmPassword }),
+  });
+  return unwrap(res, 'Failed to reset hospital user passwords');
 }
 
 export async function getHospital(id: string): Promise<HospitalRecord> {
@@ -139,10 +190,11 @@ export async function resetHospitalUserPassword(
   id: string,
   identifier: string,
   newPassword: string,
+  confirmPassword: string,
 ): Promise<{ reset: boolean; identifier: string }> {
   const res = await apiFetch(`/api/platform/hospitals/${id}/reset-password`, {
     method: 'POST',
-    body: JSON.stringify({ identifier, newPassword }),
+    body: JSON.stringify({ identifier, newPassword, confirmPassword }),
   });
   return unwrap(res, 'Failed to reset password');
 }
@@ -206,9 +258,48 @@ export async function setHospitalAdminActive(
   return unwrap(res, 'Failed to update hospital admin');
 }
 
-export async function listAuditLog(): Promise<AuditLogEntry[]> {
-  const res = await apiFetch('/api/platform/audit-log');
+export interface HospitalAdminImpersonationSession {
+  accessToken: string;
+  expiresIn: string;
+  target: { id: string; identifier: string; role: string; name: string };
+}
+
+/** Super-Admin-only: starts a secure impersonation session as this hospital's Administrator -- every eligibility rule (active/locked/pending status) is enforced server-side. */
+export async function impersonateHospitalAdmin(
+  hospitalId: string,
+  userId: string,
+): Promise<HospitalAdminImpersonationSession> {
+  const res = await apiFetch(`/api/platform/hospitals/${hospitalId}/admins/${userId}/impersonate`, {
+    method: 'POST',
+  });
+  return unwrap(res, 'Failed to start impersonation');
+}
+
+function buildQuery(params: object): string {
+  const search = new URLSearchParams();
+  Object.entries(params as Record<string, string | number | undefined | null>).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
+  });
+  return search.toString();
+}
+
+export async function listAuditLog(filters: PlatformAuditLogFilters = {}): Promise<PlatformAuditLogPage> {
+  const res = await apiFetch(`/api/platform/audit-log?${buildQuery(filters)}`);
   return unwrap(res, 'Failed to load audit log');
+}
+
+export async function fetchPlatformAuditLogStats(): Promise<PlatformAuditLogStats> {
+  const res = await apiFetch('/api/platform/audit-log/stats');
+  return unwrap(res, 'Failed to load audit log stats');
+}
+
+export async function exportPlatformAuditLogCsv(filters: Omit<PlatformAuditLogFilters, 'page' | 'limit'> = {}): Promise<Blob> {
+  const res = await apiFetch(`/api/platform/audit-log/export.csv?${buildQuery(filters)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to export audit log');
+  }
+  return res.blob();
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {

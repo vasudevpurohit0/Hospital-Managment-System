@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { MpEmblem, AyushEmblem } from '../branding/GovtEmblems';
 import {
   Search,
   Bell,
@@ -11,6 +12,7 @@ import {
   User,
   Settings,
   Command,
+  Menu,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Breadcrumb, BreadcrumbItem } from './Breadcrumb';
@@ -24,11 +26,19 @@ type ThemeMode = 'light' | 'dark' | 'system';
 interface TopNavProps {
   breadcrumbs: BreadcrumbItem[];
   onOpenCommandPalette: () => void;
+  /** Opens the mobile nav drawer. Omitted by the platform console, which has
+   *  its own shell; the hamburger only renders when this is supplied. */
+  onOpenMobileNav?: () => void;
   /** 'platform' hides the hospital-specific MP Govt branding block on the left -- everything else (search/theme/notifications/profile) is context-agnostic chrome shared by both. */
   variant?: 'hospital' | 'platform';
 }
 
-export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalette, variant = 'hospital' }) => {
+export const TopNav: React.FC<TopNavProps> = ({
+  breadcrumbs,
+  onOpenCommandPalette,
+  onOpenMobileNav,
+  variant = 'hospital',
+}) => {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -91,7 +101,7 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
 
   return (
     <header
-      className="fixed top-0 right-0 flex items-center justify-between h-[var(--topnav-height)] px-5 border-b"
+      className="fixed top-0 right-0 flex items-center justify-between gap-2 h-[var(--topnav-height)] px-3 sm:px-5 border-b"
       style={{
         backgroundColor: 'var(--topnav-bg)',
         borderColor: 'var(--topnav-border)',
@@ -101,13 +111,26 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
       }}
     >
       {/* Left — Breadcrumb & MP Govt Logo */}
-      <div className="flex items-center gap-3 min-w-0">
+      {/* flex-1 + min-w-0 make this the group that gives way when space runs
+          out, so the breadcrumb ellipsises instead of overlapping the actions. */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+        {onOpenMobileNav && (
+          <button
+            onClick={onOpenMobileNav}
+            className="btn btn-ghost btn-icon flex-shrink-0 lg:hidden"
+            aria-label="Open navigation menu"
+            title="Menu"
+          >
+            <Menu className="h-5 w-5 text-[var(--color-text-secondary)]" />
+          </button>
+        )}
         {variant === 'hospital' && (
           <div className="hidden lg:flex items-center gap-2 pr-3 border-r border-[var(--color-border)]">
-            <img src="/mp_govt_logo.svg" alt="MP Government Seal" className="w-6 h-6 object-contain" />
-            <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-6 h-6 object-contain" />
-            <span className="text-[11px] font-bold text-[var(--color-text-primary)]">
-              MP Govt <span className="text-amber-500 font-extrabold">Sign-On</span>
+            <MpEmblem size={22} />
+            <AyushEmblem size={22} />
+            <span className="text-[11px] font-extrabold tracking-tight">
+              <span className="text-[var(--color-text-primary)]">AAYUSH</span>{' '}
+              <span className="text-[var(--color-accent-500)]">SAARTHI</span>
             </span>
           </div>
         )}
@@ -115,7 +138,9 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
       </div>
 
       {/* Right — Actions */}
-      <div className="flex items-center gap-1">
+      {/* flex-shrink-0 keeps every control at full tap-target size; these must
+          never compress to make room for a long page title. */}
+      <div className="flex flex-shrink-0 items-center gap-1">
         {/* Search Trigger */}
         <button
           onClick={onOpenCommandPalette}

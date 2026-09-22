@@ -351,7 +351,7 @@ export const OpdQueueScreen: React.FC<OpdQueueScreenProps> = ({ authToken }) => 
                   </span>
                   <Badge variant={STATUS_BADGE[item.status]}>{item.status.replace(/_/g, ' ')}</Badge>
                 </div>
-                <h2 className="text-2xl font-bold font-mono text-white tracking-tight">{item.tokenNumber}</h2>
+                <h2 className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">{item.tokenNumber}</h2>
                 <p className="text-sm font-semibold text-primary-100">{item.visit?.employee?.name || 'Patient'}</p>
                 <div className="flex flex-wrap items-center gap-2 pt-1">{renderActions(item)}</div>
               </div>

@@ -43,6 +43,11 @@ import { useAuth } from '../../hooks/useAuth';
    Sidebar + TopNav + Content Area
    ═══════════════════════════════════════════════════════════ */
 
+/** Matches Tailwind's `lg` (1024px). Below this the sidebar becomes an overlay
+ *  drawer so the main content gets the full viewport width. Kept in sync with
+ *  the `lg:` prefixes in Sidebar/TopNav -- change both together. */
+const MOBILE_NAV_BREAKPOINT = 1024;
+
 const PAGE_LABELS: Record<PageId, string> = {
   dashboard: 'Dashboard',
   'patient-search': 'Patient Search',
@@ -145,9 +150,21 @@ export const AppShell: React.FC = () => {
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  /* Below `lg` the sidebar stops being a column that reserves layout width and
+     becomes an overlay drawer. A 64px collapsed rail still costs ~18% of a
+     360px viewport, which is what squeezed every table and card on mobile. */
+  const [isMobileNav, setIsMobileNav] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth < MOBILE_NAV_BREAKPOINT,
+  );
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
+      const mobile = window.innerWidth < MOBILE_NAV_BREAKPOINT;
+      setIsMobileNav(mobile);
+      // Leaving mobile must close the drawer, or the overlay would linger over
+      // a desktop layout that already shows the sidebar inline.
+      if (!mobile) setMobileNavOpen(false);
       if (window.innerWidth < 1280) {
         setSidebarCollapsed(true);
       }
@@ -156,6 +173,22 @@ export const AppShell: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Close the drawer on Escape so keyboard users are never trapped behind the
+  // overlay, and lock body scroll while it is open.
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileNavOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileNavOpen]);
 
   // Normalise bare "/" (and any unrecognised path) to the landing page for the
   // signed-in role, so the address bar always names the screen on display.
@@ -227,11 +260,15 @@ export const AppShell: React.FC = () => {
   }, [activePage]);
 
   useEffect(() => {
-    const width = sidebarCollapsed
-      ? 'var(--sidebar-width-collapsed)'
-      : 'var(--sidebar-width-expanded)';
+    // On mobile the drawer floats above the content, so it reserves no width --
+    // TopNav reads this var for its `left` offset and must sit flush at 0.
+    const width = isMobileNav
+      ? '0px'
+      : sidebarCollapsed
+        ? 'var(--sidebar-width-collapsed)'
+        : 'var(--sidebar-width-expanded)';
     document.documentElement.style.setProperty('--current-sidebar-width', width);
-  }, [sidebarCollapsed]);
+  }, [sidebarCollapsed, isMobileNav]);
 
   const renderPage = () => {
     switch (activePage) {
@@ -306,10 +343,33 @@ export const AppShell: React.FC = () => {
         onNavigate={handleNavigate}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
+        isMobileNav={isMobileNav}
+        mobileOpen={mobileNavOpen}
+        onMobileClose={() => setMobileNavOpen(false)}
       />
 
+      {/* Drawer backdrop — mobile only, dismisses the nav on tap */}
+      <AnimatePresence>
+        {isMobileNav && mobileNavOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setMobileNavOpen(false)}
+            className="fixed inset-0 bg-black/50 lg:hidden"
+            style={{ zIndex: 'var(--z-sidebar-backdrop)' as unknown as number }}
+            aria-hidden="true"
+          />
+        )}
+      </AnimatePresence>
+
       {/* TopNav */}
-      <TopNav breadcrumbs={breadcrumbs} onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
+      <TopNav
+        breadcrumbs={breadcrumbs}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        onOpenMobileNav={() => setMobileNavOpen(true)}
+      />
 
       {/* Command Palette Overlay */}
       <AnimatePresence>
@@ -326,25 +386,39 @@ export const AppShell: React.FC = () => {
 
       {/* Main Content Area */}
       <main
-        className="transition-[margin] duration-[400ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+        /* min-w-0 stops wide children (data tables, auto-fit grids) from
+           forcing the main column wider than the viewport, which is what
+           produced horizontal page scroll instead of in-container scroll. */
+        className="min-w-0 transition-[margin] duration-[400ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
-          marginLeft: sidebarCollapsed
-            ? 'var(--sidebar-width-collapsed)'
-            : 'var(--sidebar-width-expanded)',
+          marginLeft: isMobileNav
+            ? 0
+            : sidebarCollapsed
+              ? 'var(--sidebar-width-collapsed)'
+              : 'var(--sidebar-width-expanded)',
           paddingTop: 'var(--topnav-height)',
         }}
       >
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {impersonation && (
             <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-sm shadow-sm">
               <span className="font-semibold text-red-900">
                 {'⚠'} IMPERSONATION MODE — You are currently signed in as{' '}
-                <strong>{user?.name || user?.role}</strong>. Original account:{' '}
-                <strong>{impersonation.impersonatorRoleName}</strong> ({impersonation.impersonatorIdentifier}).
+                <strong>{user?.name || user?.role}</strong>. Signed in from:{' '}
+                <strong>{impersonation.impersonatorRoleName}</strong> ({impersonation.impersonatorIdentifier})
+                {impersonation.root && (
+                  <>
+                    {' '}
+                    — chain: <strong>{impersonation.root.roleName}</strong> ({impersonation.root.identifier}) →{' '}
+                    {impersonation.impersonatorRoleName} → {user?.role}
+                  </>
+                )}
+                .
               </span>
               <button
                 onClick={exitImpersonation}
                 className="shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                title={impersonation.root ? 'Returns to the previous level in the chain, not straight to the original account' : undefined}
               >
                 Exit Impersonation
               </button>

@@ -10,17 +10,31 @@
 
 /* ─── Design Tokens (Light Mode) ─── */
 :root {
-  /* Primary: Medical Navy Blue */
-  --color-primary-50: #EFF6FF;
-  --color-primary-100: #DBEAFE;
-  --color-primary-200: #BFDBFE;
-  --color-primary-300: #93C5FD;
-  --color-primary-400: #60A5FA;
-  --color-primary-500: #0F4C81;
-  --color-primary-600: #0B3D6E;
-  --color-primary-700: #082F58;
-  --color-primary-800: #051E3A;
-  --color-primary-900: #0B1A32;
+  /* Primary: AAYUSH SAARTHI Government Navy (structural colour) */
+  --color-primary-50: #F1F6FA;
+  --color-primary-100: #DEEAF3;
+  --color-primary-200: #BCD2E5;
+  --color-primary-300: #8FB0CE;
+  --color-primary-400: #4A7BA6;
+  --color-primary-500: #062B4F;
+  --color-primary-600: #052340;
+  --color-primary-700: #031C33;
+  --color-primary-800: #021325;
+  --color-primary-900: #010C18;
+
+  /* Accent: AAYUSH SAARTHI Orange -- actions, active states, highlights.
+     A separate ramp from --color-primary-* on purpose: navy stays the
+     dominant structural colour, orange is reserved for things you act on. */
+  --color-accent-50: #FFF1E3;
+  --color-accent-100: #FFE1C6;
+  --color-accent-200: #FFC895;
+  --color-accent-300: #FDA85C;
+  --color-accent-400: #FB9230;
+  --color-accent-500: #F97D09;
+  --color-accent-600: #E06E05;
+  --color-accent-700: #B85903;
+  --color-accent-800: #8F4502;
+  --color-accent-900: #6B3401;
 
   /* Secondary: Medical Teal */
   --color-secondary-50: #F0FDFA;
@@ -33,11 +47,11 @@
   --color-secondary-700: #115E59;
 
   /* Semantic Colors */
-  --color-success-50: #F0FDF4;
-  --color-success-100: #DCFCE7;
-  --color-success-500: #059669;
-  --color-success-600: #047857;
-  --color-success-700: #065F46;
+  --color-success-50: #ECFAF1;
+  --color-success-100: #D1F0DE;
+  --color-success-500: #1E8A4F;
+  --color-success-600: #17703F;
+  --color-success-700: #115631;
 
   --color-warning-50: #FFFBEB;
   --color-warning-100: #FEF3C7;
@@ -54,7 +68,7 @@
   --color-info-500: #3B82F6;
 
   /* Surface & Background */
-  --color-bg: #F8FAFC;
+  --color-bg: #F8F7F3;
   --color-surface: #FFFFFF;
   --color-surface-secondary: #F1F5F9;
   --color-surface-tertiary: #E2E8F0;
@@ -64,7 +78,7 @@
   /* Borders */
   --color-border: #E2E8F0;
   --color-border-strong: #CBD5E1;
-  --color-border-focus: var(--color-primary-500);
+  --color-border-focus: var(--color-accent-500);
 
   /* Text */
   --color-text-primary: #0F172A;
@@ -74,12 +88,12 @@
   --color-text-link: var(--color-primary-500);
 
   /* Sidebar */
-  --sidebar-bg: #0B1A32;
+  --sidebar-bg: #031C33;
   --sidebar-text: #CBD5E1;
   --sidebar-text-active: #FFFFFF;
   --sidebar-item-hover: rgba(255, 255, 255, 0.06);
   --sidebar-item-active: rgba(255, 255, 255, 0.1);
-  --sidebar-accent: var(--color-primary-400);
+  --sidebar-accent: var(--color-accent-500);
   --sidebar-width-expanded: 260px;
   --sidebar-width-collapsed: 64px;
 
@@ -129,7 +143,7 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-  --shadow-focus: 0 0 0 3px rgba(15, 76, 129, 0.15);
+  --shadow-focus: 0 0 0 3px rgba(249, 125, 9, 0.18);
 
   /* Border Radius */
   --radius-sm: 0.25rem;
@@ -151,6 +165,10 @@
   --z-sticky: 200;
   --z-sidebar: 300;
   --z-topnav: 400;
+  /* The mobile nav drawer must cover the TopNav (400), unlike the desktop
+     sidebar which sits beside it -- hence a layer above rather than --z-sidebar. */
+  --z-sidebar-backdrop: 450;
+  --z-sidebar-drawer: 460;
   --z-modal-backdrop: 500;
   --z-modal: 600;
   --z-notification: 700;
@@ -161,6 +179,13 @@
 /* ─── Dark Mode Tokens ─── */
 [data-theme="dark"] {
   --color-bg: #0C1222;
+
+  /* Accent stays orange in dark mode but lifts slightly for contrast */
+  --color-accent-500: #FB9230;
+  --color-accent-600: #F97D09;
+  --color-accent-700: #E06E05;
+  --color-accent-50: #3A2410;
+  --color-accent-100: #4A2E12;
   --color-surface: #1A2332;
   --color-surface-secondary: #222E3F;
   --color-surface-tertiary: #2A3749;
@@ -177,7 +202,7 @@
   --topnav-bg: #1A2332;
   --topnav-border: #2A3749;
 
-  --sidebar-bg: #0A1120;
+  --sidebar-bg: #02141F;
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
@@ -210,6 +235,16 @@
     line-height: var(--leading-normal);
     color: var(--color-text-primary);
     background-color: var(--color-bg);
+  }
+
+  /* Backstop only. Every known overflow source is fixed at its root (drawer
+     nav, min-w-0 on the main column, fluid auto-fit grids, overflow-x-auto on
+     table wrappers); this catches anything added later so a single stray wide
+     element degrades into a clipped edge rather than shifting the whole page
+     sideways. `clip` -- not `hidden` -- because `hidden` on <body> would make
+     position:sticky table headers stop sticking. */
+  html {
+    overflow-x: clip;
   }
 
   ::selection {
@@ -294,19 +329,19 @@
   }
 
   .btn-primary {
-    background-color: var(--color-primary-500);
-    color: var(--color-text-inverse);
-    border-color: var(--color-primary-500);
+    background-color: var(--color-accent-500);
+    color: #FFFFFF;
+    border-color: var(--color-accent-500);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--color-primary-600);
-    border-color: var(--color-primary-600);
+    background-color: var(--color-accent-600);
+    border-color: var(--color-accent-600);
     box-shadow: var(--shadow-sm);
   }
 
   .btn-primary:active:not(:disabled) {
-    background-color: var(--color-primary-700);
+    background-color: var(--color-accent-700);
   }
 
   .btn-secondary {

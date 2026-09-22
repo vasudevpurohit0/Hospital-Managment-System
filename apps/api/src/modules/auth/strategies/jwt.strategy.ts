@@ -1,9 +1,21 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Request } from 'express';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuthenticatedUser, ImpersonationClaims } from '../../../common/decorators/current-user.decorator';
 import { JWT_ACCESS_SECRET } from '../../../common/config/jwt-secrets';
+import { ACCESS_TOKEN_COOKIE } from '../../../common/auth/auth-cookies.util';
+
+/**
+ * Header first (unchanged -- every existing test/consumer/impersonation
+ * flow keeps working exactly as before), falling back to the httpOnly
+ * cookie AuthController now also sets so a browser session no longer needs
+ * to keep a JS-readable copy of the token anywhere to stay authenticated.
+ */
+function cookieExtractor(req: Request): string | null {
+  return req?.cookies?.[ACCESS_TOKEN_COOKIE] ?? null;
+}
 
 export interface JwtPayload {
   sub: string;
@@ -39,7 +51,7 @@ export interface JwtPayload {
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(private prisma: PrismaService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([ExtractJwt.fromAuthHeaderAsBearerToken(), cookieExtractor]),
       ignoreExpiration: false,
       secretOrKey: JWT_ACCESS_SECRET,
     });

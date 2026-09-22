@@ -1,8 +1,11 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserAwareThrottlerGuard } from './common/guards/user-aware-throttler.guard';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { RedisModule } from './common/redis/redis.module';
 import { TenantModule } from './common/tenant/tenant.module';
 import { SequenceModule } from './common/sequence/sequence.module';
 import { EmailModule } from './common/email/email.module';
@@ -38,9 +41,12 @@ import { RbacGuard } from './common/guards/rbac.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { SecurityMiddleware } from './common/middleware/security.middleware';
 import { TenantResolutionMiddleware } from './common/middleware/tenant-resolution.middleware';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { PinoLoggerService } from './common/logging/pino-logger.service';
 
 @Module({
   imports: [
+    RedisModule,
     ScheduleModule.forRoot(),
     // V-04: a single named profile applied to every route by the global
     // ThrottlerGuard below. Individual controllers override its limit
@@ -83,16 +89,24 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
   ],
   controllers: [BrandingController, HospitalSettingsController],
   providers: [
-    // Runs before the auth/RBAC guards below -- an unauthenticated
-    // brute-force attempt against /auth/login should be throttled before any
-    // auth logic even runs, not after.
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    PinoLoggerService,
+    // JwtAuthGuard runs first now (not the throttler) so req.user is already
+    // populated by the time UserAwareThrottlerGuard's getTracker() needs it,
+    // letting authenticated per-user @Throttle()s (billing, lab, PDF/report
+    // generation) key on the user, not the source IP -- IP-based tracking
+    // would let one hospital's whole staff, commonly behind one NAT gateway,
+    // share a single budget. @Public() routes (login, forgot-password, ...)
+    // are unaffected: JwtAuthGuard short-circuits to `true` for them with no
+    // auth work done, so an unauthenticated brute-force attempt still hits
+    // the throttler immediately afterward, IP-tracked as before (there's no
+    // user identity yet to key on).
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: UserAwareThrottlerGuard,
     },
     {
       provide: APP_GUARD,
@@ -106,9 +120,16 @@ import { TenantResolutionMiddleware } from './common/middleware/tenant-resolutio
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // TenantResolutionMiddleware must run before the guard chain (JwtAuthGuard
-    // reloads the user from the tenant DB during Passport validation), so it
-    // is applied first here.
-    consumer.apply(TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
+    // RequestIdMiddleware runs first so every other middleware, guard,
+    // interceptor, and the exception filter can all rely on req.id already
+    // being set. cookie-parser must run before the guard chain too --
+    // JwtStrategy/PlatformJwtStrategy's cookie fallback extractor reads
+    // req.cookies, which only exists once this has run. Registered here
+    // (not just in main.ts) so it also applies to every e2e spec that
+    // bootstraps AppModule directly via Test.createTestingModule(), not
+    // only the real server entrypoints. TenantResolutionMiddleware must run
+    // before the guard chain (JwtAuthGuard reloads the user from the tenant
+    // DB during Passport validation), so it stays right after.
+    consumer.apply(RequestIdMiddleware, cookieParser(), TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*');
   }
 }

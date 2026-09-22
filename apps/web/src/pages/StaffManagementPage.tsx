@@ -12,7 +12,6 @@ import {
   Unlock,
   Search,
   Info,
-  Mail,
   ChevronLeft,
   ChevronRight,
   UserCog,
@@ -29,7 +28,6 @@ import {
   setStaffActive,
   resetStaffPassword,
   setStaffLocked,
-  resendStaffActivation,
   impersonateStaff,
   StaffProfile,
   StaffRole,
@@ -119,9 +117,6 @@ export const StaffManagementPage: React.FC = () => {
   const [pendingLock, setPendingLock] = useState<StaffProfile | null>(null);
   const [locking, setLocking] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
-
-  const [resendingId, setResendingId] = useState<string | null>(null);
-  const [resendMessage, setResendMessage] = useState<string | null>(null);
 
   const [showBulkModal, setShowBulkModal] = useState(false);
 
@@ -283,19 +278,6 @@ export const StaffManagementPage: React.FC = () => {
     }
   };
 
-  const handleResendActivation = async (id: string) => {
-    setResendingId(id);
-    setResendMessage(null);
-    try {
-      await resendStaffActivation(id);
-      setResendMessage('Activation email resent.');
-    } catch (err: unknown) {
-      setError((err as Error).message || 'Failed to resend activation email');
-    } finally {
-      setResendingId(null);
-    }
-  };
-
   const confirmImpersonate = async () => {
     if (!pendingImpersonate) return;
     setImpersonating(true);
@@ -341,7 +323,7 @@ export const StaffManagementPage: React.FC = () => {
     <div className="space-y-6 animate-fade-in pb-12 max-w-6xl">
       <div className="card p-6 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             <Users className="w-6 h-6 text-primary-600" />
             Staff Management
           </h1>
@@ -402,7 +384,6 @@ export const StaffManagementPage: React.FC = () => {
       {resetError && <div className="alert-danger">{resetError}</div>}
       {lockError && <div className="alert-danger">{lockError}</div>}
       {impersonateError && <div className="alert-danger">{impersonateError}</div>}
-      {resendMessage && <div className="alert-success">{resendMessage}</div>}
 
       {isLoading ? (
         <div className="flex items-center justify-center p-12">
@@ -500,17 +481,6 @@ export const StaffManagementPage: React.FC = () => {
                         >
                           <UserCog className="w-3.5 h-3.5" />
                           Impersonate
-                        </button>
-                      )}
-                      {s.mustChangePassword && (
-                        <button
-                          onClick={() => handleResendActivation(s.id)}
-                          disabled={resendingId === s.id}
-                          className="btn btn-secondary btn-sm gap-1"
-                          title="Resend the account-activation email"
-                        >
-                          <Mail className="w-3.5 h-3.5" />
-                          {resendingId === s.id ? 'Sending...' : 'Resend Activation'}
                         </button>
                       )}
                     </div>

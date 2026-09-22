@@ -31,9 +31,9 @@ import {
 import { formatDateTimeDefault } from '../../utils/date';
 
 const STATUS_COLORS: Record<string, string> = {
-  ACTIVE: '#0D9488',
-  PROVISIONING: '#F59E0B',
-  SUSPENDED: '#EF4444',
+  ACTIVE: '#1E8A4F',
+  PROVISIONING: '#F97D09',
+  SUSPENDED: '#DC2626',
 };
 
 function currency(n: number): string {
@@ -116,7 +116,7 @@ export const PlatformDashboardScreen: React.FC = () => {
               <Building2 className="w-3.5 h-3.5 text-secondary-400" />
               Platform Console
             </div>
-            <h1 className="text-2xl font-bold">Every hospital, one view</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">Every hospital, one view</h1>
             <p className="text-sm text-primary-200/80 mt-1">
               {hospitalCounts.active} active, {hospitalCounts.suspended} suspended, {hospitalCounts.provisioning}{' '}
               provisioning across {hospitalCounts.total} total hospitals.
@@ -236,7 +236,7 @@ export const PlatformDashboardScreen: React.FC = () => {
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
                   <YAxis tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
                   <Tooltip formatter={(value: number) => currency(value)} />
-                  <Bar dataKey="revenue" fill="#0F4C81" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="revenue" fill="#062B4F" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

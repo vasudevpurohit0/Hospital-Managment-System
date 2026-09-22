@@ -141,7 +141,7 @@ export const BulkImportPanel: React.FC<Props> = ({ authToken, onImported }) => {
           </div>
 
           <div className="overflow-x-auto border border-[var(--color-border)] rounded-lg max-h-80 overflow-y-auto">
-            <table className="w-full text-xs">
+            <table className="w-max min-w-full text-xs">
               <thead className="bg-[var(--color-surface-2)] sticky top-0">
                 <tr>
                   <th className="text-left p-2">Row</th>

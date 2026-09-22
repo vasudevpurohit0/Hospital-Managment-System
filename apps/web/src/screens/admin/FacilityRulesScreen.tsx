@@ -99,10 +99,10 @@ export const FacilityRulesScreen: React.FC<FacilityRulesScreenProps> = ({ authTo
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="max-w-6xl mx-auto p-4 sm:p-4 sm:p-6 space-y-6">
       <div className="flex justify-between items-center pb-4 border-b border-gray-200">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
             Facility Eligibility Rules
           </h2>
           <p className="text-sm text-gray-500">

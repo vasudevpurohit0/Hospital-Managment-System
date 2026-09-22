@@ -27,7 +27,9 @@ import {
 import { Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { formatDateFull } from '../utils/date';
 
-const CATEGORY_COLORS = ['#0F4C81', '#0D9488', '#3B82F6', '#F59E0B', '#8B5CF6', '#EF4444'];
+/* Navy leads, orange highlights, green for the healthy case -- a fixed brand
+   ramp rather than a multi-hue default palette. */
+const CATEGORY_COLORS = ['#062B4F', '#F97D09', '#1E8A4F', '#4A7BA6', '#B85903', '#8FB0CE'];
 
 /** Where each role's "Go to my workspace" quick-link should land -- reuses existing pages/screens, never a new route. */
 const WORKSPACE_PATH: Record<string, string> = {
@@ -115,7 +117,7 @@ const MyWorkPanel: React.FC<{ summary: MyDashboardSummary | null; role: string }
       <div className="flex flex-wrap gap-6">
         {tiles.map((t) => (
           <div key={t.label}>
-            <p className="text-2xl font-bold text-[var(--color-text-primary)]">{t.value ?? '—'}</p>
+            <p className="text-xl sm:text-2xl font-bold text-[var(--color-text-primary)]">{t.value ?? '—'}</p>
             <p className="text-xs text-[var(--color-text-secondary)]">{t.label}</p>
           </div>
         ))}
@@ -163,7 +165,7 @@ export const DashboardPage: React.FC = () => {
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-semibold text-primary-200 mb-3 border border-white/10">
             <ShieldCheck className="w-3.5 h-3.5 text-secondary-400" />
-            ESIC Hospital Operations Console •{' '}
+            AAYUSH SAARTHI Operations Console •{' '}
             {formatDateFull(new Date())}
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">

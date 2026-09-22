@@ -17,6 +17,7 @@ import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { UpdateHospitalStatusDto } from './dto/update-hospital-status.dto';
 import { ResetHospitalUserPasswordDto } from './dto/reset-hospital-user-password.dto';
+import { ResetAllHospitalUserPasswordsDto } from './dto/reset-all-hospital-user-passwords.dto';
 import { PlatformOnlyGuard } from '../../common/guards/platform-only.guard';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
@@ -69,6 +70,16 @@ export class HospitalsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.hospitals.resetHospitalUserPassword(id, dto, user.id);
+  }
+
+  @Post(':id/reset-all-passwords')
+  @HttpCode(HttpStatus.OK)
+  async resetAllPasswords(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResetAllHospitalUserPasswordsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hospitals.resetAllHospitalUserPasswords(id, dto, user.id);
   }
 
   @Delete(':id')

@@ -216,6 +216,26 @@ describe('AuthService', () => {
       );
     });
 
+    it('writes an auth.first_login AuditLog entry when the user has never logged in before', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({ ...mockUser, lastLoginAt: null });
+
+      await service.login({ identifier: 'doctor@esic.gov.in', password: 'DoctorPass123!' });
+
+      expect(mockPrismaService.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'auth.first_login' }) }),
+      );
+    });
+
+    it('does NOT write auth.first_login on a subsequent login', async () => {
+      mockPrismaService.user.findUnique.mockResolvedValue({ ...mockUser, lastLoginAt: new Date('2026-01-01') });
+
+      await service.login({ identifier: 'doctor@esic.gov.in', password: 'DoctorPass123!' });
+
+      expect(mockPrismaService.auditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ action: 'auth.first_login' }) }),
+      );
+    });
+
     it('writes a FAILURE AuditLog entry on a bad password without leaking who the actor is', async () => {
       mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
 
