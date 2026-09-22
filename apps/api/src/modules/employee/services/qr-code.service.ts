@@ -1,8 +1,10 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import * as QRCode from 'qrcode';
 
 @Injectable()
 export class QrCodeService {
+  private readonly logger = new Logger(QrCodeService.name);
+
   /**
    * Generates a scannable Base64 PNG Data URL encoding the payload string (e.g. UID code)
    * @param payload Content to encode in the QR code
@@ -21,7 +23,8 @@ export class QrCodeService {
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      throw new InternalServerErrorException(`Failed to generate QR code: ${message}`);
+      this.logger.error(`Failed to generate QR code: ${message}`);
+      throw new InternalServerErrorException('Failed to generate QR code. Please try again.');
     }
   }
 }

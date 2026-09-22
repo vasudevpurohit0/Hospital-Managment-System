@@ -66,6 +66,7 @@ export class HospitalsService {
     private readonly tenantClients: TenantClientFactory,
     private readonly userProvisioning: TenantUserProvisioningService,
     private readonly staffService: StaffService,
+    private readonly tenantMigration: TenantMigrationService,
   ) {}
 
   /**
@@ -194,7 +195,7 @@ export class HospitalsService {
         .delete({ where: { id: hospital.id } })
         .catch(() => undefined);
 
-      throw new InternalServerErrorException(`Failed to onboard hospital: ${message}`);
+      throw new InternalServerErrorException('Failed to onboard hospital. Please try again or contact support.');
     }
   }
 
@@ -249,7 +250,9 @@ export class HospitalsService {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to resume hospital onboarding for "${hospital.slug}": ${message}`);
-      throw new InternalServerErrorException(`Failed to resume hospital onboarding: ${message}`);
+      throw new InternalServerErrorException(
+        'Failed to resume hospital onboarding. Please try again or contact support.',
+      );
     }
   }
 
