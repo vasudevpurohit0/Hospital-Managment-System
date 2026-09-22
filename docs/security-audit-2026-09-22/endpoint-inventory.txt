@@ -1,0 +1,223 @@
+GET    /api/admissions                                    NONE-FOUND                               modules\admission\admission.controller.ts:15
+GET    /api/admissions/:id                                RequirePermission('Admission', 'read')   modules\admission\admission.controller.ts:21
+POST   /api/admissions/:id/allocate                       RequirePermission('Admission', 'update') modules\admission\admission.controller.ts:74
+POST   /api/admissions/:id/discharge                      NONE-FOUND                               modules\admission\admission.controller.ts:97
+GET    /api/admissions/:id/eligible-beds                  RequirePermission('Admission', 'update') modules\admission\admission.controller.ts:33
+GET    /api/admissions/:id/financial-summary              RequirePermission('Charge', 'create')    modules\admission\ipd-finance.controller.ts:32
+GET    /api/admissions/:id/location-history               RequirePermission('Charge', 'read')      modules\admission\ipd-finance.controller.ts:38
+POST   /api/admissions/:id/notes                          NONE-FOUND                               modules\admission\admission.controller.ts:84
+POST   /api/admissions/:id/resolve                        RequirePermission('Admission', 'read')   modules\admission\admission.controller.ts:27
+POST   /api/admissions/:id/transfer                       RequirePermission('Admission', 'read')   modules\admission\ipd-finance.controller.ts:47
+POST   /api/admissions/bed-day-charges/run                NONE-FOUND                               modules\admission\ipd-finance.controller.ts:26
+POST   /api/admissions/beds                               RequirePermission('Admission', 'read')   modules\admission\admission.controller.ts:45
+DELETE /api/admissions/beds/:id                           RequirePermission('Admission', 'update') modules\admission\admission.controller.ts:68
+DELETE /api/admissions/wards/:id                          NONE-FOUND                               modules\admission\admission.controller.ts:62
+GET    /api/admissions/wards/all                          RequirePermission('Admission', 'read')   modules\admission\admission.controller.ts:39
+GET    /api/analytics/clinical                            RequirePermission('Analytics', 'read')   modules\analytics\analytics.controller.ts:23
+GET    /api/analytics/financial                           RequirePermission('Analytics', 'read')   modules\analytics\analytics.controller.ts:29
+GET    /api/analytics/inventory                           RequirePermission('Analytics', 'read')   modules\analytics\analytics.controller.ts:35
+GET    /api/analytics/operations                          NONE-FOUND                               modules\analytics\analytics.controller.ts:17
+GET    /api/audit-log                                     NONE-FOUND                               modules\audit\audit-log.controller.ts:18
+GET    /api/audit-log/export.csv                          RequirePermission('AuditLog', 'read')    modules\audit\audit-log.controller.ts:52
+GET    /api/audit-log/stats                               NONE-FOUND                               modules\audit\audit-log.controller.ts:46
+POST   /api/auth/activate-account                         PUBLIC                                   modules\auth\auth.controller.ts:103
+POST   /api/auth/change-password                          NONE-FOUND                               modules\auth\auth.controller.ts:79
+POST   /api/auth/exit-impersonation                       NONE-FOUND                               modules\auth\auth.controller.ts:72
+POST   /api/auth/forgot-password                          PUBLIC                                   modules\auth\auth.controller.ts:87
+POST   /api/auth/login                                    PUBLIC                                   modules\auth\auth.controller.ts:23
+POST   /api/auth/logout                                   NONE-FOUND                               modules\auth\auth.controller.ts:55
+GET    /api/auth/me                                       NONE-FOUND                               modules\auth\auth.controller.ts:47
+POST   /api/auth/refresh                                  PUBLIC                                   modules\auth\auth.controller.ts:37
+POST   /api/auth/reset-password-with-token                PUBLIC                                   modules\auth\auth.controller.ts:95
+GET    /api/benefit-rules                                 NONE-FOUND                               modules\benefit\benefit.controller.ts:14
+POST   /api/benefit-rules                                 RequirePermission('Employee', 'read')    modules\benefit\benefit.controller.ts:20
+PUT    /api/benefit-rules/:id                             RequirePermission('BenefitRule', 'create') modules\benefit\benefit.controller.ts:26
+GET    /api/benefit-rules/evaluate                        RequirePermission('BenefitRule', 'update') modules\benefit\benefit.controller.ts:32
+GET    /api/billing/receipts/:id                          RequirePermission('Billing', 'read')     modules\billing\billing.controller.ts:17
+GET    /api/billing/transactions                          NONE-FOUND                               modules\billing\billing.controller.ts:11
+GET    /api/branding                                      NONE-FOUND                               modules\auth\branding.controller.ts:25
+PUT    /api/branding                                      NONE-FOUND                               modules\auth\branding.controller.ts:39
+GET    /api/catalog/categories                            NONE-FOUND                               modules\catalog\catalog.controller.ts:41
+GET    /api/catalog/services                              RequirePermission('Service', 'read')     modules\catalog\catalog.controller.ts:47
+POST   /api/catalog/services                              RequirePermission('Service', 'read')     modules\catalog\catalog.controller.ts:66
+GET    /api/catalog/services/:id                          RequirePermission('Service', 'read')     modules\catalog\catalog.controller.ts:60
+PATCH  /api/catalog/services/:id                          RequirePermission('Service', 'create')   modules\catalog\catalog.controller.ts:73
+PATCH  /api/catalog/services/:id/components               NONE-FOUND                               modules\catalog\catalog.controller.ts:83
+GET    /api/catalog/services/:id/price                    NONE-FOUND                               modules\catalog\catalog.controller.ts:93
+GET    /api/catalog/services/:id/price-history            RequirePermission('Service', 'read')     modules\catalog\catalog.controller.ts:100
+POST   /api/catalog/services/:id/prices                   NONE-FOUND                               modules\catalog\catalog.controller.ts:110
+GET    /api/catalog/services/unpriced                     RequirePermission('Service', 'read')     modules\catalog\catalog.controller.ts:54
+GET    /api/charges                                       NONE-FOUND                               modules\billing\charge.controller.ts:131
+POST   /api/charges/:id/cancel                            NONE-FOUND                               modules\billing\charge.controller.ts:176
+GET    /api/charges/export/excel                          RequirePermission('Charge', 'read')      modules\billing\charge.controller.ts:103
+POST   /api/charges/service                               NONE-FOUND                               modules\billing\charge.controller.ts:148
+GET    /api/charges/summary                               RequirePermission('Charge', 'read')      modules\billing\charge.controller.ts:96
+GET    /api/config/branding                               NONE-FOUND                               modules\auth\branding.controller.ts:25
+PUT    /api/config/branding                               NONE-FOUND                               modules\auth\branding.controller.ts:39
+GET    /api/dashboard/my-summary                          NONE-FOUND                               modules\dashboard\dashboard.controller.ts:29
+GET    /api/dashboard/summary                             NONE-FOUND                               modules\dashboard\dashboard.controller.ts:19
+GET    /api/departments                                   NONE-FOUND                               modules\opd\controllers\department.controller.ts:17
+POST   /api/departments                                   RequirePermission('Department', 'read')  modules\opd\controllers\department.controller.ts:30
+PATCH  /api/departments/:id                               RequirePermission('Department', 'create') modules\opd\controllers\department.controller.ts:37
+PATCH  /api/departments/:id/active                        RequirePermission('Department', 'update') modules\opd\controllers\department.controller.ts:43
+GET    /api/departments/admin                             RequirePermission('Employee', 'read')    modules\opd\controllers\department.controller.ts:24
+GET    /api/doctors                                       NONE-FOUND                               modules\user\doctor.controller.ts:14
+POST   /api/doctors                                       RequirePermission('Doctor', 'update')    modules\user\doctor.controller.ts:46
+PATCH  /api/doctors/:id                                   RequirePermission('Doctor', 'create')    modules\user\doctor.controller.ts:52
+PATCH  /api/doctors/:id/active                            NONE-FOUND                               modules\user\doctor.controller.ts:62
+POST   /api/doctors/:id/impersonate                       RequirePermission('Doctor', 'update')    modules\user\doctor.controller.ts:100
+PATCH  /api/doctors/:id/lock                              NONE-FOUND                               modules\user\doctor.controller.ts:82
+POST   /api/doctors/:id/resend-activation                 NONE-FOUND                               modules\user\doctor.controller.ts:93
+POST   /api/doctors/:id/reset-password                    NONE-FOUND                               modules\user\doctor.controller.ts:72
+GET    /api/doctors/admin                                 NONE-FOUND                               modules\user\doctor.controller.ts:40
+GET    /api/doctors/eligible                              NONE-FOUND                               modules\user\doctor.controller.ts:26
+POST   /api/doctors/me/break/end                          RequirePermission('DoctorDuty', 'update') modules\user\doctor.controller.ts:154
+POST   /api/doctors/me/break/start                        RequirePermission('DoctorDuty', 'update') modules\user\doctor.controller.ts:148
+POST   /api/doctors/me/check-in                           RequirePermission('DoctorDuty', 'read')  modules\user\doctor.controller.ts:136
+POST   /api/doctors/me/check-out                          RequirePermission('DoctorDuty', 'update') modules\user\doctor.controller.ts:142
+GET    /api/doctors/me/duty-status                        NONE-FOUND                               modules\user\doctor.controller.ts:130
+GET    /api/employees                                     NONE-FOUND                               modules\employee\employee.controller.ts:124
+POST   /api/employees                                     RequirePermission('HospitalUID', 'read') modules\employee\employee.controller.ts:48
+GET    /api/employees/:id                                 RequirePermission('Employee', 'read')    modules\employee\employee.controller.ts:136
+PUT    /api/employees/:id                                 RequirePermission('Employee', 'read')    modules\employee\employee.controller.ts:142
+GET    /api/employees/:uid/card                           RequirePermission('Employee', 'create')  modules\employee\employee.controller.ts:42
+POST   /api/employees/import/confirm                      NONE-FOUND                               modules\employee\employee.controller.ts:98
+POST   /api/employees/import/error-report                 NONE-FOUND                               modules\employee\employee.controller.ts:109
+GET    /api/employees/import/template                     NONE-FOUND                               modules\employee\employee.controller.ts:70
+POST   /api/employees/import/validate                     RequirePermission('Employee', 'create')  modules\employee\employee.controller.ts:79
+GET    /api/employees/post-grade-options                  RequirePermission('Employee', 'read')    modules\employee\employee.controller.ts:130
+POST   /api/employees/register                            RequirePermission('Employee', 'read')    modules\employee\employee.controller.ts:32
+POST   /api/employees/simple                              RequirePermission('Employee', 'create')  modules\employee\employee.controller.ts:54
+POST   /api/employees/verify                              NONE-FOUND                               modules\employee\employee.controller.ts:25
+GET    /api/facility-rules                                NONE-FOUND                               modules\facility\facility.controller.ts:13
+POST   /api/facility-rules                                RequirePermission('FacilityEligibilityRule', 'read') modules\facility\facility.controller.ts:19
+PUT    /api/facility-rules/:id                            RequirePermission('FacilityEligibilityRule', 'create') modules\facility\facility.controller.ts:25
+GET    /api/facility-rules/resolve                        NONE-FOUND                               modules\facility\facility.controller.ts:35
+GET    /api/health                                        PUBLIC                                   health\health.controller.ts:28
+GET    /api/health/dependencies                           PUBLIC                                   health\health.controller.ts:54
+POST   /api/inventory/batches                             RequirePermission('Medicine', 'create')  modules\inventory\inventory.controller.ts:109
+POST   /api/inventory/batches/:id/dispose                 RequirePermission('MedicineBatch', 'update') modules\inventory\inventory.controller.ts:146
+POST   /api/inventory/batches/:id/quarantine              RequirePermission('MedicineBatch', 'read') modules\inventory\inventory.controller.ts:140
+GET    /api/inventory/expiring                            RequirePermission('MedicineBatch', 'update') modules\inventory\inventory.controller.ts:133
+GET    /api/inventory/low-stock                           RequirePermission('MedicineBatch', 'create') modules\inventory\inventory.controller.ts:115
+GET    /api/inventory/medicines                           NONE-FOUND                               modules\inventory\inventory.controller.ts:97
+POST   /api/inventory/medicines                           RequirePermission('MedicineBatch', 'read') modules\inventory\inventory.controller.ts:103
+POST   /api/inventory/medicines/import/confirm            NONE-FOUND                               modules\inventory\inventory.controller.ts:67
+POST   /api/inventory/medicines/import/error-report       RequirePermission('Medicine', 'create')  modules\inventory\inventory.controller.ts:76
+POST   /api/inventory/medicines/import/validate           NONE-FOUND                               modules\inventory\inventory.controller.ts:52
+GET    /api/inventory/medicines/template                  NONE-FOUND                               modules\inventory\inventory.controller.ts:37
+POST   /api/inventory/scan-expiry                         RequirePermission('MedicineBatch', 'read') modules\inventory\inventory.controller.ts:127
+GET    /api/inventory/stock-locations                     RequirePermission('MedicineBatch', 'read') modules\inventory\inventory.controller.ts:121
+POST   /api/lab/orders                                    RequirePermission('LabOrder', 'read')    modules\laboratory\lab.controller.ts:56
+GET    /api/lab/orders/:id                                RequirePermission('LabOrder', 'read')    modules\laboratory\lab.controller.ts:50
+POST   /api/lab/orders/:id/collect                        RequirePermission('LabOrder', 'create')  modules\laboratory\lab.controller.ts:64
+GET    /api/lab/orders/:id/report                         NONE-FOUND                               modules\laboratory\lab.controller.ts:98
+GET    /api/lab/orders/:id/report/pdf                     RequirePermission('LabReport', 'read')   modules\laboratory\lab.controller.ts:104
+POST   /api/lab/orders/:id/verify                         NONE-FOUND                               modules\laboratory\lab.controller.ts:87
+GET    /api/lab/queue                                     RequirePermission('LabTest', 'read')     modules\laboratory\lab.controller.ts:44
+POST   /api/lab/results                                   NONE-FOUND                               modules\laboratory\lab.controller.ts:75
+GET    /api/lab/tests                                     NONE-FOUND                               modules\laboratory\lab.controller.ts:32
+GET    /api/lab/tests/:id                                 RequirePermission('LabTest', 'read')     modules\laboratory\lab.controller.ts:38
+GET    /api/opd-display/queue                             NONE-FOUND                               modules\opd\controllers\opd-display.controller.ts:35
+POST   /api/opd-visits                                    NONE-FOUND                               modules\opd\controllers\opd.controller.ts:19
+POST   /api/opd-visits/:id/call                           RequirePermission('OPDVisit', 'call')    modules\opd\controllers\opd.controller.ts:57
+PATCH  /api/opd-visits/:id/cancel                         RequirePermission('OPDVisit', 'update')  modules\opd\controllers\opd.controller.ts:87
+POST   /api/opd-visits/:id/close                          RequirePermission('OPDVisit', 'read')    modules\opd\controllers\opd.controller.ts:109
+PATCH  /api/opd-visits/:id/complete                       RequirePermission('OPDVisit', 'update')  modules\opd\controllers\opd.controller.ts:69
+PATCH  /api/opd-visits/:id/no-show                        RequirePermission('OPDVisit', 'update')  modules\opd\controllers\opd.controller.ts:75
+PATCH  /api/opd-visits/:id/skip                           RequirePermission('OPDVisit', 'update')  modules\opd\controllers\opd.controller.ts:81
+PATCH  /api/opd-visits/:id/start-consultation             RequirePermission('OPDVisit', 'call')    modules\opd\controllers\opd.controller.ts:63
+PATCH  /api/opd-visits/:id/transfer                       RequirePermission('OPDVisit', 'cancel')  modules\opd\controllers\opd.controller.ts:93
+POST   /api/opd-visits/call-next                          RequirePermission('OPDVisit', 'read')    modules\opd\controllers\opd.controller.ts:51
+GET    /api/opd-visits/my-patients                        NONE-FOUND                               modules\opd\controllers\opd.controller.ts:103
+GET    /api/opd-visits/my-queue                           NONE-FOUND                               modules\opd\controllers\opd.controller.ts:44
+GET    /api/opd-visits/queue                              RequirePermission('OPDVisit', 'create')  modules\opd\controllers\opd.controller.ts:25
+GET    /api/patients/:employeeId/ledger                   NONE-FOUND                               modules\billing\charge.controller.ts:52
+GET    /api/patients/:employeeId/statement/pdf            NONE-FOUND                               modules\billing\charge.controller.ts:62
+PUT    /api/patients/:id                                  NONE-FOUND                               modules\patient\patient.controller.ts:150
+GET    /api/patients/:id/history                          NONE-FOUND                               modules\patient\patient.controller.ts:90
+GET    /api/patients/:id/master                           RequirePermission('PatientHistory', 'read') modules\patient\patient.controller.ts:98
+GET    /api/patients/:id/timeline                         NONE-FOUND                               modules\patient\patient.controller.ts:113
+GET    /api/patients/:id/timeline/pdf                     RequirePermission('PatientHistory', 'read') modules\patient\patient.controller.ts:122
+GET    /api/patients/employee/:employeeId                 RequirePermission('HospitalUID', 'read') modules\patient\patient.controller.ts:63
+GET    /api/patients/lookup                               NONE-FOUND                               modules\visit\patient-lookup.controller.ts:10
+POST   /api/patients/register                             RequirePermission('Employee', 'read')    modules\patient\patient.controller.ts:47
+GET    /api/patients/search                               RequirePermission('Employee', 'read')    modules\patient\patient.controller.ts:69
+GET    /api/patients/uid/:uid                             RequirePermission('Employee', 'create')  modules\patient\patient.controller.ts:57
+POST   /api/patients/verify-employee                      NONE-FOUND                               modules\patient\patient.controller.ts:40
+POST   /api/patients/visit                                RequirePermission('Employee', 'read')    modules\patient\patient.controller.ts:75
+POST   /api/pharmacy/dispense                             RequirePermission('Prescription', 'read') modules\pharmacy\pharmacy.controller.ts:24
+GET    /api/pharmacy/prescriptions/:id/batches            RequirePermission('Prescription', 'read') modules\pharmacy\pharmacy.controller.ts:18
+GET    /api/pharmacy/queue                                NONE-FOUND                               modules\pharmacy\pharmacy.controller.ts:12
+GET    /api/platform/admins                               NONE-FOUND                               modules\platform\platform-admins.controller.ts:12
+POST   /api/platform/admins                               NONE-FOUND                               modules\platform\platform-admins.controller.ts:17
+PATCH  /api/platform/admins/:id/active                    NONE-FOUND                               modules\platform\platform-admins.controller.ts:22
+GET    /api/platform/audit-log                            NONE-FOUND                               modules\platform\platform-audit-log.controller.ts:11
+GET    /api/platform/audit-log/export.csv                 NONE-FOUND                               modules\platform\platform-audit-log.controller.ts:33
+GET    /api/platform/audit-log/stats                      NONE-FOUND                               modules\platform\platform-audit-log.controller.ts:28
+GET    /api/platform/dashboard/summary                    NONE-FOUND                               modules\platform\platform-dashboard.controller.ts:10
+GET    /api/platform/hospital-admins                      NONE-FOUND                               modules\platform\hospital-admins.controller.ts:21
+GET    /api/platform/hospitals                            NONE-FOUND                               modules\platform\hospitals.controller.ts:29
+POST   /api/platform/hospitals                            NONE-FOUND                               modules\platform\hospitals.controller.ts:41
+DELETE /api/platform/hospitals/:id                        NONE-FOUND                               modules\platform\hospitals.controller.ts:85
+GET    /api/platform/hospitals/:id                        NONE-FOUND                               modules\platform\hospitals.controller.ts:34
+PATCH  /api/platform/hospitals/:id                        NONE-FOUND                               modules\platform\hospitals.controller.ts:47
+POST   /api/platform/hospitals/:id/admins                 NONE-FOUND                               modules\platform\hospital-admins.controller.ts:26
+PATCH  /api/platform/hospitals/:id/admins/:userId/active  NONE-FOUND                               modules\platform\hospital-admins.controller.ts:36
+POST   /api/platform/hospitals/:id/admins/:userId/impersonate NONE-FOUND                               modules\platform\hospital-admins.controller.ts:47
+POST   /api/platform/hospitals/:id/reset-all-passwords    NONE-FOUND                               modules\platform\hospitals.controller.ts:75
+POST   /api/platform/hospitals/:id/reset-password         NONE-FOUND                               modules\platform\hospitals.controller.ts:65
+PATCH  /api/platform/hospitals/:id/status                 NONE-FOUND                               modules\platform\hospitals.controller.ts:56
+GET    /api/platform/staff-audit-log                      NONE-FOUND                               modules\platform\platform-staff-audit.controller.ts:18
+GET    /api/platform/staff-audit-log/export.csv           NONE-FOUND                               modules\platform\platform-staff-audit.controller.ts:52
+GET    /api/platform/staff-audit-log/stats                NONE-FOUND                               modules\platform\platform-staff-audit.controller.ts:47
+POST   /api/prescriptions                                 NONE-FOUND                               modules\prescription\prescription.controller.ts:13
+PUT    /api/prescriptions/:id                             RequirePermission('Prescription', 'create') modules\prescription\prescription.controller.ts:21
+POST   /api/prescriptions/:id/sign                        RequirePermission('Prescription', 'update') modules\prescription\prescription.controller.ts:27
+GET    /api/prescriptions/visit/:visitId                  NONE-FOUND                               modules\prescription\prescription.controller.ts:39
+POST   /api/procurement/goods-receipt-notes               RequirePermission('PurchaseOrder', 'read') modules\procurement\procurement.controller.ts:56
+GET    /api/procurement/purchase-orders                   RequirePermission('PurchaseOrder', 'create') modules\procurement\procurement.controller.ts:50
+POST   /api/procurement/purchase-orders                   NONE-FOUND                               modules\procurement\procurement.controller.ts:42
+GET    /api/procurement/requisitions                      RequirePermission('PurchaseRequisition', 'create') modules\procurement\procurement.controller.ts:24
+POST   /api/procurement/requisitions                      NONE-FOUND                               modules\procurement\procurement.controller.ts:16
+POST   /api/procurement/requisitions/:id/approve          RequirePermission('PurchaseRequisition', 'read') modules\procurement\procurement.controller.ts:30
+GET    /api/procurement/suppliers                         RequirePermission('MedicineBatch', 'create') modules\procurement\procurement.controller.ts:64
+POST   /api/procurement/transfers                         RequirePermission('PurchaseRequisition', 'read') modules\procurement\procurement.controller.ts:70
+GET    /api/rbac/known-resource-actions                   RequirePermission('RbacConfig', 'read')  modules\rbac-admin\rbac-admin.controller.ts:22
+POST   /api/rbac/permissions                              RequirePermission('RbacConfig', 'read')  modules\rbac-admin\rbac-admin.controller.ts:28
+DELETE /api/rbac/permissions/:id                          RequirePermission('RbacConfig', 'update') modules\rbac-admin\rbac-admin.controller.ts:35
+GET    /api/rbac/roles                                    NONE-FOUND                               modules\rbac-admin\rbac-admin.controller.ts:10
+GET    /api/rbac/roles/:id/permissions                    RequirePermission('RbacConfig', 'read')  modules\rbac-admin\rbac-admin.controller.ts:16
+POST   /api/receipts                                      NONE-FOUND                               modules\billing\charge.controller.ts:189
+GET    /api/receipts/:id                                  NONE-FOUND                               modules\billing\charge.controller.ts:201
+GET    /api/receipts/:id/pdf                              RequirePermission('Receipt', 'read')     modules\billing\charge.controller.ts:207
+GET    /api/reports/billing.csv                           NONE-FOUND                               modules\reports\reports.controller.ts:41
+GET    /api/reports/outstanding.csv                       RequirePermission('Report', 'generate')  modules\reports\reports.controller.ts:50
+GET    /api/reports/patient-register.csv                  RequirePermission('Report', 'generate')  modules\reports\reports.controller.ts:59
+GET    /api/settings/hospital                             NONE-FOUND                               modules\auth\hospital-settings.controller.ts:43
+PUT    /api/settings/hospital                             NONE-FOUND                               modules\auth\hospital-settings.controller.ts:55
+GET    /api/staff                                         NONE-FOUND                               modules\user\staff.controller.ts:43
+POST   /api/staff                                         RequirePermission('Staff', 'read')       modules\user\staff.controller.ts:69
+GET    /api/staff/:id                                     NONE-FOUND                               modules\user\staff.controller.ts:63
+PATCH  /api/staff/:id                                     RequirePermission('Staff', 'create')     modules\user\staff.controller.ts:75
+PATCH  /api/staff/:id/active                              NONE-FOUND                               modules\user\staff.controller.ts:85
+POST   /api/staff/:id/impersonate                         RequirePermission('Staff', 'update')     modules\user\staff.controller.ts:123
+PATCH  /api/staff/:id/lock                                NONE-FOUND                               modules\user\staff.controller.ts:105
+POST   /api/staff/:id/resend-activation                   NONE-FOUND                               modules\user\staff.controller.ts:116
+POST   /api/staff/:id/reset-password                      NONE-FOUND                               modules\user\staff.controller.ts:95
+GET    /api/staff/default-roles                           NONE-FOUND                               modules\user\staff.controller.ts:27
+POST   /api/staff/default-roles                           RequirePermission('Staff', 'create')     modules\user\staff.controller.ts:33
+GET    /api/therapy/courses                               NONE-FOUND                               modules\therapy\therapy.controller.ts:23
+POST   /api/therapy/courses                               RequirePermission('TherapySession', 'read') modules\therapy\therapy.controller.ts:29
+GET    /api/therapy/sessions                              NONE-FOUND                               modules\therapy\therapy.controller.ts:13
+POST   /api/therapy/sessions                              RequirePermission('TherapySession', 'create') modules\therapy\therapy.controller.ts:36
+POST   /api/therapy/sessions/:id/cancel                   NONE-FOUND                               modules\therapy\therapy.controller.ts:53
+POST   /api/therapy/sessions/:id/no-show                  RequirePermission('TherapySession', 'update') modules\therapy\therapy.controller.ts:59
+POST   /api/therapy/sessions/:id/perform                  RequirePermission('TherapySession', 'create') modules\therapy\therapy.controller.ts:43
+GET    /api/users                                         NONE-FOUND                               modules\user\user.controller.ts:9
+POST   /api/visits                                        NONE-FOUND                               modules\visit\visit.controller.ts:10
+GET    /api/visits/:id                                    RequirePermission('Employee', 'read')    modules\visit\visit.controller.ts:22
+GET    /api/visits/:visitId/charges                       NONE-FOUND                               modules\billing\charge.controller.ts:89
+GET    /api/visits/employee/:employeeId                   RequirePermission('Visit', 'create')     modules\visit\visit.controller.ts:16
+
+TOTAL: 221 routes

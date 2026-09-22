@@ -1,0 +1,51 @@
+env:
+  contexts:
+    - name: "api-context"
+      urls:
+        - "https://api-production-a838.up.railway.app/"
+      includePaths:
+        - "https://api-production-a838.up.railway.app/api/.*"
+  parameters:
+    failOnError: true
+    progressToStdout: true
+
+jobs:
+  - type: requestor
+    parameters:
+      user: ""
+    requests:
+      - url: "https://api-production-a838.up.railway.app/api/health"
+        method: "GET"
+      - url: "https://api-production-a838.up.railway.app/api/auth/login"
+        method: "POST"
+        data: '{"identifier":"probe@example.com","password":"wrongpassword1"}'
+      - url: "https://api-production-a838.up.railway.app/api/auth/forgot-password"
+        method: "POST"
+        data: '{"identifier":"probe@example.com"}'
+      - url: "https://api-production-a838.up.railway.app/api/auth/reset-password-with-token"
+        method: "POST"
+        data: '{"token":"placeholder-token-value","newPassword":"Placeholder123!"}'
+      - url: "https://api-production-a838.up.railway.app/api/auth/activate-account"
+        method: "POST"
+        data: '{"token":"placeholder-token-value","newPassword":"Placeholder123!"}'
+      - url: "https://api-production-a838.up.railway.app/api/branding"
+        method: "GET"
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 2
+
+  - type: activeScan
+    parameters:
+      context: "api-context"
+      policy: "Default Policy"
+    policyDefinition:
+      defaultStrength: "medium"
+      defaultThreshold: "medium"
+
+  - type: report
+    parameters:
+      template: "traditional-html"
+      reportDir: "/zap/wrk"
+      reportFile: "zap-api-auth-endpoints"
+      reportTitle: "ESIC HMS API - Public Auth Endpoints Active Scan"
