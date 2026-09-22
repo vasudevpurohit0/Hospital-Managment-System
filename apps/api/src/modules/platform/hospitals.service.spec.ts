@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { HospitalsService } from './hospitals.service';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { TenantMigrationService } from '../../common/tenant/tenant-migration.service';
 import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
 
 describe('HospitalsService (regression: platform-level administrative actions were never audit-logged)', () => {
@@ -26,6 +27,7 @@ describe('HospitalsService (regression: platform-level administrative actions we
         { provide: PlatformPrismaService, useValue: mockPlatformPrisma },
         { provide: TenantClientFactory, useValue: { getClient: jest.fn() } },
         { provide: TenantUserProvisioningService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
 
@@ -79,6 +81,7 @@ describe('HospitalsService (regression: platform-level administrative actions we
         { provide: PlatformPrismaService, useValue: mockPlatformPrisma },
         { provide: TenantClientFactory, useValue: { getClient: jest.fn().mockResolvedValue(mockTenantClient) } },
         { provide: TenantUserProvisioningService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
     service = module.get<HospitalsService>(HospitalsService);
@@ -115,6 +118,7 @@ describe('HospitalsService.remove (regression: F-30 — a hospital stuck in PROV
         { provide: PlatformPrismaService, useValue: mockPlatformPrisma },
         { provide: TenantClientFactory, useValue: { getClient: jest.fn() } },
         { provide: TenantUserProvisioningService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
 

@@ -7,6 +7,12 @@
  * across however many tenants exist).
  *
  * Usage: pnpm run migrate:all-tenants
+ *
+ * Note: the API also self-heals drift shortly after every boot
+ * (TenantMigrationService in src/common/tenant, background onModuleInit),
+ * so this script is the explicit zero-drift step for deploy pipelines that
+ * need all tenants migrated BEFORE traffic is cut over to the new code,
+ * rather than seconds after.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as bcrypt from 'bcryptjs';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
+import { TenantMigrationService } from '../../common/tenant/tenant-migration.service';
 import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
 import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
@@ -50,6 +51,7 @@ export class HospitalsService {
     private readonly platformPrisma: PlatformPrismaService,
     private readonly tenantClients: TenantClientFactory,
     private readonly userProvisioning: TenantUserProvisioningService,
+    private readonly tenantMigration: TenantMigrationService,
   ) { }
 
   async list() {
@@ -170,10 +172,10 @@ export class HospitalsService {
   }
 
   private async runMigrateDeploy(schemaName: string): Promise<void> {
-    await execFileAsync(process.execPath, [PRISMA_CLI_ENTRYPOINT, 'migrate', 'deploy', '--schema=prisma/schema.prisma'], {
-      cwd: API_ROOT,
-      env: { ...process.env, DATABASE_URL: this.schemaQualifiedDatabaseUrl(schemaName) },
-    });
+    // Single implementation lives on TenantMigrationService (also used by
+    // the startup reconciliation) so creation-time and boot-time migration
+    // can never drift apart.
+    await this.tenantMigration.migrateTenantSchema(schemaName);
   }
 
   private async runSeed(schemaName: string): Promise<void> {
