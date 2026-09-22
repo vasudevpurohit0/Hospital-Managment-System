@@ -32,21 +32,26 @@ const AppContent: React.FC = () => {
     return <ActivateAccountPage />;
   }
 
+  // LoginPage owns its own in-flight UI (the submit button spinner), so it must
+  // stay mounted while a login request is running. isLoading is only ever true
+  // during that request -- the session restore is synchronous in useAuth's
+  // useState initialiser -- so gating the splash above this line unmounted the
+  // form on every submit and wiped whatever the user had typed.
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-3 border-primary-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm font-medium text-[var(--color-text-secondary)]">
-            Loading AYUSH SARATHI...
+            Loading AAYUSH SAARTHI...
           </p>
         </div>
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    return <LoginPage />;
   }
 
   if (mode === 'hospital' && user?.mustChangePassword) {

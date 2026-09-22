@@ -30,7 +30,12 @@ function seedAdminSession() {
     JSON.stringify({
       mode: 'hospital',
       token: 'admin-token',
-      user: { id: 'admin-1', name: 'Administrator', email: 'admin@esic.gov.in', role: 'Administrator' },
+      user: {
+        id: 'admin-1',
+        name: 'Administrator',
+        email: 'admin@esic.gov.in',
+        role: 'Administrator',
+      },
       expiresAt: Date.now() + 8 * 60 * 60 * 1000,
       activeHospital: null,
     }),
@@ -53,7 +58,10 @@ describe('StaffManagementPage -- Impersonate button', () => {
         };
       }
       if (url.includes('/api/staff')) {
-        return { ok: true, json: async () => ({ items: [nurse], meta: { total: 1, totalPages: 1 } }) };
+        return {
+          ok: true,
+          json: async () => ({ items: [nurse], meta: { total: 1, totalPages: 1 } }),
+        };
       }
       if (url.includes('/api/departments')) {
         return { ok: true, json: async () => [] };
@@ -78,9 +86,7 @@ describe('StaffManagementPage -- Impersonate button', () => {
     // Confirmation dialog shown first -- clicking the button alone must never start the session.
     await waitFor(() => expect(screen.getByText('Impersonate User?')).toBeInTheDocument());
     expect(screen.getAllByText(/Target Nurse/).length).toBeGreaterThan(0);
-    expect(
-      JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)!).token,
-    ).toBe('admin-token'); // unchanged until confirmed
+    expect(JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)!).token).toBe('admin-token'); // unchanged until confirmed
 
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -122,7 +128,13 @@ describe('StaffManagementPage -- Impersonate button', () => {
   it('hides the Impersonate button for a deactivated staff member', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(async (url: string) => {
       if (url.includes('/api/staff')) {
-        return { ok: true, json: async () => ({ items: [{ ...nurse, active: false }], meta: { total: 1, totalPages: 1 } }) };
+        return {
+          ok: true,
+          json: async () => ({
+            items: [{ ...nurse, active: false }],
+            meta: { total: 1, totalPages: 1 },
+          }),
+        };
       }
       if (url.includes('/api/departments')) return { ok: true, json: async () => [] };
       return { ok: true, json: async () => ({}) };

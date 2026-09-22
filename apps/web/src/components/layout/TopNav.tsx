@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { MpEmblem, AyushEmblem } from '../branding/GovtEmblems';
 import {
   Search,
   Bell,
@@ -104,10 +105,11 @@ export const TopNav: React.FC<TopNavProps> = ({ breadcrumbs, onOpenCommandPalett
       <div className="flex items-center gap-3 min-w-0">
         {variant === 'hospital' && (
           <div className="hidden lg:flex items-center gap-2 pr-3 border-r border-[var(--color-border)]">
-            <img src="/mp_govt_logo.svg" alt="MP Government Seal" className="w-6 h-6 object-contain" />
-            <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-6 h-6 object-contain" />
-            <span className="text-[11px] font-bold text-[var(--color-text-primary)]">
-              MP Govt <span className="text-amber-500 font-extrabold">Sign-On</span>
+            <MpEmblem size={22} />
+            <AyushEmblem size={22} />
+            <span className="text-[11px] font-extrabold tracking-tight">
+              <span className="text-[var(--color-text-primary)]">AAYUSH</span>{' '}
+              <span className="text-[var(--color-accent-500)]">SAARTHI</span>
             </span>
           </div>
         )}

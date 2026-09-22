@@ -385,18 +385,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         {collapsed ? (
-          <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center border border-white/20 shadow-xs">
-            <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-full h-full object-contain" />
+          <div className="w-9 h-9 rounded-lg bg-white p-[3px] flex items-center justify-center border border-white/25 shadow-xs">
+            <img src="/mp-emblem.webp" alt="AAYUSH SAARTHI — Government of Madhya Pradesh" className="w-full h-full object-contain" />
           </div>
         ) : (
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-white/10 p-1 flex items-center justify-center flex-shrink-0 border border-white/20 shadow-xs">
-              <img src="/hms_stethoscope_logo.svg" alt="AYUSH SARATHI Logo" className="w-full h-full object-contain" />
+            <div className="w-9 h-9 rounded-lg bg-white p-[3px] flex items-center justify-center flex-shrink-0 border border-white/25 shadow-xs">
+              <img src="/mp-emblem.webp" alt="AAYUSH SAARTHI — Government of Madhya Pradesh" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-[12px] font-extrabold text-white truncate">AYUSH SARATHI</h1>
-              <p className="text-[10px] text-amber-300 font-medium truncate">
-                Sign-On
+              <h1 className="text-[12.5px] font-extrabold tracking-tight truncate">
+                <span className="text-white">AAYUSH</span>{' '}
+                <span className="text-[var(--color-accent-500)]">SAARTHI</span>
+              </h1>
+              <p className="text-[9.5px] font-medium uppercase tracking-[0.07em] text-white/50 truncate">
+                Department of AYUSH
               </p>
             </div>
           </div>
@@ -407,7 +410,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 scrollbar-thin">
         {!collapsed && SINGLE_PURPOSE_ROLES[userRole] && (
           <div className="mx-4 mb-3 flex items-start gap-2 rounded-lg bg-white/[0.06] border border-white/10 px-3 py-2.5 text-[10.5px] leading-snug text-[var(--sidebar-text)]">
-            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-[1px] text-amber-300" />
+            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-[1px] text-[var(--color-accent-400)]" />
             <span>{SINGLE_PURPOSE_ROLES[userRole]}</span>
           </div>
         )}
@@ -507,6 +510,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={logout}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--sidebar-text)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
               title="Sign Out"
+              aria-label="Sign out"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -526,6 +530,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onClick={logout}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--sidebar-text)] hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0"
               title="Sign Out"
+              aria-label="Sign out"
             >
               <LogOut className="w-4 h-4" />
             </button>

@@ -35,7 +35,16 @@ describe('utils/date (shared date-formatting helpers, previously duplicated inli
   });
 
   it('every formatter returns a non-empty string for a valid date', () => {
-    for (const fn of [formatDateDefault, formatDateIN, formatDateDDMonYYYY, formatDateMedium, formatDateFull, formatDateTimeDefault, formatDateTimeIN, formatDateTimeMedium]) {
+    for (const fn of [
+      formatDateDefault,
+      formatDateIN,
+      formatDateDDMonYYYY,
+      formatDateMedium,
+      formatDateFull,
+      formatDateTimeDefault,
+      formatDateTimeIN,
+      formatDateTimeMedium,
+    ]) {
       expect(fn(SAMPLE).length).toBeGreaterThan(0);
     }
   });

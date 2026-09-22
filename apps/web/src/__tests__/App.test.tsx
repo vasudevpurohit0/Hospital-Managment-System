@@ -7,7 +7,9 @@ function fillLoginForm(identifier = 'doctor@esic.gov.in', password = 'DoctorPass
   fireEvent.change(screen.getByLabelText(/Government Email \/ User ID/i), {
     target: { value: identifier },
   });
-  fireEvent.change(screen.getByLabelText(/Password/i), {
+  // Anchored: the password visibility toggle is also labelled "Show password",
+  // so an unanchored /Password/i now matches both controls.
+  fireEvent.change(screen.getByLabelText(/^Password/i), {
     target: { value: password },
   });
 }
@@ -39,7 +41,7 @@ describe('App', () => {
   it('renders the login page when the user is not authenticated', async () => {
     render(<App />);
 
-    expect(screen.getByText('Authorized Personnel Login')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Hospital Login/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Secure Login/i })).toBeInTheDocument();
   });
 
@@ -74,6 +76,6 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText(/Invalid credentials/i)).toBeInTheDocument();
     });
-    expect(screen.getByText('Authorized Personnel Login')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Hospital Login/i })).toBeInTheDocument();
   });
 });
