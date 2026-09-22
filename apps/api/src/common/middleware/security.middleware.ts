@@ -27,6 +27,12 @@ export class SecurityMiddleware implements NestMiddleware {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('X-XSS-Protection', '1; mode=block');
+    // R-02 (2026-09-22 audit): this is an API with no HTML views of its own,
+    // so a full referrer-leak/feature-policy threat model doesn't really
+    // apply here -- these are cheap, standard defense-in-depth headers with
+    // no functional downside, not a response to a known exploit path.
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
 
     next();
   }

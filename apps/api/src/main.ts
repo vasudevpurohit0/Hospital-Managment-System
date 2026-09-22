@@ -8,6 +8,10 @@ import { resolveCorsOrigins } from './common/config/cors.util';
 import { PinoLoggerService } from './common/logging/pino-logger.service';
 
 const server = express();
+// R-02 (2026-09-22 audit): stops Express's default framework/version
+// fingerprint from riding along on every response -- free reconnaissance
+// info for an attacker, no functional purpose.
+server.disable('x-powered-by');
 let isAppInitialized = false;
 let nestApp: any;
 
@@ -61,6 +65,7 @@ async function bootstrapLocal() {
   // If not running inside Vercel environment, start listening on local port
   if (!process.env.VERCEL) {
     const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+    app.disable('x-powered-by');
     app.useLogger(app.get(PinoLoggerService));
     // Same raised body limit as the serverless bootstrap above -- patient
     // registration posts photos as base64 data URLs (100KB+), which the

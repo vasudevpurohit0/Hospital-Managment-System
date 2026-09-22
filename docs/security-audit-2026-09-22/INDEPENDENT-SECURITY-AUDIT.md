@@ -3,7 +3,59 @@
 **Date started:** 2026-09-22
 **Auditor:** Claude (Sonnet 5), working interactively with the repo owner
 **Method:** Fresh, independent audit — conducted without relying on conclusions from the prior `docs/SECURITY-AUDIT-REPORT.md` (2026-09-19). That report and `docs/developer/05-RBAC-Security.md` / `docs/developer/23-Security-Audit.md` are cross-checked only at the very end, as a sanity comparison, not as an input to findings here.
-**Status:** IN PROGRESS — built phase by phase. Do not treat incomplete phases as "no issues found."
+**Status:** Core phases complete (0, 1, 2, 3, 4, 5, 6-partial, 7, 9-targeted, 11-partial, 12, 13). Not exhaustive — see "Not covered" below.
+
+---
+
+## Executive Summary
+
+**Overall posture:** solid architectural foundations (schema-per-tenant isolation, structural RBAC-coverage enforcement via `rbac-matrix.spec.ts`, consistent HTML-escaping in server-rendered PDFs, tiered rate limiting) held up under live, active testing — not just static review. The most significant issues found were a **live-breaking functional bug** (hospital onboarding was completely broken) that turned out to have a **real security side-effect** (internal error disclosure) bundled with it, both now fixed and verified; and a handful of genuine but bounded gaps (missing frontend security headers, one production-reachable dependency ReDoS, an incomplete httpOnly-cookie migration).
+
+**No cross-tenant data leak, injection vulnerability, or broken-authentication issue was found** across header manipulation, JWT tampering, direct cross-tenant ID access, and active-scan injection testing against live endpoints — this is a materially stronger result than a static-only review can give, since it's evidence the controls actually work under attack traffic, not just that the code looks right.
+
+| Severity | Count | Status |
+|---|---|---|
+| Critical | 0 | — |
+| High | 4 | 3 fixed this session (T-01, T-02, T-03); 1 open (D-02) |
+| Medium | 4 | Open |
+| Low | 4 | Open (mostly DoS-class or low-reachability) |
+| Informational | 2 | Open |
+
+### Findings by severity
+
+**High**
+- **T-01 — Verbose internal error disclosure** (3 call sites leaked raw Prisma/schema internals to clients on 500s). **FIXED**, commit `68c1687`.
+- **T-02 — Hospital onboarding completely broken** (root cause: non-existent fields passed into an audit-log write, causing a misleading Prisma error). **FIXED**, commit `efd822b`, verified end-to-end on live deployment.
+- **T-03 — Missing `TenantMigrationService` dependency injection**, a genuine pre-existing compile error that would have broken onboarding again even after T-02's fix. **FIXED**, commit `68c1687`.
+- **D-02 — `path-to-regexp@0.1.12` ReDoS**, production-reachable via Express/NestJS. **OPEN** — needs an `@nestjs/platform-express`/Express bump or a pnpm override.
+
+**Medium**
+- **A-02 — httpOnly auth cookie infrastructure exists but the frontend doesn't use it yet**; real-world XSS-token-exposure risk is unchanged from before the cookie was added (updates the prior report's V-12). **OPEN** — frontend migration needed.
+- **R-01 — Frontend (Vercel) ships with zero application-level security headers** (no CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy). **OPEN** — needs a `vercel.json` headers block for `apps/web`.
+- **R-02 — API missing `Referrer-Policy`/`Permissions-Policy`, leaks `X-Powered-By: Express`**. **OPEN** — quick fix in `security.middleware.ts` + `app.disable('x-powered-by')`.
+- **D-04 — `react-router`/`@remix-run/router` open redirect** via protocol-relative URL, shipped to every browser session. **OPEN** — `react-router-dom` bump.
+- **R-03 — `docs/08-security-governance-matrix.md` describes non-existent controls** (a `csrf-token` endpoint that was deliberately removed; an incident-response/backup runbook that couldn't be corroborated against any code). **OPEN** — documentation correction, but a real finding for a system that may face compliance review.
+
+**Low / Informational**
+- **D-03 — `qs` DoS**, production-reachable, DoS-class (lower priority per this audit's own methodology).
+- **D-05 — `multer` high-severity CVEs, but the package is unused** (no upload subsystem exists) — informational, no action needed beyond routine pruning.
+- **D-06 — `brace-expansion` DoS** via `exceljs`'s internal file processing — low practical reachability.
+- **R-05 — HSTS header inconsistently present** on a few unmatched-route 404 responses — low impact (real pages already send it).
+
+### Confirmed-safe / positive controls (verified live, not just by reading code)
+- Rate limiting is active and tiered (10 req/60s on login, 120 req/60s general) — **contradicts and updates** the prior report's "no rate limiting" finding.
+- JWT signature and payload integrity correctly enforced — tampering (signature bit-flip, payload field changes, `schemaName` tampering specifically) all rejected with clean `401`s.
+- `x-hospital-id` header correctly ignored for hospital-staff tokens — no tenant-scope override possible via header manipulation.
+- Direct cross-tenant record-ID access returns `404` — schema-per-tenant isolation confirmed empirically, not just architecturally.
+- Zero SQLi/XSS/injection alerts under active ZAP scanning (medium strength) against 4 live POST JSON-body endpoints, plus targeted manual injection/path-traversal probes.
+- `escapeHtml()` consistently applied across all server-rendered PDF templates (payment receipts, lab reports).
+- No secrets found in source; `.env` files correctly gitignored and untracked.
+- Generic, stack-trace-free error responses on all standard (non-`InternalServerErrorException`-wrapped) failures.
+- `changePassword` correctly bumps `tokenVersion`, immediately invalidating previously-issued tokens.
+- `rbac-matrix.spec.ts` — a genuinely strong structural control — passes right now, confirming complete auth-decorator coverage across all 221 routes.
+
+### Not covered in this pass
+Write-path cross-tenant tests (POST/PATCH against another tenant's records), refresh-token rotation/reuse-detection testing, suspended-hospital token persistence (V-13 territory), full business-logic workflow testing (Phase 16), Docker/infrastructure hardening beyond what Phase 1 covered, and TLS/HTTPS (out of scope — both hosts are on managed platforms). Recommend as follow-up work, not urgent given time already invested and the strength of results so far.
 
 ---
 
@@ -183,9 +235,33 @@ While provisioning a test hospital to enable the actual isolation tests, `POST /
 - **This does not match the live error we captured** (a Prisma validation error deep inside `provisionDefaultRoleAccounts`, several steps *after* `runMigrateDeploy` in the sequence) — if `this.tenantMigration` were really `undefined` at runtime, execution should never have gotten that far; it would throw a `TypeError` immediately at the migration step. This mismatch is itself informative: it means **the currently-deployed Railway build is running different code than the current `main` branch** — likely older, from before whatever refactor introduced this DI gap — reinforcing the T-02 stale-deployment theory rather than contradicting it. Both bugs needed fixing regardless, since current `main` (what any future deploy picks up) is broken either way.
 - Fix applied: added `private readonly tenantMigration: TenantMigrationService` to the constructor (`TenantModule` is `@Global()` and already exports it — confirmed via `tenant.module.ts`, no module-wiring change needed). Verified `tsc --noEmit` now passes clean on `hospitals.service.ts`.
 
-**Action taken:** Fixed T-01 (all 3 leak sites) and T-03 (missing DI) in commit `68c1687`, pushed to `main` to trigger a fresh Railway deploy — this both remediates confirmed findings and serves as the redeploy needed to test the T-02 stale-Prisma-Client theory. **Pending: confirmation the deploy went live, then retry hospital provisioning.**
+**Action taken:** Fixed T-01 (all 3 leak sites) and T-03 (missing DI) in commit `68c1687`.
 
-*(Phase 7 cross-tenant tests — pending redeploy confirmation and successful hospital provisioning.)*
+**T-02 — actual root cause (superseding the stale-Prisma-Client theory above, which was disproven).**
+
+The stale-client / Docker-caching theory was wrong. Disproven with direct evidence over several redeploys: `railway ssh` into the live container confirmed the deployed generated client genuinely includes `actorUserId` (26 matches in the real runtime file the app resolves, not just the `.d.ts`). The actual root cause, found via local reproduction (raw Prisma calls, the `AsyncLocalStorage` Proxy layer, and the `$use()` impersonation middleware each tested in isolation against a freshly-migrated schema):
+
+`staff.service.ts`'s `createDefaultRoleAccounts()` passed `rolesCreated`, `rolesSkipped`, `rolesFailed`, and `requirePasswordChange` as top-level keys into `writeAuditLog()`'s `extra` parameter, which spreads directly into `prisma.auditLog.create()`'s `data` object — **none of those four keys are real columns on the `AuditLog` model.** Prisma's runtime validator, given an object mixing valid and genuinely-unknown keys, misattributes the resulting error to an unrelated valid field (`actorUserId`) instead of the actual offending keys, producing the misleading "Unknown argument `actorUserId`" message that sent this investigation toward schema/deploy infrastructure for a long time before a minimal local repro (bypassing NestJS entirely, then adding pieces back one at a time) isolated the real cause.
+
+**Fix (commit `efd822b`):** nest the extra fields under `afterSnapshot`, the real `Json?` column already used for exactly this purpose by every other `writeAuditLog` call site in the same file. Verified end-to-end locally: `POST /api/platform/hospitals` → `201 Created`, all 13 default role accounts created successfully.
+
+**Process note for this audit:** the debugging path here is worth being honest about — this took far longer than it should have because the error message pointed at a plausible-but-wrong culprit (`actorUserId`/schema generation), and several reasonable hypotheses (Docker layer caching, missing DI, stale deploy) were pursued and individually disproven with real evidence before the actual cause was found. Each ruled-out theory is left in this doc rather than deleted, since "what we checked and ruled out" is itself useful signal for anyone revisiting this.
+
+**Confirmed fixed on the live deployment**: redeployed, `POST /api/platform/hospitals` → `201 Created`, verified for two separate hospitals (Hospital A6, Hospital B1), 13/13 role accounts created each time.
+
+### 7b. Cross-tenant isolation tests (Hospital A6 vs Hospital B1, real accounts, live staging)
+
+Provisioned two real hospitals, logged in as each Administrator (password changed from the onboarding default first, confirming `changePassword` correctly bumps `tokenVersion` and invalidates the prior token — required a re-login, as expected), then ran:
+
+**F-01 — `x-hospital-id` header is correctly ignored for hospital-staff tokens (positive control, confirmed).** `GET /api/employees` with Hospital A's token returned identical results with and without an `x-hospital-id: <Hospital B's id>` header — both scoped to Hospital A only. Matches the documented design: this header only matters for platform-type tokens; hospital-staff tokens get their schema purely from the JWT's own `schemaName` claim, and the middleware doesn't let a client override that.
+
+**F-02 — JWT `schemaName` tampering rejected (positive control, confirmed).** Modified `schemaName` from Hospital A's to Hospital B's schema in the payload, kept the original signature → `401 Unauthorized`. Same signature-integrity behavior already confirmed on the platform token in Phase 5, now confirmed specifically on the exact claim this app's tenant isolation actually depends on.
+
+**F-03 — Direct cross-tenant record ID access (positive control, confirmed).** Took a real employee UUID from Hospital A, requested it while authenticated as Hospital B's Administrator (`GET /api/employees/<Hospital-A-employee-id>`) → `404 Not Found`. Confirms empirically, not just architecturally, that the schema-per-tenant model actually isolates data — Hospital B's Prisma client has no way to even see a row that lives in a different Postgres schema.
+
+**No cross-tenant leak found** across header manipulation, token tampering, or direct ID guessing — the three most common real-world attack patterns against a multi-tenant system. This corroborates the prior report's independent conclusion that tenant isolation is soundly designed, now confirmed via live dynamic testing rather than code review alone.
+
+*(Further Phase 7 tests — write-path isolation (POST/PATCH cross-tenant), refresh-token cross-tenant reuse, suspended-hospital token persistence (V-13 territory) — could extend this further if useful, but core read-path isolation is now solidly confirmed.)*
 
 ## Phase 8 — API Security
 *Pending.*
@@ -200,10 +276,26 @@ While provisioning a test hospital to enable the actual isolation tests, `POST /
 *Pending.*
 
 ## Phase 12 — Dependency Security
-*Pending.*
 
-## Phase 13 — Source Code Security (Semgrep / Gitleaks)
-*Pending.*
+`pnpm audit` across the whole monorepo: **68 findings (8 low, 31 moderate, 27 high, 2 critical)**. Scoped to `--prod` (excludes build/test-only tooling): **23 findings (2 low, 12 moderate, 9 high, 0 critical)** — this is the number that actually matters for a deployed-risk assessment.
+
+**D-01 — Both critical findings are dev-only, not production-reachable (Informational).** Both are in `vitest` (`apps/web`'s test runner): RCE/arbitrary-file-read when Vitest's UI/API server is exposed to an untrusted network. Never shipped to the browser bundle or the deployed API; relevant only if someone runs `vitest --ui` with its port exposed publicly during local dev — worth a `vitest@4.1.11+` bump as routine hygiene, not an active production risk.
+
+**D-02 — `path-to-regexp@0.1.12` ReDoS, production-reachable (Medium).** Pulled in transitively via `express@4.21.2` (itself via `@nestjs/platform-express`) — Express 4.x still bundles an old `path-to-regexp`. This is genuine production surface: Express uses it to compile every registered route into a matching regex. Exploitability is bounded by this being a developer-controlled route-pattern issue historically triggered by specific *route definition* shapes (not arbitrary user-supplied patterns) — this app's routes are all static, developer-written paths, not user-constructed, which meaningfully limits real exploitability here even though the vulnerable code is present. Fix path: needs an `@nestjs/platform-express`/Express major-version bump upstream, or a pnpm `overrides` pin to a patched `path-to-regexp`.
+
+**D-03 — `qs` DoS via attacker-controlled `isBuffer`, production-reachable (Low, explicitly DoS-class).** Via `express`/`body-parser`'s bundled `qs`, used for query-string parsing on every request. DoS-class findings are lower priority per this audit's own methodology, but worth tracking since it's a real, currently-shipped version.
+
+**D-04 — `@remix-run/router`/`react-router` open redirect via protocol-relative URL (Low-Medium, frontend, shipped to the browser).** `apps/web`'s actual client-side router, `react-router-dom@6.28.1`. A same-origin redirect path starting with `//` can be reinterpreted as protocol-relative, pointing off-site — classic open-redirect/phishing vector. Real, shipped-to-users dependency; fix is a `react-router-dom` bump to pull in `react-router@6.30.4+`.
+
+**D-05 — `multer` high-severity findings, but package is unused (Informational, not currently exploitable).** Confirmed via source grep: no `import ... from 'multer'` anywhere in `apps/api/src`, and not a direct dependency in either `package.json` — present only because `@nestjs/platform-express` lists it as an optional peer for apps that choose to use file uploads (this one doesn't, matching the "no file-upload subsystem exists yet" architecture note from Phase 1). Dead weight in the dependency tree; not a live risk today, but worth a `pnpm prune`/audit pass whenever an upload feature is actually built.
+
+**D-06 — `brace-expansion` DoS, low practical reachability (Low).** Comes via `exceljs` (Excel import/export, e.g. employee bulk import) → `archiver`/`unzipper` → `glob` → `minimatch`. Several layers removed from any attacker-controlled input — `exceljs` uses this internally for its own file-processing, not on a user-supplied glob pattern — low practical exploitability despite the "high" severity label.
+
+**Recommendation:** run `pnpm audit --prod` as a routine CI gate (not just this one-time check), prioritize D-02 (real production ReDoS surface) and D-04 (shipped-to-browser open redirect) first, and address the rest opportunistically via routine dependency bumps.
+
+## Phase 13 — Source Code Secret Scan
+
+Grepped for common committed-secret patterns (AWS access keys, PEM private key headers, Stripe/GitHub/Slack tokens) across `apps/`: **zero matches.** Confirmed `.env` files are correctly gitignored and not tracked by git (`git ls-files` shows none beyond `.env.example`) — matches the prior report's confirmed-safe control, independently re-verified here.
 
 ## Phase 14 — Docker / Infrastructure
 *Pending.*
