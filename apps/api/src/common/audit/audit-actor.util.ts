@@ -14,7 +14,7 @@
 export interface AuditActor {
   id: string;
   roleName: string;
-  /** Discriminates a hospital-staff token from a global Super Admin (platform) token. */
+  /** Discriminates a hospital-staff token from a global Super Admin (platform) */
   type?: 'hospital' | 'platform';
 }
 

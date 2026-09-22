@@ -22,7 +22,7 @@ import { LoginDirectoryService } from '../../common/tenant/login-directory.servi
 import { JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, JWT_PLATFORM_SECRET } from '../../common/config/jwt-secrets';
 import { runWithTenant } from '../../common/tenant/tenant-context';
 import { AuthenticatedUser, ImpersonationClaims } from '../../common/decorators/current-user.decorator';
-import { generateResetToken, hashResetToken } from '../../common/security/password.util';
+import { generateResetToken, hashResetToken, generateCsrfToken } from '../../common/security/password.util';
 import { EmailService } from '../../common/email/email.service';
 import { ActivateAccountDto } from './dto/activate-account.dto';
 import { activationEmailBody, ACTIVATION_EMAIL_SUBJECT } from '../../common/email/templates';
@@ -275,6 +275,7 @@ export class AuthService {
         .catch(() => undefined);
     }
 
+    const csrfToken = generateCsrfToken();
     const payload: JwtPayload = {
       sub: user.id,
       identifier: user.identifier,
@@ -284,6 +285,7 @@ export class AuthService {
       schemaName,
       tokenVersion: user.tokenVersion,
       type: 'access',
+      csrf: csrfToken,
     };
 
     const refreshPayload: RefreshPayload = {
@@ -309,6 +311,7 @@ export class AuthService {
       return {
         accessToken,
         refreshToken,
+        csrfToken,
         mode: 'hospital' as const,
         mustChangePassword: user.mustChangePassword,
         user: {
@@ -352,10 +355,12 @@ export class AuthService {
       .catch(() => undefined);
     await this.loginDirectory.recordSuccess(loginDto.identifier);
 
+    const csrfToken = generateCsrfToken();
     const payload: PlatformJwtPayload = {
       sub: user.id,
       email: user.email,
       type: 'platform',
+      csrf: csrfToken,
     };
 
     try {
@@ -366,6 +371,7 @@ export class AuthService {
 
       return {
         accessToken,
+        csrfToken,
         mode: 'platform' as const,
         user: {
           id: user.id,
@@ -815,6 +821,7 @@ export class AuthService {
       }
       const roleName = user.role.name;
 
+      const csrfToken = generateCsrfToken();
       const accessPayload: JwtPayload = {
         sub: user.id,
         identifier: user.identifier,
@@ -824,6 +831,7 @@ export class AuthService {
         schemaName: payload.schemaName,
         tokenVersion: user.tokenVersion,
         type: 'access',
+        csrf: csrfToken,
       };
 
       const newAccessToken = this.jwtService.sign(accessPayload, {
@@ -833,6 +841,7 @@ export class AuthService {
 
       return {
         accessToken: newAccessToken,
+        csrfToken,
       };
     } catch {
       throw new UnauthorizedException('Refresh token invalid or expired');

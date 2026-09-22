@@ -15,6 +15,8 @@ export interface PlatformJwtPayload {
   sub: string;
   email: string;
   type: 'platform';
+  /** Double-submit CSRF nonce (2026-09-22 audit) -- see JwtPayload's identical field for the full explanation. */
+  csrf?: string;
 }
 
 @Injectable()

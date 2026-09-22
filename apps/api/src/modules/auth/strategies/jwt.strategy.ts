@@ -35,6 +35,8 @@ export interface JwtPayload {
   /** Compared against the live User row on every request; a mismatch means this token was issued before a password change/reset/lock/deactivation and must be rejected even though it hasn't expired yet. */
   tokenVersion: number;
   type?: 'access' | 'refresh';
+  /** Double-submit CSRF nonce (2026-09-22 audit) -- verified against the X-CSRF-Token header in security.middleware.ts for cookie-authenticated mutating requests. Not used by JwtStrategy itself; declared here so auth.service.ts can type-check setting it. */
+  csrf?: string;
   /**
    * Present only on a token minted by AccountLifecycleService.impersonate().
    * Every other field above (sub, roleId, roleName, tokenVersion, ...) is

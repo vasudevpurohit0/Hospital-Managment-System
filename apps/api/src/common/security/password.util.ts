@@ -37,6 +37,17 @@ export function generateResetToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
+/**
+ * Per-session double-submit CSRF nonce, embedded as a claim in the access
+ * token at issuance and echoed back to the client in the login/refresh
+ * response body (see auth.service.ts) -- never persisted server-side, since
+ * the JWT itself is the source of truth the request's X-CSRF-Token header
+ * gets compared against (see security.middleware.ts).
+ */
+export function generateCsrfToken(): string {
+  return randomBytes(24).toString('base64url');
+}
+
 /** What actually gets stored, so a leaked database dump never reveals a usable token. */
 export function hashResetToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');

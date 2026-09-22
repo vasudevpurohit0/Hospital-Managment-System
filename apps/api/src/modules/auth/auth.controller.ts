@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, HttpCode, HttpStatus, Req, Res } from '@nestjs/common';
+import { Controller, Post, Body, Get, HttpCode, HttpStatus, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -8,7 +8,13 @@ import { ForgotPasswordDto, ResetPasswordWithTokenDto } from './dto/forgot-passw
 import { ActivateAccountDto } from './dto/activate-account.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { setAccessTokenCookie, setPlatformTokenCookie, clearAuthCookies } from '../../common/auth/auth-cookies.util';
+import {
+  setAccessTokenCookie,
+  setPlatformTokenCookie,
+  setRefreshTokenCookie,
+  clearAuthCookies,
+  REFRESH_TOKEN_COOKIE,
+} from '../../common/auth/auth-cookies.util';
 
 @Controller('auth')
 export class AuthController {
@@ -28,6 +34,11 @@ export class AuthController {
       setPlatformTokenCookie(res, result.accessToken);
     } else {
       setAccessTokenCookie(res, result.accessToken);
+      // Platform sessions have no refresh flow at all (see refreshTokens()'s
+      // own comment) -- only a hospital-staff login ever has one to cookie.
+      if ('refreshToken' in result && result.refreshToken) {
+        setRefreshTokenCookie(res, result.refreshToken);
+      }
     }
     return result;
   }
@@ -36,8 +47,20 @@ export class AuthController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refreshTokens(@Body() refreshTokenDto: RefreshTokenDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.refreshTokens(refreshTokenDto);
+  async refreshTokens(
+    @Body() refreshTokenDto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // 2026-09-22 audit: a cookie-only browser session never had the raw
+    // refresh token to put in the body in the first place -- falls back to
+    // the httpOnly cookie login() now also sets. Still honors an explicit
+    // body value first, unchanged, for any non-browser caller.
+    const refreshToken = refreshTokenDto.refreshToken ?? req.cookies?.[REFRESH_TOKEN_COOKIE];
+    if (!refreshToken) {
+      throw new UnauthorizedException('No refresh token provided.');
+    }
+    const result = await this.authService.refreshTokens({ refreshToken });
     // refreshTokens() is hospital-staff only (see AuthService.refreshTokens's
     // own hospitalId/schemaName check) -- never a platform session.
     setAccessTokenCookie(res, result.accessToken);

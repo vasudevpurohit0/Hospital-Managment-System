@@ -85,9 +85,9 @@ export function openDisplayStream(handlers: {
       // Prefer the configured API origin; fall back to the dev proxy path.
       let res: Response;
       try {
-        res = await fetch(`${BASE_URL}${path}`, { headers, signal: controller.signal });
+        res = await fetch(`${BASE_URL}${path}`, { headers, credentials: 'include', signal: controller.signal });
       } catch {
-        res = await fetch(path, { headers, signal: controller.signal });
+        res = await fetch(path, { headers, credentials: 'include', signal: controller.signal });
       }
 
       if (!res.ok || !res.body) {

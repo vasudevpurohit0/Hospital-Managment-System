@@ -201,6 +201,7 @@ export async function exportPatientExpenseReportExcel(
 
   const res = await fetch(`/api/charges/export/excel?${qs.toString()}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   });
 
   if (!res.ok) {

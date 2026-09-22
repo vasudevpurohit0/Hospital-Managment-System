@@ -8,8 +8,10 @@ import { Response } from 'express';
  */
 export const ACCESS_TOKEN_COOKIE = 'esic_access_token';
 export const PLATFORM_TOKEN_COOKIE = 'esic_platform_token';
+export const REFRESH_TOKEN_COOKIE = 'esic_refresh_token';
 
 const ACCESS_TOKEN_MAX_AGE_MS = 8 * 60 * 60 * 1000; // matches this app's existing 8h access-token JWT expiry
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // matches the refresh JWT's own 7d expiry
 
 /**
  * V-XX (this session): the access token was previously only ever handed to
@@ -26,19 +28,42 @@ const ACCESS_TOKEN_MAX_AGE_MS = 8 * 60 * 60 * 1000; // matches this app's existi
  * a script) keeps working exactly as before. This is additive, not a
  * breaking replacement.
  *
- * `sameSite: 'strict'` is the actual CSRF defense here (not a separate
- * token scheme): the cookie is never sent on any cross-site request at
- * all, including top-level navigation, so a cross-site form/script can
- * never trigger an authenticated action via this cookie the way classic
- * CSRF requires. `secure` is conditional on NODE_ENV because local dev
- * runs over plain HTTP; every real deployment must be HTTPS, where this
- * evaluates true.
+ * `sameSite`/`secure` (2026-09-22 audit correction -- was unconditionally
+ * `sameSite: 'strict'`): the frontend (Vercel) and API (Railway) are on
+ * entirely different registrable domains in production, which makes that
+ * relationship cross-site by definition. A `'strict'` (or even `'lax'`)
+ * cookie is *never* attached to a cross-site `fetch()`/XHR request no
+ * matter what `credentials` mode the caller uses -- confirmed this was
+ * silently making the cookie-based auth fallback unusable in the actual
+ * deployed topology (curl-based testing during the audit didn't catch it,
+ * since curl doesn't enforce SameSite at all). `SameSite=None` requires
+ * `Secure` (browsers reject `None` without it), and `Secure` cookies are
+ * simply never sent over plain HTTP -- which local dev runs on. So both are
+ * conditional on NODE_ENV: local dev's `localhost:5173` -> `localhost:3000`
+ * is same-site regardless of port (SameSite is scoped to the registrable
+ * domain, not the port), so `'lax'` + non-`Secure` works there over HTTP
+ * exactly as before; only the real cross-site production deployment needs
+ * `'none'` + `Secure`.
+ *
+ * Making the cookie cross-site-sendable in production reopens real CSRF
+ * risk (a malicious site can trigger a request the browser will still
+ * attach this cookie to) that `'strict'` used to rule out by construction.
+ * That's why this is paired with a genuine double-submit CSRF check now
+ * (see the `csrf` claim embedded in every access token at issuance in
+ * auth.service.ts, and its verification in security.middleware.ts) --
+ * unlike the CSRF mechanism V-14 removed, this one actually has something
+ * to verify against.
  */
+const isProd = process.env.NODE_ENV === 'production';
+const cookieSecurity = {
+  secure: isProd,
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+};
+
 export function setAccessTokenCookie(res: Response, token: string): void {
   res.cookie(ACCESS_TOKEN_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    ...cookieSecurity,
     path: '/api',
     maxAge: ACCESS_TOKEN_MAX_AGE_MS,
   });
@@ -47,15 +72,25 @@ export function setAccessTokenCookie(res: Response, token: string): void {
 export function setPlatformTokenCookie(res: Response, token: string): void {
   res.cookie(PLATFORM_TOKEN_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    ...cookieSecurity,
     path: '/api',
     maxAge: ACCESS_TOKEN_MAX_AGE_MS,
   });
 }
 
-/** Clears both -- logout doesn't know in advance which mode issued the session, and clearing an absent cookie is a harmless no-op. */
+/** Hospital-staff sessions only (mirrors refreshTokens() itself being hospital-only) -- scoped to /api/auth specifically, tighter than the access-token cookie's /api, since only the refresh/logout endpoints ever need to see it. */
+export function setRefreshTokenCookie(res: Response, token: string): void {
+  res.cookie(REFRESH_TOKEN_COOKIE, token, {
+    httpOnly: true,
+    ...cookieSecurity,
+    path: '/api/auth',
+    maxAge: REFRESH_TOKEN_MAX_AGE_MS,
+  });
+}
+
+/** Clears all three -- logout doesn't know in advance which mode issued the session, and clearing an absent cookie is a harmless no-op. */
 export function clearAuthCookies(res: Response): void {
   res.clearCookie(ACCESS_TOKEN_COOKIE, { path: '/api' });
   res.clearCookie(PLATFORM_TOKEN_COOKIE, { path: '/api' });
+  res.clearCookie(REFRESH_TOKEN_COOKIE, { path: '/api/auth' });
 }

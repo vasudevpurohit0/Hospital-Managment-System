@@ -97,7 +97,7 @@ describe('Cookie-based authentication (e2e)', () => {
     return raw.split(';')[0];
   }
 
-  it('login sets an httpOnly, SameSite=Strict access-token cookie', async () => {
+  it('login sets an httpOnly access-token cookie (SameSite=Lax outside production -- see auth-cookies.util.ts for why production uses None+Secure instead) and returns a csrfToken', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({ identifier: 'admin.cookie.test@esic.gov.in', password: 'AdminCookiePass123!' })
@@ -108,8 +108,10 @@ describe('Cookie-based authentication (e2e)', () => {
     const cookie = setCookie.find((c) => c.startsWith('esic_access_token='));
     expect(cookie).toBeDefined();
     expect(cookie).toContain('HttpOnly');
-    expect(cookie).toContain('SameSite=Strict');
+    expect(cookie).toContain('SameSite=Lax');
     expect(cookie).toContain('Path=/api');
+    expect(typeof res.body.csrfToken).toBe('string');
+    expect(res.body.csrfToken.length).toBeGreaterThan(0);
   });
 
   it('a protected route succeeds using ONLY the cookie, with no Authorization header at all', async () => {
@@ -128,7 +130,7 @@ describe('Cookie-based authentication (e2e)', () => {
     await request(app.getHttpServer()).get('/api/employees').expect(401);
   });
 
-  it('logout clears the cookie (Set-Cookie with an expired date)', async () => {
+  it('logout clears the cookie (Set-Cookie with an expired date), given a matching X-CSRF-Token', async () => {
     const loginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
       .send({ identifier: 'admin.cookie.test@esic.gov.in', password: 'AdminCookiePass123!' })
@@ -138,6 +140,7 @@ describe('Cookie-based authentication (e2e)', () => {
     const logoutRes = await request(app.getHttpServer())
       .post('/api/auth/logout')
       .set('Cookie', cookie)
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
       .expect(200);
 
     const cleared = (logoutRes.headers['set-cookie'] as unknown as string[]).find((c) =>
@@ -147,6 +150,16 @@ describe('Cookie-based authentication (e2e)', () => {
     expect(cleared).toMatch(/esic_access_token=;/);
   });
 
+  it('a cookie-authenticated mutating request with no X-CSRF-Token is rejected with 403 (double-submit CSRF check, 2026-09-22 audit)', async () => {
+    const loginRes = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ identifier: 'admin.cookie.test@esic.gov.in', password: 'AdminCookiePass123!' })
+      .expect(200);
+    const cookie = extractCookie(loginRes.headers['set-cookie'] as unknown as string[], 'esic_access_token');
+
+    await request(app.getHttpServer()).post('/api/auth/logout').set('Cookie', cookie).expect(403);
+  });
+
   it('the cookie from before logout is rejected afterward (tokenVersion invalidation, defense in depth even if the cookie were replayed)', async () => {
     const loginRes = await request(app.getHttpServer())
       .post('/api/auth/login')
@@ -154,7 +167,11 @@ describe('Cookie-based authentication (e2e)', () => {
       .expect(200);
     const cookie = extractCookie(loginRes.headers['set-cookie'] as unknown as string[], 'esic_access_token');
 
-    await request(app.getHttpServer()).post('/api/auth/logout').set('Cookie', cookie).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/logout')
+      .set('Cookie', cookie)
+      .set('X-CSRF-Token', loginRes.body.csrfToken)
+      .expect(200);
     await request(app.getHttpServer()).get('/api/employees').set('Cookie', cookie).expect(401);
   });
 });

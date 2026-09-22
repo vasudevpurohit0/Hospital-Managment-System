@@ -73,6 +73,13 @@ export function createPlatformAuthMocks(users: MockDirectoryUser[], tenantPrisma
         if (where.id !== E2E_TEST_HOSPITAL_ID) return null;
         return { id: E2E_TEST_HOSPITAL_ID, status: 'ACTIVE', schemaName: E2E_TEST_SCHEMA_NAME, slug: 'e2e-test' };
       }),
+      // TenantMigrationService.onModuleInit() (startup reconciliation) calls
+      // this unconditionally on every e2e spec that boots the real AppModule
+      // -- without it, "not a function" aborts that reconciliation and
+      // cascades into every subsequent request 401ing, regardless of how
+      // correct the rest of a given spec's own mock is (found investigating
+      // an unrelated failure during the 2026-09-22 CSRF/cookie audit work).
+      findMany: jest.fn().mockResolvedValue([]),
     },
     platformUser: { findUnique: jest.fn().mockResolvedValue(null) },
     platformLoginActivity: { create: jest.fn().mockResolvedValue({}) },
