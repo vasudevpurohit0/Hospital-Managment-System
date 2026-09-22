@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Breadcrumb, BreadcrumbItem } from './Breadcrumb';
+import { ProfileModal } from '../ProfileModal';
+import { PreferencesModal } from '../PreferencesModal';
 
 /* ═══════════════════════════════════════════════════════════
    TopNav — Fixed Header with Search, Notifications, Profile
@@ -42,6 +44,8 @@ export const TopNav: React.FC<TopNavProps> = ({
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [preferencesModalOpen, setPreferencesModalOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     return (localStorage.getItem('esic-theme') as ThemeMode) || 'light';
   });
@@ -100,6 +104,7 @@ export const TopNav: React.FC<TopNavProps> = ({
   };
 
   return (
+    <>
     <header
       className="fixed top-0 right-0 flex items-center justify-between gap-2 h-[var(--topnav-height)] px-3 sm:px-5 border-b"
       style={{
@@ -281,8 +286,8 @@ export const TopNav: React.FC<TopNavProps> = ({
                 </div>
                 <div className="py-1">
                   {[
-                    { icon: User, label: 'My Profile', action: () => {} },
-                    { icon: Settings, label: 'Preferences', action: () => {} },
+                    { icon: User, label: 'My Profile', action: () => setProfileModalOpen(true) },
+                    { icon: Settings, label: 'Preferences', action: () => setPreferencesModalOpen(true) },
                   ].map((item) => (
                     <button
                       key={item.label}
@@ -315,5 +320,15 @@ export const TopNav: React.FC<TopNavProps> = ({
         </div>
       </div>
     </header>
+
+    {profileModalOpen && <ProfileModal onClose={() => setProfileModalOpen(false)} />}
+    {preferencesModalOpen && (
+      <PreferencesModal
+        theme={theme}
+        onChangeTheme={setTheme}
+        onClose={() => setPreferencesModalOpen(false)}
+      />
+    )}
+    </>
   );
 };
