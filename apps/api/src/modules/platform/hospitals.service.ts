@@ -155,6 +155,7 @@ export class HospitalsService {
         hospital.id,
         dto.adminIdentifier,
         dto.initialPassword,
+        { idempotentResume: true },
       );
       const roleAccounts = await this.provisionDefaultRoleAccounts(
         schemaName,
@@ -187,9 +188,16 @@ export class HospitalsService {
       this.logger.error(`Onboarding failed for hospital "${dto.slug}": ${message}`);
 
       // Best-effort cleanup so a failed attempt doesn't leave a half-built
-      // schema or a dangling platform-DB row behind.
+      // schema, a dangling platform-DB row, or orphaned login-directory rows
+      // behind. The directory rows MUST go before the hospital row: the
+      // hospital FK SET NULLs on delete, which would otherwise strand them as
+      // ownerless rows that permanently block reusing the same identifiers
+      // ("already registered to a platform account") on every retry.
       await this.platformPrisma
         .$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`)
+        .catch(() => undefined);
+      await this.platformPrisma.loginIdentifier
+        .deleteMany({ where: { hospitalId: hospital.id } })
         .catch(() => undefined);
       await this.platformPrisma.hospital
         .delete({ where: { id: hospital.id } })
@@ -226,6 +234,7 @@ export class HospitalsService {
         hospital.id,
         dto.adminIdentifier,
         dto.initialPassword,
+        { idempotentResume: true },
       );
       const roleAccounts = await this.provisionDefaultRoleAccounts(
         hospital.schemaName,

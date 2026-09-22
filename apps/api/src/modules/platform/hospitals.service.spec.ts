@@ -29,6 +29,7 @@ describe('HospitalsService (regression: platform-level administrative actions we
         { provide: TenantClientFactory, useValue: { getClient: jest.fn() } },
         { provide: TenantUserProvisioningService, useValue: {} },
         { provide: StaffService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
 
@@ -92,6 +93,7 @@ describe('HospitalsService (regression: platform-level administrative actions we
         },
         { provide: TenantUserProvisioningService, useValue: {} },
         { provide: StaffService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
     service = module.get<HospitalsService>(HospitalsService);
@@ -138,6 +140,7 @@ describe('HospitalsService.resetAllHospitalUserPasswords (bulk onboarding-passwo
         },
         { provide: TenantUserProvisioningService, useValue: {} },
         { provide: StaffService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
 
@@ -218,6 +221,7 @@ describe('HospitalsService.createHospital (auto-created role roster, minus Docto
       update: jest.fn(),
       delete: jest.fn(),
     },
+    loginIdentifier: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     platformAuditLog: { create: jest.fn().mockResolvedValue({}) },
     $executeRawUnsafe: jest.fn().mockResolvedValue(undefined),
   };
@@ -249,6 +253,7 @@ describe('HospitalsService.createHospital (auto-created role roster, minus Docto
         { provide: TenantClientFactory, useValue: { getClient: jest.fn().mockResolvedValue({}) } },
         { provide: TenantUserProvisioningService, useValue: mockUserProvisioning },
         { provide: StaffService, useValue: mockStaffService },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
 
@@ -324,7 +329,16 @@ describe('HospitalsService.createHospital (auto-created role roster, minus Docto
     expect(mockPlatformPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
       expect.stringContaining('DROP SCHEMA IF EXISTS'),
     );
+    // Directory rows are freed BEFORE the hospital row is deleted: the
+    // hospital FK SET NULLs on delete, which would otherwise strand them as
+    // ownerless rows that permanently block reusing the same identifiers.
+    expect(mockPlatformPrisma.loginIdentifier.deleteMany).toHaveBeenCalledWith({
+      where: { hospitalId: 'h-new' },
+    });
     expect(mockPlatformPrisma.hospital.delete).toHaveBeenCalledWith({ where: { id: 'h-new' } });
+    expect(
+      mockPlatformPrisma.loginIdentifier.deleteMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockPlatformPrisma.hospital.delete.mock.invocationCallOrder[0]);
   });
 });
 
@@ -349,6 +363,7 @@ describe('HospitalsService.remove (regression: F-30 — a hospital stuck in PROV
         { provide: TenantClientFactory, useValue: { getClient: jest.fn() } },
         { provide: TenantUserProvisioningService, useValue: {} },
         { provide: StaffService, useValue: {} },
+        { provide: TenantMigrationService, useValue: {} },
       ],
     }).compile();
 

@@ -20,11 +20,22 @@ export class TenantUserProvisioningService {
     private readonly loginDirectory: LoginDirectoryService,
   ) {}
 
+  /**
+   * When `options.idempotentResume` is set (hospital onboarding retries
+   * only), a directory conflict owned by THIS hospital is reused instead of
+   * thrown: a previous attempt may have registered the identifier before
+   * failing later in the flow, and the retry runs this step again. The
+   * tenant user is then found-or-created the same way. Conflicts owned by
+   * anyone else -- or ownerless rows -- stay hard errors. Plain "create"
+   * callers (e.g. adding an admin to a live hospital) omit the option and
+   * keep strict duplicate rejection.
+   */
   async provisionAdministrator(
     schemaName: string,
     hospitalId: string,
     identifier: string,
     password: string,
+    options?: { idempotentResume?: boolean },
   ): Promise<{ id: string; identifier: string }> {
     // LoginDirectoryService normalizes internally, so the directory row is
     // always lowercased -- but the tenant User row was previously created
@@ -34,12 +45,47 @@ export class TenantUserProvisioningService {
     // (Postgres string equality is case-sensitive). Normalizing once here,
     // before either write, keeps both records in agreement.
     const normalizedIdentifier = identifier.trim().toLowerCase();
-    await this.loginDirectory.register(normalizedIdentifier, hospitalId);
+    // Tracks whether THIS call created the directory row, so the rollback
+    // below only ever removes a row it owns -- on the resume path the row
+    // predates us and must survive for the next retry.
+    let registeredHere = false;
+    try {
+      await this.loginDirectory.register(normalizedIdentifier, hospitalId);
+      registeredHere = true;
+    } catch (err) {
+      // A row owned by anyone else, or an ownerless row stranded by a
+      // cleaned-up attempt (the hospital FK SET NULLs on delete), must stay
+      // a hard error: adopting those would hijack another account's
+      // identifier or a real platform login.
+      if (!options?.idempotentResume || !(err instanceof ConflictException)) throw err;
+      const resolved = await this.loginDirectory.resolve(normalizedIdentifier);
+      if (resolved?.hospitalId !== hospitalId) throw err;
+    }
 
     try {
       const client = await this.tenantClients.getClient(schemaName);
       const adminRole = await client.role.findUniqueOrThrow({ where: { name: 'Administrator' } });
       const passwordHash = await bcrypt.hash(password, 10);
+      if (!registeredHere) {
+        // Resume path: the tenant user may already exist from the earlier
+        // attempt (its schema survived because the hospital row did). Reuse
+        // it and refresh to the retried password rather than failing on the
+        // unique identifier -- but only if it really is this hospital's
+        // Administrator; any other occupant is a collision, not a resume.
+        const existing = await client.user.findUnique({ where: { identifier: normalizedIdentifier } });
+        if (existing) {
+          if (existing.roleId !== adminRole.id) {
+            throw new ConflictException(
+              `Identifier "${normalizedIdentifier}" is already in use by a non-Administrator account.`,
+            );
+          }
+          const updated = await client.user.update({
+            where: { id: existing.id },
+            data: { passwordHash, mustChangePassword: true },
+          });
+          return { id: updated.id, identifier: updated.identifier };
+        }
+      }
       // Same as every Staff/Doctor account: the caller (Super Admin /
       // Hospital onboarding flow) chose this initial password, not the
       // Administrator themselves, so it must be changed before real use --
@@ -57,7 +103,9 @@ export class TenantUserProvisioningService {
       });
       return { id: user.id, identifier: user.identifier };
     } catch (err) {
-      await this.loginDirectory.remove(normalizedIdentifier).catch(() => undefined);
+      if (registeredHere) {
+        await this.loginDirectory.remove(normalizedIdentifier).catch(() => undefined);
+      }
       throw err;
     }
   }
