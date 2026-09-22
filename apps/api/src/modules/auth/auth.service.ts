@@ -821,6 +821,27 @@ export class AuthService {
       }
       const roleName = user.role.name;
 
+      // R-06 (2026-09-22 audit): rotate the refresh token on every use by
+      // bumping tokenVersion here too, reusing the exact mechanism
+      // password-change/logout/lock already invalidate tokens with -- no new
+      // "used tokens" table needed. This is what actually makes rotation
+      // mean something: the just-presented refresh token's own tokenVersion
+      // is now stale, so it can never be replayed again (same 401 path as
+      // any other revoked token, above). It also means a genuine reuse
+      // attempt -- someone presenting a copy after the legitimate rotation
+      // already happened -- fails the same way, and since the bump also
+      // invalidates every other outstanding access token for this user,
+      // detected reuse effectively revokes the whole session, not just the
+      // one stale token. Tradeoff, deliberately accepted: two tabs/devices
+      // sharing one refresh token will both need a fresh login once either
+      // one rotates, since neither holds the other's new refresh token --
+      // fine for this app's current one-token-per-login model, and moot
+      // today regardless since the frontend doesn't call this endpoint yet.
+      const updated = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { tokenVersion: { increment: 1 } },
+      });
+
       const csrfToken = generateCsrfToken();
       const accessPayload: JwtPayload = {
         sub: user.id,
@@ -829,9 +850,18 @@ export class AuthService {
         roleName,
         hospitalId: payload.hospitalId,
         schemaName: payload.schemaName,
-        tokenVersion: user.tokenVersion,
+        tokenVersion: updated.tokenVersion,
         type: 'access',
         csrf: csrfToken,
+      };
+
+      const refreshPayload: RefreshPayload = {
+        sub: user.id,
+        identifier: user.identifier,
+        hospitalId: payload.hospitalId,
+        schemaName: payload.schemaName,
+        type: 'refresh',
+        tokenVersion: updated.tokenVersion,
       };
 
       const newAccessToken = this.jwtService.sign(accessPayload, {
@@ -839,8 +869,14 @@ export class AuthService {
         expiresIn: (process.env.JWT_EXPIRES_IN as any) || '8h',
       });
 
+      const newRefreshToken = this.jwtService.sign(refreshPayload, {
+        secret: JWT_REFRESH_SECRET,
+        expiresIn: '7d',
+      });
+
       return {
         accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
         csrfToken,
       };
     } catch {

@@ -438,6 +438,29 @@ describe('AuthService', () => {
       const result = await service.refreshTokens({ refreshToken: 'fresh-refresh-token' });
       expect(result).toHaveProperty('accessToken');
     });
+
+    it('R-06 (2026-09-22 audit): rotates the refresh token on every use by bumping tokenVersion', async () => {
+      mockJwtService.verify.mockReturnValue({ ...validRefreshPayload, tokenVersion: 1 });
+      mockPlatformPrismaService.hospital.findUnique.mockResolvedValue(mockHospital);
+      mockPrismaService.user.findUnique.mockResolvedValue({ ...mockUser, tokenVersion: 1 });
+      mockPrismaService.user.update.mockResolvedValueOnce({ ...mockUser, tokenVersion: 2 });
+
+      const result = await service.refreshTokens({ refreshToken: 'fresh-refresh-token' });
+
+      expect(mockPrismaService.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-123' },
+        data: { tokenVersion: { increment: 1 } },
+      });
+      expect(result).toHaveProperty('refreshToken');
+      // Two separate sign() calls this time (access + refresh), both using
+      // the bumped tokenVersion -- the old refresh token's tokenVersion (1)
+      // no longer matches, so a replay of it fails the same tokenVersion
+      // check the "stale-refresh-token" test above already covers.
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'refresh', tokenVersion: 2 }),
+        expect.objectContaining({ expiresIn: '7d' }),
+      );
+    });
   });
 
   describe('logout()', () => {

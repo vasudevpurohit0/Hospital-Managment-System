@@ -6,6 +6,7 @@ import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express
 import express from 'express';
 import { resolveCorsOrigins } from './common/config/cors.util';
 import { PinoLoggerService } from './common/logging/pino-logger.service';
+import { applySecurityHeaders } from './common/middleware/security-headers.util';
 
 const server = express();
 // R-02 (2026-09-22 audit): stops Express's default framework/version
@@ -19,6 +20,14 @@ async function bootstrapServer() {
   if (!isAppInitialized) {
     nestApp = await NestFactory.create(AppModule, new ExpressAdapter(server), { bufferLogs: true });
     nestApp.useLogger(nestApp.get(PinoLoggerService));
+    // R-05: registered as a raw app.use() here, before setGlobalPrefix below
+    // -- SecurityMiddleware's own copy of these headers (security.middleware.ts)
+    // is scoped to the /api/* prefix via MiddlewareConsumer, so a bare `/`,
+    // `/robots.txt`, etc. never reached it. This one isn't prefix-scoped.
+    nestApp.use((_req: any, res: any, next: any) => {
+      applySecurityHeaders(res);
+      next();
+    });
     // Patient registration posts photos as base64 data URLs (100KB+); the
     // Express default JSON limit (100kb) 500s those requests before any
     // guard/validation runs. 10MB comfortably fits a downscaled photo while
@@ -67,6 +76,11 @@ async function bootstrapLocal() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
     app.disable('x-powered-by');
     app.useLogger(app.get(PinoLoggerService));
+    // R-05: see the identical comment in bootstrapServer() above.
+    app.use((_req: any, res: any, next: any) => {
+      applySecurityHeaders(res);
+      next();
+    });
     // Same raised body limit as the serverless bootstrap above -- patient
     // registration posts photos as base64 data URLs (100KB+), which the
     // Express default JSON limit (100kb) rejects with a 500.

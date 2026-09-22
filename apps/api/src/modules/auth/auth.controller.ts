@@ -64,6 +64,11 @@ export class AuthController {
     // refreshTokens() is hospital-staff only (see AuthService.refreshTokens's
     // own hospitalId/schemaName check) -- never a platform session.
     setAccessTokenCookie(res, result.accessToken);
+    // R-06: the refresh token itself is now rotated on every use (see
+    // issueAccessTokenFromRefresh's own comment) -- a cookie-based session
+    // needs the new one re-cookied here, same as login() does, or every
+    // subsequent refresh attempt would keep presenting the now-stale one.
+    setRefreshTokenCookie(res, result.refreshToken);
     return result;
   }
 

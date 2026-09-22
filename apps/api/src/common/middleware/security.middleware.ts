@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
 import { JWT_ACCESS_SECRET, JWT_PLATFORM_SECRET } from '../config/jwt-secrets';
 import { ACCESS_TOKEN_COOKIE, PLATFORM_TOKEN_COOKIE } from '../auth/auth-cookies.util';
+import { applySecurityHeaders } from './security-headers.util';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -57,13 +58,11 @@ function decodeCsrfClaim(token: string): string | undefined {
 @Injectable()
 export class SecurityMiddleware implements NestMiddleware {
   use(req: Request, res: Response, next: NextFunction) {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-    res.setHeader('Content-Security-Policy', "default-src 'self'");
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+    // R-05: also set unconditionally, unscoped by the global prefix, via
+    // main.ts's raw app.use() -- setting them again here is harmless
+    // (same values) and keeps this middleware self-contained for the /api/*
+    // requests it already handles the CSRF check for.
+    applySecurityHeaders(res);
 
     // 2026-09-22 audit: V-14 originally removed a CSRF mechanism here that
     // only checked "some string is present", never that it matched

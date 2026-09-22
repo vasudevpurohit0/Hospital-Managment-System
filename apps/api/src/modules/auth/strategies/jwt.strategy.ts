@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { PlatformPrismaService } from '../../../common/tenant/platform-prisma.service';
 import { AuthenticatedUser, ImpersonationClaims } from '../../../common/decorators/current-user.decorator';
 import { JWT_ACCESS_SECRET } from '../../../common/config/jwt-secrets';
 import { ACCESS_TOKEN_COOKIE } from '../../../common/auth/auth-cookies.util';
@@ -51,7 +52,10 @@ export interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private platformPrisma: PlatformPrismaService,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([ExtractJwt.fromAuthHeaderAsBearerToken(), cookieExtractor]),
       ignoreExpiration: false,
@@ -62,6 +66,21 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     if (payload.type && payload.type !== 'access') {
       throw new UnauthorizedException('Invalid token type');
+    }
+
+    // V-13 (2026-09-22 audit): suspending a hospital already correctly blocks
+    // a fresh login and a refresh-token exchange (auth.service.ts, both
+    // checked against the platform DB), but neither of those runs again once
+    // an access token has been issued -- without this check here too, an
+    // already-issued token just kept validating normally against this
+    // tenant's own (untouched) schema for its full remaining 8h lifetime,
+    // suspension or not. Checked before the tenant-schema user lookup below
+    // so a suspended hospital's staff never even reach it.
+    const hospital = await this.platformPrisma.hospital.findUnique({
+      where: { id: payload.hospitalId },
+    });
+    if (!hospital || hospital.status !== 'ACTIVE') {
+      throw new UnauthorizedException('This hospital account is no longer active.');
     }
 
     // TenantResolutionMiddleware has already set the AsyncLocalStorage tenant
