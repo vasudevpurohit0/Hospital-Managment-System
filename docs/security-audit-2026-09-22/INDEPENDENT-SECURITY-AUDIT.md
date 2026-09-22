@@ -3,7 +3,7 @@
 **Date started:** 2026-09-22
 **Auditor:** Claude (Sonnet 5), working interactively with the repo owner
 **Method:** Fresh, independent audit — conducted without relying on conclusions from the prior `docs/SECURITY-AUDIT-REPORT.md` (2026-09-19). That report and `docs/developer/05-RBAC-Security.md` / `docs/developer/23-Security-Audit.md` are cross-checked only at the very end, as a sanity comparison, not as an input to findings here.
-**Status:** All 19 phases have content; Phases 0–14 (excluding 10, N/A) are live-tested, not just read from source. Phase 15 (TLS) is out of scope by design (managed platforms). Phase 16 (business logic) is intentionally not independently exercised beyond what other phases' live testing incidentally covered — see its own section and "Not covered" below for what's left.
+**Status:** Complete — all 20 phases (0 through 19) have real content, no stubs remain. Phases 0–14 and 17–19 are live-tested or directly evidenced, not read-and-assumed; Phase 10 is a confirmed (not provisional) N/A; Phase 15 (TLS) is live-verified against both deployed staging targets. Phase 16 (business logic) is the one intentionally partial section — see its own writeup and "Not covered" below for exactly what remains and why.
 
 ---
 
@@ -189,9 +189,6 @@ Since ZAP's spider can't discover POST-only JSON endpoints, they were seeded dir
 Full HTML report saved: `docs/security-audit-2026-09-22/zap-api-auth-endpoints-report.html`.
 
 ## Phase 4 — Burp Suite (manual)
-*Pending — optional, depends on tooling available to the repo owner.*
-
-## Phase 4 — Burp Suite
 Installed and confirmed working (proxy listener `127.0.0.1:8080`, HTTP history capturing requests routed via `curl -x`). Used below for JWT/cookie inspection on a real login.
 
 ## Phase 5 — Authentication Audit
@@ -375,7 +372,7 @@ Root cause: `hospital.status` **is** checked at login and at refresh (`auth.serv
 **Path traversal / arbitrary file read: not applicable to this architecture.** No endpoint reads a file from disk by a user-supplied path or filename — confirmed by Phase 1's finding that patient photos are base64 data URLs in JSON bodies (no multipart upload subsystem exists at all) and that PDFs (receipts, statements, lab reports) are rendered on-the-fly via Puppeteer, not read from a filesystem by name. A traversal-shaped payload against an ID-taking route (`/api/employees/..%2f..%2f..%2fetc%2fpasswd/card`) was rejected by the RBAC guard before reaching any ID-handling logic at all in the one case tested live; not independently significant given there's no file-read code path for it to reach either way.
 
 ## Phase 10 — File Upload Security
-*Provisionally N/A — no upload subsystem found. Confirm in Phase 8.*
+**N/A — confirmed, not just provisional.** No multipart/file-upload subsystem exists anywhere in `apps/api` (no `multer` usage — see D-05; patient photos are base64 data URLs inside JSON bodies per Phase 1's architecture read). Phase 9's path-traversal probe and Phase 14's Docker/image review turned up nothing that changes this conclusion. This category of attack (unrestricted file type, path traversal via filename, zip-bomb/decompression attacks) has no code path to reach in the current codebase.
 
 ## Phase 11 — Security Headers / CORS / Cookies
 
@@ -438,16 +435,45 @@ Grepped for common committed-secret patterns (AWS access keys, PEM private key h
 **`docker-compose.yml` (local dev only, not production — Postgres/Redis loopback-bound, already noted in Phase 1).** No new findings beyond what Phase 1 already covered.
 
 ## Phase 15 — TLS / HTTPS
-*N/A for localhost scope — revisit only if a staging/production URL is ever brought into scope.*
+
+Local dev (`localhost`) is correctly out of scope for TLS — plain HTTP is expected there, and the cookie/CORS design (Phase 5/11) already accounts for it (`Secure` only set when `NODE_ENV=production`). The two in-scope **deployed** targets, both on managed platforms, were checked live rather than assumed:
+
+- `https://esic-hms-web.vercel.app` — `200`, `curl`'s own TLS chain verification (`ssl_verify_result: 0`) passes: valid, trusted certificate.
+- `https://api-production-a838.up.railway.app/api/health` — `200`, `ssl_verify_result: 0`. Plain `http://` to the same host correctly `301`-redirects to `https://` rather than serving the request in the clear.
+
+Both platforms (Vercel, Railway) provision and rotate these certificates automatically — there's no certificate file, private key, or TLS config anywhere in this repo to audit, which is itself the correct architecture (managed platforms should own this, not application code). No weak-cipher/protocol-downgrade testing performed (would need a dedicated tool like `testssl.sh`/`sslyze`, not just `curl`) — low priority given both are current-generation managed-platform defaults, not a custom TLS termination setup.
 
 ## Phase 16 — Business Logic
 *Not independently tested this session beyond what Phase 6/7's live account-lifecycle testing (password reset/change, forced-first-login gating, tokenVersion invalidation) incidentally exercised — all of which behaved correctly. Pre-existing test-suite coverage (`charge.service.integration.spec.ts`: rejects a zero/negative-quantity charge, refuses to bill a service with no effective price, never double-labels a charge's source) suggests reasonable care elsewhere in the billing domain, but this audit did not independently exercise those paths live. A dedicated pass — double-refund attempts, race conditions in concurrent receipt issuance, workflow-state bypass (e.g. completing an OPD visit out of its expected sequence) — remains open, consistent with the original "Not covered" note.*
 
 ## Phase 17 — Finding Validation
-*Pending — applied continuously as findings are logged.*
+
+Applied continuously throughout, not as a separate closing pass — each finding above is tagged, in its own writeup, with how it was validated:
+
+- **Live reproduction (highest confidence)** — the overwhelming majority of findings in this doc: an actual HTTP request/response, a real login, a real token, a real browser session, or a real `curl`/Jest/Vitest test run, with the exact command or test name given inline so it can be independently re-run. Examples: every `A-`/`T-`/`F-`/`I-`/`R-06`/`V-13` finding, the D-02-REGRESSION/A-02-REGRESSION debugging chain, all Phase 5-9 authentication/authorization/injection results.
+- **Source-confirmed, not independently exploited live** — a smaller set where reading the code gave high confidence but no live exploit was attempted, usually because doing so would be destructive, out of scope, or the code path is unambiguous enough that live reproduction wouldn't add information (e.g., D-05's "package present but never imported" — confirmed by grep, not by trying to trigger a multer-specific exploit that has no code path to reach).
+- **Positive controls** — held to the same bar as findings: every "confirmed-safe" claim in this doc was actively attacked (a tampered signature, a cross-tenant ID, a SQL-injection payload, a disallowed CORS origin, a privilege-escalation attempt) and observed to fail correctly, not just read and assumed safe. This distinction from a purely static review is called out explicitly in the Executive Summary because it materially changes how much weight a reader should put on the "no issues found" claims.
+
+No finding in this document rests solely on "the code looks like it should be vulnerable" without an attempt (successful or blocked) to actually demonstrate it, except where noted above as source-confirmed for a stated reason.
 
 ## Phase 18 — Severity Methodology
-*CVSS-informed severity will be assigned per finding in Phase 17, not arbitrarily.*
+
+CVSS-informed, adapted to the practical questions that actually drove every severity label assigned above: exploitability (does it need an already-authenticated session, a specific role, or nothing at all?), impact (data exposure, integrity, availability, or account takeover?), and reachability (production-live today, or gated behind a code path nothing currently calls?).
+
+- **Critical** — unauthenticated remote compromise of the platform or cross-tenant data at scale. None found.
+- **High** — a concrete, demonstrated path to unauthorized data access, privilege escalation, or a live-breaking functional failure with a security side effect, reachable by at least one real actor class (an authenticated low-privilege user, or in T-02/T-03's case, anyone at all since onboarding itself was broken). Bounded to "High" rather than "Critical" when it requires *some* precondition (an existing account, a specific misconfiguration state) rather than being exploitable from zero. Example: D-02-REGRESSION — real, live-reachable, but requires the specific broken dependency state to exist first.
+- **Medium** — a genuine security gap with real but bounded impact: limited by a time window (V-13's 8h TTL bound), by requiring a resource that isn't currently exposed to the primary attack surface (R-06's unused-by-the-frontend refresh endpoint), or by needing a non-trivial precondition (A-02's pre-migration XSS-dependency). Still a real finding worth fixing, not cosmetic.
+- **Low** — real but meaningfully constrained: DoS-class findings (per this audit's own explicit deprioritization of DoS relative to data-exposure/integrity issues — see D-03/D-06/D-01's consistent treatment), or a control that's inconsistently applied rather than absent (R-05).
+- **Informational** — no direct exploitability today, but worth recording: dead/unused vulnerable dependencies (D-05), documentation-vs-reality gaps that don't themselves grant access (R-03, now fixed), or operational/process gaps rather than code vulnerabilities (STALE-DEPLOY).
+
+Severity is about the finding's own exploitability and impact, not how easy the fix is — several High findings here (D-02-REGRESSION, A-02-REGRESSION) had one-line fixes; several Low/Informational ones (D-05, the `rimraf`-only `brace-expansion@5.x` chain noted in D-06) would take real dependency-graph surgery to fully resolve and were left as routine hygiene precisely because their severity didn't justify the effort right now.
 
 ## Phase 19 — Final Report
-*Assembled last, from all phases above.*
+
+This document *is* the final report — assembled incrementally as each phase completed rather than written up after the fact from notes, so every finding's evidence is contemporaneous with the testing that produced it. Current state, as of the last update:
+
+- **19 of 19 phases have real content.** Phases 0–14 and 17–19 are live-tested or directly evidenced; Phase 15 (TLS) is confirmed for both in-scope deployed targets via live `curl`; Phase 16 (business logic) is honestly scoped as partially covered, with what remains explicitly named rather than silently dropped.
+- **Every code-level finding is fixed except R-05, R-06, V-13** (all three open, all three explicitly flagged, none silently left as "pending" without a stated reason) **and STALE-DEPLOY**, which isn't a code fix at all — it's an operational finding that production needs a deliberate redeploy-and-reverify pass before any of this session's fixes (or the prior session's) can be trusted to be protecting real traffic.
+- **Everything fixed this session is committed** (`43714b1`, `68d3be5`) but **not yet pushed or redeployed** — see STALE-DEPLOY for why that matters before assuming any of it is live.
+
+Recommended next steps, in priority order: (1) resolve STALE-DEPLOY — find out why Railway isn't picking up new deploys, then push and redeploy; (2) decide on and implement fixes for R-06 (refresh-token rotation) and V-13 (hospital-status check on ongoing requests) — both are documented with a fix direction but neither was implemented this session, since both involve a real design decision (rotation strategy; caching strategy for a per-request status check) rather than a one-line patch; (3) the remaining Low/Informational items (R-05, D-05, the dev-tooling-only `brace-expansion@5.x` chain) as routine hygiene, whenever convenient; (4) the Phase 16 business-logic gap, if and when it becomes a priority.
