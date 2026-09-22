@@ -658,6 +658,15 @@ export class AuthService {
     hospitalId: string;
     schemaName: string;
     impersonator: { id: string; identifier: string; roleName: string; type: 'hospital' | 'platform' };
+    /**
+     * Set only when `impersonator` is itself acting under an impersonation
+     * session (a chained hop, e.g. Super Admin -> Hospital Admin -> Doctor)
+     * -- carries the CHAIN's original actor forward unchanged so the new
+     * token can still answer "who really started this" without walking a
+     * server-side session table that doesn't exist. Omitted entirely for a
+     * fresh, single-level impersonation.
+     */
+    root?: { id: string; type: 'hospital' | 'platform'; roleName: string; identifier: string };
     meta?: RequestMeta;
   }): Promise<{ accessToken: string; expiresIn: string; sessionId: string }> {
     const { browser, os, device } = parseUserAgent(params.meta?.userAgent);
@@ -669,6 +678,7 @@ export class AuthService {
       impersonatorRoleName: params.impersonator.roleName,
       impersonatorIdentifier: params.impersonator.identifier,
       startedAt: new Date().toISOString(),
+      root: params.root,
     };
 
     const payload: JwtPayload = {
@@ -707,7 +717,9 @@ export class AuthService {
         entityType: 'User',
         entityId: params.target.id,
         severity: 'HIGH',
-        description: `Started impersonating "${params.target.identifier}" (${params.target.roleName}), session ${sessionId}`,
+        description: params.root
+          ? `Started impersonating "${params.target.identifier}" (${params.target.roleName}), session ${sessionId} -- chained: ${params.root.roleName} (${params.root.identifier}) -> ${params.impersonator.roleName} (${params.impersonator.identifier}) -> ${params.target.identifier}`
+          : `Started impersonating "${params.target.identifier}" (${params.target.roleName}), session ${sessionId}`,
         ipAddress: params.meta?.ip,
         browser,
         os,

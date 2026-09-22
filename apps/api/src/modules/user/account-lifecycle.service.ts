@@ -7,6 +7,7 @@ import { LoginDirectoryService } from '../../common/tenant/login-directory.servi
 import { getTenantContext } from '../../common/tenant/tenant-context';
 import { generateSecurePassword } from '../../common/security/password.util';
 import { AuthService } from '../auth/auth.service';
+import { ImpersonationClaims } from '../../common/decorators/current-user.decorator';
 import { EmailService } from '../../common/email/email.service';
 import { tempPasswordEmailBody, TEMP_PASSWORD_EMAIL_SUBJECT } from '../../common/email/templates';
 import { toAuditActorUserId } from '../../common/audit/audit-actor.util';
@@ -45,6 +46,8 @@ export interface Actor {
   identifier?: string;
   /** True when the CALLER's own session is itself an impersonation session -- the nested-impersonation guard in impersonate() below. */
   isImpersonating?: boolean;
+  /** Full impersonation claims of the CALLER's own session, when isImpersonating is true -- needed to find the chain's root and decide whether this session may itself impersonate one level deeper. */
+  impersonation?: ImpersonationClaims;
 }
 
 export { toAuditActorUserId } from '../../common/audit/audit-actor.util';
@@ -291,7 +294,12 @@ export abstract class AccountLifecycleService<TDto> {
    * here is enforced server-side, independent of the "Impersonate" button's
    * visibility logic on the frontend, which is UX only:
    *
-   *  - nested impersonation is refused outright (actor.isImpersonating);
+   *  - nested impersonation is refused UNLESS the caller's own session is
+   *    itself part of a chain rooted in a real Super Admin (see the
+   *    `isImpersonating` block below) -- this is what lets Super Admin ->
+   *    Hospital Admin -> Doctor/Staff work as one continuous chain while a
+   *    Hospital Admin's own (non-impersonated) session, or any impersonated
+   *    Doctor/Nurse/etc. session, can never chain further;
    *  - self-impersonation is refused;
    *  - a hospital-local Administrator may not impersonate another
    *    Administrator (only a Super Admin -- actor.type === 'platform' --
@@ -313,10 +321,21 @@ export abstract class AccountLifecycleService<TDto> {
     actor: Actor,
     meta: { ip?: string; userAgent?: string } = {},
   ): Promise<{ accessToken: string; expiresIn: string; target: { id: string; identifier: string; role: string; name: string } }> {
+    // Permissions are always evaluated against the CHAIN's original actor,
+    // never just the immediate caller: a session reached only because a real
+    // Super Admin chose to impersonate a Hospital Admin may extend the chain
+    // one hop further (that Hospital Admin's own Staff/Doctor:impersonate
+    // grants already let RBAC past the route guard) -- but a hospital-local
+    // Administrator's own real session impersonating a Doctor must never be
+    // able to go one hop further than that, since nothing here re-derives
+    // "who really started this" from anywhere but this actor's own token.
     if (actor.isImpersonating) {
-      throw new ForbiddenException(
-        'Already impersonating another user -- exit that session before starting a new one.',
-      );
+      const rootType = actor.impersonation?.root?.type ?? actor.impersonation?.impersonatorType;
+      if (rootType !== 'platform') {
+        throw new ForbiddenException(
+          'This impersonation session cannot be extended further -- exit it before starting a new one.',
+        );
+      }
     }
 
     const target = await this.prisma.user.findUnique({
@@ -351,6 +370,18 @@ export abstract class AccountLifecycleService<TDto> {
 
     const { hospitalId, schemaName } = getTenantContext();
 
+    // Propagate the chain's true root forward unchanged once it exists
+    // (Super Admin, from the first hop); on the first hop itself there is no
+    // root yet -- `impersonator` below already IS the root in that case.
+    const root = actor.isImpersonating
+      ? (actor.impersonation?.root ?? {
+          id: actor.impersonation!.impersonatorId,
+          type: actor.impersonation!.impersonatorType,
+          roleName: actor.impersonation!.impersonatorRoleName,
+          identifier: actor.impersonation!.impersonatorIdentifier,
+        })
+      : undefined;
+
     const session = await this.authService.issueImpersonationSession({
       target: {
         id: target.id,
@@ -367,6 +398,7 @@ export abstract class AccountLifecycleService<TDto> {
         roleName: actor.roleName,
         type: actor.type === 'platform' ? 'platform' : 'hospital',
       },
+      root,
       meta,
     });
 

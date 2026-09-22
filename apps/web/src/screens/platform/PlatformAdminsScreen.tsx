@@ -7,6 +7,7 @@ import {
   listHospitalAdmins,
   createHospitalAdmin,
   setHospitalAdminActive,
+  impersonateHospitalAdmin,
   HospitalAdminRecord,
   listHospitals,
   HospitalRecord,
@@ -15,10 +16,26 @@ import { useAuth } from '../../hooks/useAuth';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
-import { ShieldCheck, Building2, Plus, RefreshCw, Ban, RotateCcw, X } from 'lucide-react';
+import { ShieldCheck, Building2, Plus, RefreshCw, Ban, RotateCcw, X, UserCog } from 'lucide-react';
 
 export const PlatformAdminsScreen: React.FC = () => {
-  const { user } = useAuth();
+  const { user, startImpersonation } = useAuth();
+
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
+
+  const handleImpersonateAdmin = async (a: HospitalAdminRecord) => {
+    setImpersonatingId(a.id);
+    setImpersonateError(null);
+    try {
+      const session = await impersonateHospitalAdmin(a.hospitalId, a.id);
+      startImpersonation(session.accessToken, session.target);
+    } catch (err: unknown) {
+      setImpersonateError((err as Error).message || 'Failed to start impersonation');
+    } finally {
+      setImpersonatingId(null);
+    }
+  };
 
   /* ── Platform (Super Admin) accounts ── */
   const [admins, setAdmins] = useState<PlatformAdminRecord[]>([]);
@@ -327,6 +344,7 @@ export const PlatformAdminsScreen: React.FC = () => {
 
       {hospitalAdminsError && <div className="alert-danger">{hospitalAdminsError}</div>}
       {hospitalAdminToggleError && <div className="alert-danger">{hospitalAdminToggleError}</div>}
+      {impersonateError && <div className="alert-danger">{impersonateError}</div>}
 
       {showCreateHospitalAdmin && (
         <form onSubmit={handleCreateHospitalAdmin} className="card p-6 space-y-4">
@@ -409,13 +427,26 @@ export const PlatformAdminsScreen: React.FC = () => {
         searchableKey="identifier"
         searchPlaceholder="Search by identifier..."
         actions={(a) => (
-          <button
-            onClick={() => setPendingHospitalAdminToggle(a)}
-            className="btn btn-secondary btn-sm gap-1"
-          >
-            {a.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
-            {a.active ? 'Deactivate' : 'Reactivate'}
-          </button>
+          <div className="flex gap-1">
+            {a.active && (
+              <button
+                onClick={() => handleImpersonateAdmin(a)}
+                disabled={impersonatingId === a.id}
+                className="btn btn-secondary btn-sm gap-1"
+                title="Sign in as this hospital's Administrator -- recorded in the audit log"
+              >
+                <UserCog className="w-3.5 h-3.5" />
+                {impersonatingId === a.id ? 'Starting...' : 'Impersonate'}
+              </button>
+            )}
+            <button
+              onClick={() => setPendingHospitalAdminToggle(a)}
+              className="btn btn-secondary btn-sm gap-1"
+            >
+              {a.active ? <Ban className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+              {a.active ? 'Deactivate' : 'Reactivate'}
+            </button>
+          </div>
         )}
       />
       )}

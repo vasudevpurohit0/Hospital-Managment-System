@@ -410,6 +410,82 @@ describe('StaffService', () => {
       expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
     });
 
+    describe('chained impersonation (Super Admin -> Hospital Admin -> Doctor/Staff)', () => {
+      // The caller's own session here IS an impersonation session -- as if a
+      // Super Admin had already impersonated this Hospital Administrator via
+      // HospitalAdminsService.impersonate(), and this Administrator (target
+      // of that first hop) is now trying to impersonate one hop further.
+      const chainedAdminActor: Actor = {
+        id: 'admin-1',
+        roleName: 'Administrator',
+        type: 'hospital',
+        identifier: 'admin@esic.gov.in',
+        isImpersonating: true,
+        impersonation: {
+          sessionId: 'session-1',
+          impersonatorId: 'platform-1',
+          impersonatorType: 'platform',
+          impersonatorRoleName: 'SuperAdmin',
+          impersonatorIdentifier: 'super@platform.local',
+          startedAt: '2026-01-01T00:00:00.000Z',
+        },
+      };
+
+      it('allows a Hospital Admin session that is itself an impersonation rooted in a real Super Admin to impersonate one hop further', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue(nurseTarget);
+
+        await expect(
+          runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', chainedAdminActor)),
+        ).resolves.toBeDefined();
+
+        expect(mockAuthService.issueImpersonationSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            impersonator: expect.objectContaining({ id: 'admin-1', roleName: 'Administrator', type: 'hospital' }),
+            root: { id: 'platform-1', type: 'platform', roleName: 'SuperAdmin', identifier: 'super@platform.local' },
+          }),
+        );
+      });
+
+      it('carries a DEEPER chain\'s root forward unchanged instead of overwriting it with the immediate parent', async () => {
+        mockPrisma.user.findUnique.mockResolvedValue(nurseTarget);
+        const doubleChainedActor: Actor = {
+          ...chainedAdminActor,
+          impersonation: {
+            ...chainedAdminActor.impersonation!,
+            root: { id: 'platform-1', type: 'platform', roleName: 'SuperAdmin', identifier: 'super@platform.local' },
+            impersonatorId: 'some-intermediate-hospital-admin',
+            impersonatorType: 'hospital',
+            impersonatorRoleName: 'Administrator',
+            impersonatorIdentifier: 'intermediate-admin@esic.gov.in',
+          },
+        };
+
+        await runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', doubleChainedActor));
+
+        expect(mockAuthService.issueImpersonationSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            root: { id: 'platform-1', type: 'platform', roleName: 'SuperAdmin', identifier: 'super@platform.local' },
+          }),
+        );
+      });
+
+      it('rejects extending a chain that is NOT rooted in a real Super Admin (a hospital-local impersonation session may never chain further)', async () => {
+        const nonPlatformRootActor: Actor = {
+          ...chainedAdminActor,
+          impersonation: {
+            ...chainedAdminActor.impersonation!,
+            impersonatorType: 'hospital',
+          },
+        };
+
+        await expect(
+          runWithTenant(tenantCtx, () => service.impersonate('target-nurse-1', nonPlatformRootActor)),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+        expect(mockAuthService.issueImpersonationSession).not.toHaveBeenCalled();
+      });
+    });
+
     it('404s when the target does not exist', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
       await expect(

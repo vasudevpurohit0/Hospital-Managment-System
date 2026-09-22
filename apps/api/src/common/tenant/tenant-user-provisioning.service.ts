@@ -40,8 +40,20 @@ export class TenantUserProvisioningService {
       const client = await this.tenantClients.getClient(schemaName);
       const adminRole = await client.role.findUniqueOrThrow({ where: { name: 'Administrator' } });
       const passwordHash = await bcrypt.hash(password, 10);
+      // Same as every Staff/Doctor account: the caller (Super Admin /
+      // Hospital onboarding flow) chose this initial password, not the
+      // Administrator themselves, so it must be changed before real use --
+      // this used to default to `false` (schema default), silently letting
+      // Administrators skip the forced first-login password change every
+      // other role gets.
       const user = await client.user.create({
-        data: { identifier: normalizedIdentifier, passwordHash, roleId: adminRole.id, active: true },
+        data: {
+          identifier: normalizedIdentifier,
+          passwordHash,
+          roleId: adminRole.id,
+          active: true,
+          mustChangePassword: true,
+        },
       });
       return { id: user.id, identifier: user.identifier };
     } catch (err) {

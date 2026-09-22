@@ -52,17 +52,42 @@ describe('useAuth impersonation', () => {
     expect(stored.impersonation.original.user.role).toBe('Administrator');
   });
 
-  it('ignores a second startImpersonation call while already impersonating (no nested impersonation, mirrors the server-side guard)', () => {
+  it('chains a second startImpersonation call into a nested session (server already decided eligibility -- the client never re-blocks this)', () => {
     seedAdminSession();
     const { result } = renderHook(() => useAuth(), { wrapper });
 
-    act(() => result.current.startImpersonation('target-token', nurseTarget));
+    act(() => result.current.startImpersonation('admin-token-2', { id: 'admin-2', identifier: 'admin2@esic.gov.in', role: 'Administrator' }));
     act(() =>
-      result.current.startImpersonation('other-token', { id: 'pharm-1', identifier: 'pharm@esic.gov.in', role: 'Pharmacist' }),
+      result.current.startImpersonation('doctor-token', { id: 'doc-1', identifier: 'doc@esic.gov.in', role: 'Doctor' }),
     );
 
-    expect(result.current.token).toBe('target-token'); // unchanged
-    expect(result.current.user?.role).toBe('Nurse');
+    expect(result.current.token).toBe('doctor-token');
+    expect(result.current.user?.role).toBe('Doctor');
+    // The chain's root stays the FIRST impersonator throughout, not the
+    // immediate parent (which is the level-1 Administrator target, itself
+    // reached by impersonation).
+    expect(result.current.impersonation).toEqual({
+      active: true,
+      impersonatorRoleName: 'Administrator',
+      impersonatorIdentifier: 'admin2@esic.gov.in',
+      root: { roleName: 'Administrator', identifier: 'admin@esic.gov.in' },
+    });
+
+    // Exiting once returns to the level-1 impersonation (still impersonating), not straight to the real original.
+    act(() => result.current.exitImpersonation());
+    expect(result.current.token).toBe('admin-token-2');
+    expect(result.current.user?.role).toBe('Administrator');
+    expect(result.current.impersonation).toEqual({
+      active: true,
+      impersonatorRoleName: 'Administrator',
+      impersonatorIdentifier: 'admin@esic.gov.in',
+    });
+
+    // Exiting again returns all the way to the real original session.
+    act(() => result.current.exitImpersonation());
+    expect(result.current.token).toBe('admin-token');
+    expect(result.current.user?.role).toBe('Administrator');
+    expect(result.current.impersonation).toBeNull();
   });
 
   it('exitImpersonation restores the original administrator session with no re-login', () => {

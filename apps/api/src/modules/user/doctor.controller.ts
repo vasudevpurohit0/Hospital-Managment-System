@@ -107,7 +107,14 @@ export class DoctorController {
   ) {
     const result = await this.doctorService.impersonate(
       id,
-      { id: user.id, roleName: user.roleName, type: user.type, identifier: user.identifier, isImpersonating: !!user.impersonation },
+      {
+        id: user.id,
+        roleName: user.roleName,
+        type: user.type,
+        identifier: user.identifier,
+        isImpersonating: !!user.impersonation,
+        impersonation: user.impersonation,
+      },
       { ip: req.ip, userAgent: req.headers['user-agent'] },
     );
     setAccessTokenCookie(res, result.accessToken);

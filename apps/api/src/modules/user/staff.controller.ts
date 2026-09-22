@@ -130,7 +130,14 @@ export class StaffController {
   ) {
     const result = await this.staffService.impersonate(
       id,
-      { id: user.id, roleName: user.roleName, type: user.type, identifier: user.identifier, isImpersonating: !!user.impersonation },
+      {
+        id: user.id,
+        roleName: user.roleName,
+        type: user.type,
+        identifier: user.identifier,
+        isImpersonating: !!user.impersonation,
+        impersonation: user.impersonation,
+      },
       { ip: req.ip, userAgent: req.headers['user-agent'] },
     );
     // Keeps a cookie-based session's ambient credential in sync with the

@@ -339,12 +339,21 @@ export const AppShell: React.FC = () => {
             <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-sm shadow-sm">
               <span className="font-semibold text-red-900">
                 {'⚠'} IMPERSONATION MODE — You are currently signed in as{' '}
-                <strong>{user?.name || user?.role}</strong>. Original account:{' '}
-                <strong>{impersonation.impersonatorRoleName}</strong> ({impersonation.impersonatorIdentifier}).
+                <strong>{user?.name || user?.role}</strong>. Signed in from:{' '}
+                <strong>{impersonation.impersonatorRoleName}</strong> ({impersonation.impersonatorIdentifier})
+                {impersonation.root && (
+                  <>
+                    {' '}
+                    — chain: <strong>{impersonation.root.roleName}</strong> ({impersonation.root.identifier}) →{' '}
+                    {impersonation.impersonatorRoleName} → {user?.role}
+                  </>
+                )}
+                .
               </span>
               <button
                 onClick={exitImpersonation}
                 className="shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                title={impersonation.root ? 'Returns to the previous level in the chain, not straight to the original account' : undefined}
               >
                 Exit Impersonation
               </button>

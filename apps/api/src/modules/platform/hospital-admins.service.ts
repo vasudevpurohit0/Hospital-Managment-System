@@ -1,8 +1,11 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
+import { LoginDirectoryService } from '../../common/tenant/login-directory.service';
 import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
+import { runWithTenant } from '../../common/tenant/tenant-context';
+import { AuthService } from '../auth/auth.service';
 import { CreateHospitalAdminDto } from './dto/create-hospital-admin.dto';
 
 export interface HospitalAdminRecord {
@@ -30,6 +33,8 @@ export class HospitalAdminsService {
     private readonly platformPrisma: PlatformPrismaService,
     private readonly tenantClients: TenantClientFactory,
     private readonly userProvisioning: TenantUserProvisioningService,
+    private readonly loginDirectory: LoginDirectoryService,
+    private readonly authService: AuthService,
   ) {}
 
   private async requireOnboardedHospital(id: string) {
@@ -142,5 +147,79 @@ export class HospitalAdminsService {
       hospitalName: hospital.name,
       hospitalSlug: hospital.slug,
     };
+  }
+
+  /**
+   * Only a Super Admin can reach this (route is behind PlatformOnlyGuard),
+   * completing the impersonation chain AccountLifecycleService.impersonate()
+   * already guards for but could never reach on its own: that method refuses
+   * an Administrator target unless `actor.type === 'platform'`, but neither
+   * StaffService nor DoctorService's target lookup ever returns an
+   * Administrator-role user, so there was no route that could actually land
+   * a Super Admin on a Hospital Admin's session. This is that route --
+   * same eligibility rules (active, not mid first-login setup, not locked),
+   * same `issueImpersonationSession()`/audit-log machinery, just entered from
+   * the cross-hospital admin roster instead of one hospital's own tenant
+   * context (this hospital is resolved from the URL, not the caller's
+   * session, since a Super Admin has no "own" tenant to begin with).
+   */
+  async impersonate(
+    hospitalId: string,
+    userId: string,
+    platformUser: { id: string; identifier: string },
+    meta: { ip?: string; userAgent?: string } = {},
+  ): Promise<{ accessToken: string; expiresIn: string; target: { id: string; identifier: string; role: string; name: string } }> {
+    const hospital = await this.requireOnboardedHospital(hospitalId);
+    const client = await this.tenantClients.getClient(hospital.schemaName);
+
+    return runWithTenant({ hospitalId: hospital.id, schemaName: hospital.schemaName, prismaClient: client }, async () => {
+      const target = await client.user.findUnique({
+        where: { id: userId },
+        include: { role: true, employee: { select: { name: true } } },
+      });
+      if (!target || target.role?.name !== 'Administrator') {
+        throw new NotFoundException(`No Administrator with id "${userId}" found in ${hospital.name}.`);
+      }
+      if (!target.role) {
+        throw new InternalServerErrorException('Target account is not fully configured.');
+      }
+      if (!target.active) {
+        throw new BadRequestException('Cannot impersonate a deactivated account.');
+      }
+      if (target.mustChangePassword) {
+        throw new BadRequestException('Cannot impersonate an account that has not completed first-login setup yet.');
+      }
+      await this.loginDirectory.checkLock(target.identifier);
+
+      const session = await this.authService.issueImpersonationSession({
+        target: {
+          id: target.id,
+          identifier: target.identifier,
+          roleId: target.roleId,
+          roleName: target.role.name,
+          tokenVersion: target.tokenVersion,
+        },
+        hospitalId: hospital.id,
+        schemaName: hospital.schemaName,
+        impersonator: {
+          id: platformUser.id,
+          identifier: platformUser.identifier,
+          roleName: 'SuperAdmin',
+          type: 'platform',
+        },
+        meta,
+      });
+
+      return {
+        accessToken: session.accessToken,
+        expiresIn: session.expiresIn,
+        target: {
+          id: target.id,
+          identifier: target.identifier,
+          role: target.role.name,
+          name: target.employee?.name ?? target.identifier,
+        },
+      };
+    });
   }
 }

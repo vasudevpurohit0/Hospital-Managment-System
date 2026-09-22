@@ -206,6 +206,23 @@ export async function setHospitalAdminActive(
   return unwrap(res, 'Failed to update hospital admin');
 }
 
+export interface HospitalAdminImpersonationSession {
+  accessToken: string;
+  expiresIn: string;
+  target: { id: string; identifier: string; role: string; name: string };
+}
+
+/** Super-Admin-only: starts a secure impersonation session as this hospital's Administrator -- every eligibility rule (active/locked/pending status) is enforced server-side. */
+export async function impersonateHospitalAdmin(
+  hospitalId: string,
+  userId: string,
+): Promise<HospitalAdminImpersonationSession> {
+  const res = await apiFetch(`/api/platform/hospitals/${hospitalId}/admins/${userId}/impersonate`, {
+    method: 'POST',
+  });
+  return unwrap(res, 'Failed to start impersonation');
+}
+
 export async function listAuditLog(): Promise<AuditLogEntry[]> {
   const res = await apiFetch('/api/platform/audit-log');
   return unwrap(res, 'Failed to load audit log');
