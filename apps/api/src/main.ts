@@ -6,14 +6,6 @@ import { ExpressAdapter, NestExpressApplication } from '@nestjs/platform-express
 import express from 'express';
 import { resolveCorsOrigins } from './common/config/cors.util';
 import { PinoLoggerService } from './common/logging/pino-logger.service';
-import { Prisma } from '@prisma/client';
-
-// TEMP DIAGNOSTIC (docs/security-audit-2026-09-22 actorUserId investigation) --
-// remove once the cause of the production-only "Unknown argument actorUserId"
-// error is confirmed. Prints the generated client's actual AuditLog scalar
-// field list so we can tell, from a live container's logs, whether the
-// deployed node_modules/.prisma/client genuinely lacks actorUserId or not.
-console.log('[DIAG] AuditLogScalarFieldEnum:', JSON.stringify(Prisma.AuditLogScalarFieldEnum));
 
 const server = express();
 let isAppInitialized = false;
