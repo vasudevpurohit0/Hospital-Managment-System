@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { isPageAllowedForRole, getDefaultPageForRole, PAGE_ROLES, PageId } from '../components/layout/Sidebar';
+import {
+  isPageAllowedForRole,
+  getDefaultPageForRole,
+  PAGE_ROLES,
+  PageId,
+} from '../components/layout/Sidebar';
 
 /**
  * Regression coverage for the route-guard fix: before this, only the sidebar
@@ -58,7 +63,14 @@ describe('isPageAllowedForRole / getDefaultPageForRole', () => {
       'department-management',
       'activity-log',
     ];
-    const nonAdminRoles = ['Reception', 'Doctor', 'Pharmacist', 'Nurse', 'AdmissionDesk', 'Accountant'];
+    const nonAdminRoles = [
+      'Reception',
+      'Doctor',
+      'Pharmacist',
+      'Nurse',
+      'AdmissionDesk',
+      'Accountant',
+    ];
 
     for (const pageId of adminOnlyPages) {
       for (const role of nonAdminRoles) {

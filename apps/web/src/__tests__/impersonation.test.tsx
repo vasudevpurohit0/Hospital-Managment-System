@@ -15,14 +15,24 @@ function seedAdminSession() {
     JSON.stringify({
       mode: 'hospital',
       token: 'admin-token',
-      user: { id: 'admin-1', name: 'Administrator', email: 'admin@esic.gov.in', role: 'Administrator' },
+      user: {
+        id: 'admin-1',
+        name: 'Administrator',
+        email: 'admin@esic.gov.in',
+        role: 'Administrator',
+      },
       expiresAt: Date.now() + 8 * 60 * 60 * 1000,
       activeHospital: null,
     }),
   );
 }
 
-const nurseTarget = { id: 'nurse-1', identifier: 'nurse@esic.gov.in', role: 'Nurse', name: 'Target Nurse' };
+const nurseTarget = {
+  id: 'nurse-1',
+  identifier: 'nurse@esic.gov.in',
+  role: 'Nurse',
+  name: 'Target Nurse',
+};
 
 describe('useAuth impersonation', () => {
   beforeEach(() => {
@@ -58,7 +68,11 @@ describe('useAuth impersonation', () => {
 
     act(() => result.current.startImpersonation('target-token', nurseTarget));
     act(() =>
-      result.current.startImpersonation('other-token', { id: 'pharm-1', identifier: 'pharm@esic.gov.in', role: 'Pharmacist' }),
+      result.current.startImpersonation('other-token', {
+        id: 'pharm-1',
+        identifier: 'pharm@esic.gov.in',
+        role: 'Pharmacist',
+      }),
     );
 
     expect(result.current.token).toBe('target-token'); // unchanged
@@ -80,10 +94,12 @@ describe('useAuth impersonation', () => {
     const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
     const exitCall = calls.find((c) => String(c[0]).includes('/api/auth/exit-impersonation'));
     expect(exitCall).toBeDefined();
-    expect((exitCall![1].headers as Record<string, string>).Authorization).toBe('Bearer target-token');
+    expect((exitCall![1].headers as Record<string, string>).Authorization).toBe(
+      'Bearer target-token',
+    );
   });
 
-  it('logout() while impersonating revokes the ORIGINAL administrator session, never the impersonated target\'s', () => {
+  it("logout() while impersonating revokes the ORIGINAL administrator session, never the impersonated target's", () => {
     seedAdminSession();
     const { result } = renderHook(() => useAuth(), { wrapper });
 
@@ -97,7 +113,9 @@ describe('useAuth impersonation', () => {
     // have picked up from localStorage by default (which at call time is
     // still the impersonation token) -- this is the whole point of the
     // explicit-token override in useAuth's logout().
-    expect((logoutCall![1].headers as Record<string, string>).Authorization).toBe('Bearer admin-token');
+    expect((logoutCall![1].headers as Record<string, string>).Authorization).toBe(
+      'Bearer admin-token',
+    );
 
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.token).toBeNull();
