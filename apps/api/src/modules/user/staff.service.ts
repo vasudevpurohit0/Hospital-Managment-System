@@ -516,10 +516,19 @@ export class StaffService extends AccountLifecycleService<StaffDto> {
       actor,
       actor && actor.type !== 'platform' ? actor.id : 'default-roles',
       {
-        rolesCreated: created.map((c) => c.role),
-        rolesSkipped: skipped.map((s) => `${s.role} (${s.reason})`),
-        rolesFailed: failed.map((f) => `${f.role} (${f.reason})`),
-        requirePasswordChange,
+        // These aren't real AuditLog columns (there is no rolesCreated/rolesSkipped/
+        // rolesFailed/requirePasswordChange field on the model) -- passing them as
+        // top-level keys made Prisma's create() reject the whole call at runtime
+        // with a misleading "Unknown argument actorUserId" error, since valid and
+        // invalid keys were mixed in the same object. afterSnapshot is the real
+        // JSON field this codebase already uses elsewhere in this file for exactly
+        // this kind of free-form audit detail (see activated/deactivated above).
+        afterSnapshot: {
+          rolesCreated: created.map((c) => c.role),
+          rolesSkipped: skipped.map((s) => `${s.role} (${s.reason})`),
+          rolesFailed: failed.map((f) => `${f.role} (${f.reason})`),
+          requirePasswordChange,
+        },
       },
     );
 
