@@ -693,6 +693,11 @@ enum AuditSeverity {
   CRITICAL
 }
 
+// Cache-bust marker (2026-09-22 audit): forces the Dockerfile's `COPY apps/api/prisma`
+// layer to invalidate on the next build, since that layer's content hash was otherwise
+// unchanged across recent deploys -- Docker was reusing a cached `prisma generate` layer
+// from an older schema revision, which is why the deployed Prisma Client didn't recognize
+// actorUserId below despite it being a stable field. See docs/security-audit-2026-09-22.
 model AuditLog {
   id             String        @id @default(uuid()) @db.Uuid
   actorUserId    String?       @map("actor_user_id") @db.Uuid
