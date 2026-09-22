@@ -94,10 +94,25 @@ export async function exportAuditLogCsv(filters: AuditLogFilters = {}): Promise<
   return res.blob();
 }
 
+export type StaffAuditFilters = AuditLogFilters & { hospitalId?: string };
+
 /** Super Admin's cross-hospital Activity Log; omit hospitalId to search every active hospital (capped). */
-export async function fetchPlatformStaffAuditLog(
-  filters: AuditLogFilters & { hospitalId?: string } = {},
-): Promise<AuditLogPage> {
+export async function fetchPlatformStaffAuditLog(filters: StaffAuditFilters = {}): Promise<AuditLogPage> {
   const res = await apiFetch(`/api/platform/staff-audit-log?${buildParams(filters)}`);
   return unwrap(res, 'Failed to fetch cross-hospital activity log');
+}
+
+/** Same stat cards as fetchAuditLogStats(), summed across every active hospital when hospitalId is omitted. */
+export async function fetchPlatformStaffAuditLogStats(hospitalId?: string): Promise<AuditLogStats> {
+  const res = await apiFetch(`/api/platform/staff-audit-log/stats?${buildParams({ hospitalId })}`);
+  return unwrap(res, 'Failed to fetch cross-hospital activity log stats');
+}
+
+export async function exportPlatformStaffAuditLogCsv(filters: StaffAuditFilters = {}): Promise<Blob> {
+  const res = await apiFetch(`/api/platform/staff-audit-log/export.csv?${buildParams(filters)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to export cross-hospital activity log');
+  }
+  return res.blob();
 }

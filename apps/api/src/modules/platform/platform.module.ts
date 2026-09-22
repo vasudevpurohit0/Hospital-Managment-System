@@ -6,6 +6,7 @@ import { HospitalAdminsService } from './hospital-admins.service';
 import { PlatformAdminsController } from './platform-admins.controller';
 import { PlatformAdminsService } from './platform-admins.service';
 import { PlatformAuditLogController } from './platform-audit-log.controller';
+import { PlatformAuditLogService } from './platform-audit-log.service';
 import { PlatformDashboardController } from './platform-dashboard.controller';
 import { PlatformDashboardService } from './platform-dashboard.service';
 import { PlatformStaffAuditController } from './platform-staff-audit.controller';
@@ -24,6 +25,13 @@ import { AuthModule } from '../auth/auth.module';
     PlatformDashboardController,
     PlatformStaffAuditController,
   ],
-  providers: [HospitalsService, HospitalAdminsService, PlatformAdminsService, PlatformDashboardService, PlatformStaffAuditService],
+  providers: [
+    HospitalsService,
+    HospitalAdminsService,
+    PlatformAdminsService,
+    PlatformAuditLogService,
+    PlatformDashboardService,
+    PlatformStaffAuditService,
+  ],
 })
 export class PlatformModule {}

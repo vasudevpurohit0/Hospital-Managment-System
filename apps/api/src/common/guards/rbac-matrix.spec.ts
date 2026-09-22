@@ -227,6 +227,11 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
     reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
   },
   {
+    file: 'modules/platform/hospital-admins.controller.ts',
+    method: 'impersonate',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level -- completes the impersonation chain AccountLifecycleService.impersonate() already guards for (only a Super Admin may impersonate a Hospital Administrator) but had no reachable route before this.',
+  },
+  {
     file: 'modules/platform/platform-admins.controller.ts',
     method: 'list',
     reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
@@ -243,7 +248,17 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
   },
   {
     file: 'modules/platform/platform-audit-log.controller.ts',
-    method: 'list',
+    method: 'findAll',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-audit-log.controller.ts',
+    method: 'getStats',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/platform-audit-log.controller.ts',
+    method: 'exportCsv',
     reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
   },
   {
@@ -255,6 +270,16 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
     file: 'modules/platform/platform-staff-audit.controller.ts',
     method: 'findAll',
     reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level — the cross-hospital counterpart to the hospital-scoped /audit-log, which is Administrator:AuditLog:read-guarded instead.',
+  },
+  {
+    file: 'modules/platform/platform-staff-audit.controller.ts',
+    method: 'getStats',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level -- same as findAll() above.',
+  },
+  {
+    file: 'modules/platform/platform-staff-audit.controller.ts',
+    method: 'exportCsv',
+    reason: 'Platform (Super Admin) only, enforced by @UseGuards(PlatformOnlyGuard) at the controller level -- same as findAll() above.',
   },
 ];
 

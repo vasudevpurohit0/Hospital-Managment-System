@@ -50,12 +50,35 @@ export interface HospitalAdminRecord {
 export interface AuditLogEntry {
   id: string;
   action: string;
+  resource?: string | null;
   method: string | null;
   path: string | null;
+  metadata?: unknown;
   createdAt: string;
   platformUserEmail: string;
+  platformUserName?: string;
   hospitalName: string | null;
   hospitalSlug: string | null;
+}
+
+export interface PlatformAuditLogFilters {
+  q?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PlatformAuditLogPage {
+  items: AuditLogEntry[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
+}
+
+export interface PlatformAuditLogStats {
+  total: number;
+  last24h: number;
+  uniqueAdmins: number;
+  hospitalsTouched: number;
 }
 
 export interface HospitalMetrics {
@@ -223,9 +246,31 @@ export async function impersonateHospitalAdmin(
   return unwrap(res, 'Failed to start impersonation');
 }
 
-export async function listAuditLog(): Promise<AuditLogEntry[]> {
-  const res = await apiFetch('/api/platform/audit-log');
+function buildQuery(params: object): string {
+  const search = new URLSearchParams();
+  Object.entries(params as Record<string, string | number | undefined | null>).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') search.set(key, String(value));
+  });
+  return search.toString();
+}
+
+export async function listAuditLog(filters: PlatformAuditLogFilters = {}): Promise<PlatformAuditLogPage> {
+  const res = await apiFetch(`/api/platform/audit-log?${buildQuery(filters)}`);
   return unwrap(res, 'Failed to load audit log');
+}
+
+export async function fetchPlatformAuditLogStats(): Promise<PlatformAuditLogStats> {
+  const res = await apiFetch('/api/platform/audit-log/stats');
+  return unwrap(res, 'Failed to load audit log stats');
+}
+
+export async function exportPlatformAuditLogCsv(filters: Omit<PlatformAuditLogFilters, 'page' | 'limit'> = {}): Promise<Blob> {
+  const res = await apiFetch(`/api/platform/audit-log/export.csv?${buildQuery(filters)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to export audit log');
+  }
+  return res.blob();
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {
