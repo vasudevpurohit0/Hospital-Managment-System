@@ -1,5 +1,7 @@
 # ESIC Security Governance, RBAC Matrix & Disaster Recovery Runbook
 
+> **Correction (2026-09-22 independent security audit):** this document previously listed `GET /api/auth/csrf-token` as a real, universally-accessible endpoint. It does not exist — confirmed via both source (`security.middleware.ts`'s CSRF logic was deliberately *removed*, not implemented, per that file's own comment explaining why Bearer-token auth doesn't need it) and a live `404` against the deployed API. The row below has been removed. The Backup/Recovery and Incident Response sections further down describe an *intended* operational process that could not be corroborated against anything in this repository (backup schedules and incident tooling may legitimately live outside version control, e.g. in Railway's own configuration) — treat those sections as a target policy to verify against actual infrastructure, not a confirmed-implemented control, until someone checks and updates this note.
+
 ---
 
 ## 1. Role-by-Endpoint Permission Matrix (FR-SEC-01 - FR-SEC-07)
@@ -8,7 +10,6 @@ The table below defines the authoritative Access Control Matrix across all 10 sy
 
 | Route Group / Feature | Super Admin | Administrator | Doctor | Nurse | Pharmacist | Store Manager | Procurement Officer | Reception | DEO | Patient / User |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| `GET /api/auth/csrf-token` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `GET /api/branding` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `PUT /api/branding` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `POST /api/employees` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
