@@ -146,7 +146,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
       {lastDispensedRx && (
         <div className="hidden print:block p-8 font-sans bg-white text-black max-w-2xl mx-auto">
           <div className="text-center mb-6 border-b-2 border-black pb-4">
-            <h1 className="text-2xl font-bold uppercase tracking-wider mb-1">{hospitalName}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold uppercase tracking-wider mb-1">{hospitalName}</h1>
             <h2 className="text-lg font-semibold uppercase mb-1">Pharmacy Dispensing Label</h2>
             <p className="text-sm">Ministry of Labour &amp; Employment, Govt. of India</p>
           </div>
@@ -319,7 +319,7 @@ export const PharmacyWorkspace: React.FC<PharmacyWorkspaceProps> = ({ authToken 
         </div>
 
         {/* Selected Rx FEFO Dispense Panel (8 cols) */}
-        <div className="lg:col-span-8 card p-6 space-y-6">
+        <div className="lg:col-span-8 card p-4 sm:p-6 space-y-6">
           {selectedRx ? (
             <>
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-4 border-b border-[var(--color-border)]">

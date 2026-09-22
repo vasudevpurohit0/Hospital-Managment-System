@@ -159,10 +159,10 @@ export const ServicePricingScreen: React.FC<ServicePricingScreenProps> = ({ auth
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-4 sm:p-6 space-y-6">
       <div className="flex justify-between items-start pb-4 border-b border-gray-200 gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Service &amp; Pricing Master</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Service &amp; Pricing Master</h2>
           <p className="text-sm text-gray-500 max-w-3xl">
             Hospital rates for consultations, laboratory tests, therapies, procedures and packages.
             Changing a rate never alters a bill that has already been issued — the old rate is kept

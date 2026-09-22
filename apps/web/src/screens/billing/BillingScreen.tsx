@@ -69,7 +69,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
               <Receipt className="w-6 h-6 text-esic-primary" /> Pharmacy Counter &amp; Dispense Ledger
             </h1>
             <span className="px-2.5 py-0.5 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
@@ -158,7 +158,7 @@ export const BillingScreen: React.FC<BillingScreenProps> = ({ authToken, token }
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-max min-w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-500 uppercase font-bold border-b">
                 <tr>
                   <th className="p-3">Tx ID</th>

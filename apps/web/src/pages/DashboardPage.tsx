@@ -117,7 +117,7 @@ const MyWorkPanel: React.FC<{ summary: MyDashboardSummary | null; role: string }
       <div className="flex flex-wrap gap-6">
         {tiles.map((t) => (
           <div key={t.label}>
-            <p className="text-2xl font-bold text-[var(--color-text-primary)]">{t.value ?? '—'}</p>
+            <p className="text-xl sm:text-2xl font-bold text-[var(--color-text-primary)]">{t.value ?? '—'}</p>
             <p className="text-xs text-[var(--color-text-secondary)]">{t.label}</p>
           </div>
         ))}

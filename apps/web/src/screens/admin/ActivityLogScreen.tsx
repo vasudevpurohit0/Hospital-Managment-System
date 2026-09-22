@@ -159,7 +159,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="card p-6 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             <ScrollText className="w-6 h-6 text-primary-600" />
             Activity Logs
           </h1>
@@ -198,7 +198,7 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = () => {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-[var(--color-text-primary)]">
+          <p className="text-xl sm:text-2xl font-bold text-[var(--color-text-primary)]">
             {stats?.total ?? '—'}
           </p>
           <p className="text-[11px] uppercase tracking-wide text-[var(--color-text-tertiary)] mt-1">
@@ -206,19 +206,19 @@ export const ActivityLogScreen: React.FC<ActivityLogScreenProps> = () => {
           </p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-primary-600">{stats?.last24h ?? '—'}</p>
+          <p className="text-xl sm:text-2xl font-bold text-primary-600">{stats?.last24h ?? '—'}</p>
           <p className="text-[11px] uppercase tracking-wide text-[var(--color-text-tertiary)] mt-1">
             Last 24 Hours
           </p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-red-600">{stats?.critical ?? '—'}</p>
+          <p className="text-xl sm:text-2xl font-bold text-red-600">{stats?.critical ?? '—'}</p>
           <p className="text-[11px] uppercase tracking-wide text-[var(--color-text-tertiary)] mt-1">
             Critical
           </p>
         </div>
         <div className="card p-4 text-center">
-          <p className="text-2xl font-bold text-amber-600">{stats?.failedLogins ?? '—'}</p>
+          <p className="text-xl sm:text-2xl font-bold text-amber-600">{stats?.failedLogins ?? '—'}</p>
           <p className="text-[11px] uppercase tracking-wide text-[var(--color-text-tertiary)] mt-1">
             Failed Logins
           </p>

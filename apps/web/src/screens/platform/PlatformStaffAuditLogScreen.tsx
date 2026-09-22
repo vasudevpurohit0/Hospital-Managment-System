@@ -51,7 +51,7 @@ export const PlatformStaffAuditLogScreen: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="card p-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
+        <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
           <ScrollText className="w-6 h-6 text-primary-600" />
           Staff Activity Log
         </h1>

@@ -43,7 +43,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           <p className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
             {title}
           </p>
-          <h3 className="text-2xl font-bold text-[var(--color-text-primary)] mt-1 tracking-tight">
+          <h3 className="text-xl sm:text-2xl font-bold text-[var(--color-text-primary)] mt-1 tracking-tight">
             {value}
           </h3>
         </div>

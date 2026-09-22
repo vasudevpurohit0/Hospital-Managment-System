@@ -165,6 +165,10 @@
   --z-sticky: 200;
   --z-sidebar: 300;
   --z-topnav: 400;
+  /* The mobile nav drawer must cover the TopNav (400), unlike the desktop
+     sidebar which sits beside it -- hence a layer above rather than --z-sidebar. */
+  --z-sidebar-backdrop: 450;
+  --z-sidebar-drawer: 460;
   --z-modal-backdrop: 500;
   --z-modal: 600;
   --z-notification: 700;
@@ -231,6 +235,16 @@
     line-height: var(--leading-normal);
     color: var(--color-text-primary);
     background-color: var(--color-bg);
+  }
+
+  /* Backstop only. Every known overflow source is fixed at its root (drawer
+     nav, min-w-0 on the main column, fluid auto-fit grids, overflow-x-auto on
+     table wrappers); this catches anything added later so a single stray wide
+     element degrades into a clipped edge rather than shifting the whole page
+     sideways. `clip` -- not `hidden` -- because `hidden` on <body> would make
+     position:sticky table headers stop sticking. */
+  html {
+    overflow-x: clip;
   }
 
   ::selection {

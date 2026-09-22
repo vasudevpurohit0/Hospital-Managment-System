@@ -116,7 +116,7 @@ export const PlatformDashboardScreen: React.FC = () => {
               <Building2 className="w-3.5 h-3.5 text-secondary-400" />
               Platform Console
             </div>
-            <h1 className="text-2xl font-bold">Every hospital, one view</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">Every hospital, one view</h1>
             <p className="text-sm text-primary-200/80 mt-1">
               {hospitalCounts.active} active, {hospitalCounts.suspended} suspended, {hospitalCounts.provisioning}{' '}
               provisioning across {hospitalCounts.total} total hospitals.

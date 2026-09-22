@@ -147,7 +147,7 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
       {/* Header Banner */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between md:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
             <span>⚙️</span> System Configuration & Security Governance
           </h1>
           <p className="text-sm text-gray-500 mt-1">

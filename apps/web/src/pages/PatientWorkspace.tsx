@@ -143,7 +143,7 @@ export const PatientWorkspace: React.FC<PatientMasterProps> = ({
       )}
 
       {activeTab === 'timeline' && (
-        <div className="card p-6 space-y-6">
+        <div className="card p-4 sm:p-6 space-y-6">
           <div className="flex items-center justify-between border-b pb-2">
             <h3 className="font-bold text-base text-[var(--color-text-primary)]">
               Visit History
