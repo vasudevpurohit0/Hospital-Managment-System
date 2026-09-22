@@ -8,17 +8,31 @@ export default {
   theme: {
     extend: {
       colors: {
+        // AAYUSH SAARTHI navy — the dominant structural colour
         primary: {
-          50: '#EFF6FF',
-          100: '#DBEAFE',
-          200: '#BFDBFE',
-          300: '#93C5FD',
-          400: '#60A5FA',
-          500: '#0F4C81',
-          600: '#0B3D6E',
-          700: '#082F58',
-          800: '#051E3A',
-          900: '#0B1A32',
+          50: '#F1F6FA',
+          100: '#DEEAF3',
+          200: '#BCD2E5',
+          300: '#8FB0CE',
+          400: '#4A7BA6',
+          500: '#062B4F',
+          600: '#052340',
+          700: '#031C33',
+          800: '#021325',
+          900: '#010C18',
+        },
+        // AAYUSH SAARTHI orange — actions, active states, highlights only
+        accent: {
+          50: '#FFF1E3',
+          100: '#FFE1C6',
+          200: '#FFC895',
+          300: '#FDA85C',
+          400: '#FB9230',
+          500: '#F97D09',
+          600: '#E06E05',
+          700: '#B85903',
+          800: '#8F4502',
+          900: '#6B3401',
         },
         secondary: {
           50: '#F0FDFA',
@@ -46,11 +60,11 @@ export default {
           tertiary: 'var(--color-text-tertiary)',
         },
         success: {
-          50: '#F0FDF4',
-          100: '#DCFCE7',
-          500: '#059669',
-          600: '#047857',
-          700: '#065F46',
+          50: '#ECFAF1',
+          100: '#D1F0DE',
+          500: '#1E8A4F',
+          600: '#17703F',
+          700: '#115631',
         },
         warning: {
           50: '#FFFBEB',
@@ -65,13 +79,20 @@ export default {
           600: '#B91C1C',
         },
         // Legacy alias for existing Tailwind classes
-        'esic-primary': '#0F4C81',
-        'esic-primary-dark': '#0B3D6E',
+        'esic-primary': '#062B4F',
+        'esic-primary-dark': '#031C33',
         'esic-secondary': '#0D9488',
-        'esic-accent': '#0891b2',
+        'esic-accent': '#F97D09',
+        // Canonical AAYUSH SAARTHI brand values from the approved design
+        'saarthi-navy': '#062B4F',
+        'saarthi-navy-dark': '#031C33',
+        'saarthi-orange': '#F97D09',
+        'saarthi-orange-light': '#FFF1E3',
+        'saarthi-canvas': '#F8F7F3',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        sans: ['Inter', 'Noto Sans Devanagari', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+        devanagari: ['Noto Sans Devanagari', 'Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'monospace'],
       },
       fontSize: {
@@ -92,7 +113,7 @@ export default {
       },
       boxShadow: {
         'xs': '0 1px 2px rgba(0, 0, 0, 0.04)',
-        'focus': '0 0 0 3px rgba(15, 76, 129, 0.15)',
+        'focus': '0 0 0 3px rgba(249, 125, 9, 0.18)',
       },
       borderRadius: {
         'xl': '0.75rem',

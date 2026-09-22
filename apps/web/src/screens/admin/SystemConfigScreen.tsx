@@ -29,7 +29,7 @@ export const SystemConfigScreen: React.FC<SystemConfigScreenProps> = ({ authToke
   // Form states
   const [hospitalName, setHospitalName] = useState('');
   const [tagline, setTagline] = useState('');
-  const [primaryColor, setPrimaryColor] = useState('#005691');
+  const [primaryColor, setPrimaryColor] = useState('#062B4F');
   const [logoUrl, setLogoUrl] = useState('');
 
   // Hospital settings form state
