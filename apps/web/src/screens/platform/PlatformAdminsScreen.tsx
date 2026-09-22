@@ -14,6 +14,7 @@ import {
 } from '../../api/platform.api';
 import { useAuth } from '../../hooks/useAuth';
 import { ConfirmModal } from '../../components/ConfirmModal';
+import { AccountCreatedModal } from '../../components/AccountCreatedModal';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
 import { ShieldCheck, Building2, Plus, RefreshCw, Ban, RotateCcw, X, UserCog } from 'lucide-react';
@@ -69,6 +70,10 @@ export const PlatformAdminsScreen: React.FC = () => {
   const [pendingHospitalAdminToggle, setPendingHospitalAdminToggle] = useState<HospitalAdminRecord | null>(null);
   const [togglingHospitalAdmin, setTogglingHospitalAdmin] = useState(false);
   const [hospitalAdminToggleError, setHospitalAdminToggleError] = useState<string | null>(null);
+
+  const [createdHospitalAdmin, setCreatedHospitalAdmin] = useState<{ hospitalName: string; identifier: string; password: string } | null>(
+    null,
+  );
 
   const load = async () => {
     setLoading(true);
@@ -139,8 +144,13 @@ export const PlatformAdminsScreen: React.FC = () => {
     setCreatingHospitalAdmin(true);
     setCreateHospitalAdminError(null);
     try {
-      await createHospitalAdmin(newAdminHospitalId, newAdminIdentifier, newAdminPassword);
+      const admin = await createHospitalAdmin(newAdminHospitalId, newAdminIdentifier, newAdminPassword);
       setShowCreateHospitalAdmin(false);
+      // Shown once, immediately -- same reasoning as CreateHospitalScreen:
+      // this password was just typed into this form by the Super Admin, so
+      // nothing new is exposed; this just stops it being silently lost the
+      // moment the form clears on success.
+      setCreatedHospitalAdmin({ hospitalName: admin.hospitalName, identifier: newAdminIdentifier, password: newAdminPassword });
       setNewAdminHospitalId('');
       setNewAdminIdentifier('');
       setNewAdminPassword('');
@@ -484,6 +494,16 @@ export const PlatformAdminsScreen: React.FC = () => {
           busy={togglingHospitalAdmin}
           onConfirm={confirmHospitalAdminToggle}
           onCancel={() => setPendingHospitalAdminToggle(null)}
+        />
+      )}
+
+      {createdHospitalAdmin && (
+        <AccountCreatedModal
+          name={`${createdHospitalAdmin.hospitalName} — Administrator`}
+          role="Administrator"
+          email={createdHospitalAdmin.identifier}
+          password={createdHospitalAdmin.password}
+          onClose={() => setCreatedHospitalAdmin(null)}
         />
       )}
     </div>

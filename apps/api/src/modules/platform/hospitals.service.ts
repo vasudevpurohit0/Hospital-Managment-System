@@ -13,11 +13,25 @@ import * as bcrypt from 'bcryptjs';
 import { PlatformPrismaService } from '../../common/tenant/platform-prisma.service';
 import { TenantClientFactory } from '../../common/tenant/tenant-client-factory';
 import { TenantUserProvisioningService } from '../../common/tenant/tenant-user-provisioning.service';
+import { runWithTenant } from '../../common/tenant/tenant-context';
 import { recordPlatformAuditLog } from '../../common/tenant/platform-audit.util';
+import { StaffService } from '../user/staff.service';
+import { TEMP_PASSWORD_TTL_MS } from '../user/account-lifecycle.service';
+import { DEFAULT_BULK_ROLES } from '../user/dto/create-default-roles.dto';
 import { CreateHospitalDto } from './dto/create-hospital.dto';
 import { UpdateHospitalDto } from './dto/update-hospital.dto';
 import { UpdateHospitalStatusDto } from './dto/update-hospital-status.dto';
 import { ResetHospitalUserPasswordDto } from './dto/reset-hospital-user-password.dto';
+import { ResetAllHospitalUserPasswordsDto } from './dto/reset-all-hospital-user-passwords.dto';
+
+/**
+ * Every auto-created role account for a newly onboarded hospital, EXCEPT
+ * Doctor and Administrator: Administrator is provisioned separately (its own
+ * identifier, via provisionAdministrator), and Doctor accounts are
+ * deliberately never auto-created -- a hospital's real doctors are added by
+ * its own Administrator afterward, not seeded as placeholders.
+ */
+const HOSPITAL_ONBOARDING_ROLES = DEFAULT_BULK_ROLES.filter((r) => r !== 'Doctor');
 
 const execFileAsync = promisify(execFile);
 
@@ -50,7 +64,39 @@ export class HospitalsService {
     private readonly platformPrisma: PlatformPrismaService,
     private readonly tenantClients: TenantClientFactory,
     private readonly userProvisioning: TenantUserProvisioningService,
+    private readonly staffService: StaffService,
   ) { }
+
+  /**
+   * Auto-creates the standard non-Doctor, non-Administrator role roster for a
+   * freshly onboarded hospital, all sharing `initialPassword` -- hashed
+   * independently per account by StaffService.createStaff/createDoctor, each
+   * forced to change it on first login. Runs inside runWithTenant() because
+   * StaffService (like every AccountLifecycleService subclass) reads/writes
+   * through PrismaService, which resolves the active tenant from
+   * AsyncLocalStorage rather than a hospitalId parameter -- there is no
+   * HTTP request/TenantResolutionMiddleware here to have set that up already.
+   */
+  private async provisionDefaultRoleAccounts(
+    schemaName: string,
+    hospitalId: string,
+    initialPassword: string,
+    confirmPassword: string,
+    platformUserId: string,
+  ) {
+    const client = await this.tenantClients.getClient(schemaName);
+    return runWithTenant({ hospitalId, schemaName, prismaClient: client }, () =>
+      this.staffService.createDefaultRoleAccounts(
+        {
+          initialPassword,
+          confirmPassword,
+          roles: [...HOSPITAL_ONBOARDING_ROLES],
+          requirePasswordChange: true,
+        },
+        { id: platformUserId, roleName: 'SuperAdmin', type: 'platform' },
+      ),
+    );
+  }
 
   async list() {
     return this.platformPrisma.hospital.findMany({ orderBy: { createdAt: 'desc' } });
@@ -100,7 +146,14 @@ export class HospitalsService {
       await this.runMigrateDeploy(schemaName);
       await this.runSeed(schemaName);
       await this.userProvisioning.registerSeededIdentifiers(schemaName, hospital.id);
-      await this.userProvisioning.provisionAdministrator(schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
+      await this.userProvisioning.provisionAdministrator(schemaName, hospital.id, dto.adminIdentifier, dto.initialPassword);
+      const roleAccounts = await this.provisionDefaultRoleAccounts(
+        schemaName,
+        hospital.id,
+        dto.initialPassword,
+        dto.confirmPassword,
+        platformUserId,
+      );
 
       const activated = await this.platformPrisma.hospital.update({
         where: { id: hospital.id },
@@ -111,9 +164,11 @@ export class HospitalsService {
         action: 'hospital.create',
         hospitalId: hospital.id,
         resource: 'Hospital',
-        metadata: { name: dto.name, slug: dto.slug },
+        // Roles/identifiers only -- never the password, same as the summary
+        // audit createDefaultRoleAccounts already writes on the tenant side.
+        metadata: { name: dto.name, slug: dto.slug, rolesCreated: roleAccounts.created.map((c) => c.role) },
       });
-      return activated;
+      return { ...activated, adminIdentifier: dto.adminIdentifier, roleAccounts };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Onboarding failed for hospital "${dto.slug}": ${message}`);
@@ -143,7 +198,14 @@ export class HospitalsService {
       await this.runMigrateDeploy(hospital.schemaName);
       await this.runSeed(hospital.schemaName);
       await this.userProvisioning.registerSeededIdentifiers(hospital.schemaName, hospital.id);
-      await this.userProvisioning.provisionAdministrator(hospital.schemaName, hospital.id, dto.adminIdentifier, dto.adminPassword);
+      await this.userProvisioning.provisionAdministrator(hospital.schemaName, hospital.id, dto.adminIdentifier, dto.initialPassword);
+      const roleAccounts = await this.provisionDefaultRoleAccounts(
+        hospital.schemaName,
+        hospital.id,
+        dto.initialPassword,
+        dto.confirmPassword,
+        platformUserId,
+      );
 
       const activated = await this.platformPrisma.hospital.update({
         where: { id: hospital.id },
@@ -154,8 +216,9 @@ export class HospitalsService {
         action: 'hospital.resume_provisioning',
         hospitalId: hospital.id,
         resource: 'Hospital',
+        metadata: { rolesCreated: roleAccounts.created.map((c) => c.role) },
       });
-      return activated;
+      return { ...activated, adminIdentifier: dto.adminIdentifier, roleAccounts };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to resume hospital onboarding for "${hospital.slug}": ${message}`);
@@ -243,6 +306,9 @@ export class HospitalsService {
    * arbitrary and less useful restriction.
    */
   async resetHospitalUserPassword(id: string, dto: ResetHospitalUserPasswordDto, platformUserId: string) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('New password and confirmation do not match.');
+    }
     const hospital = await this.requireHospital(id);
     const client = await this.tenantClients.getClient(hospital.schemaName);
     // Tenant User.identifier is always stored lowercased (see
@@ -255,7 +321,20 @@ export class HospitalsService {
       throw new NotFoundException(`No user "${dto.identifier}" found in ${hospital.name}.`);
     }
     const passwordHash = await bcrypt.hash(dto.newPassword, 10);
-    await client.user.update({ where: { id: user.id }, data: { passwordHash } });
+    await client.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        // A Platform-Admin-issued reset is a temporary credential exactly
+        // like every other reset path in this app -- must be changed on
+        // next login, and every outstanding token for this user is
+        // invalidated immediately, not left valid until it naturally expires.
+        mustChangePassword: true,
+        passwordChangedAt: null,
+        tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_TTL_MS),
+        tokenVersion: { increment: 1 },
+      },
+    });
     // Never record the new password itself -- only that a reset happened and
     // for whom, matching the lesson from the plaintext-temp-password-in-audit-log
     // issue found elsewhere in this codebase.
@@ -267,6 +346,53 @@ export class HospitalsService {
       metadata: { identifier: normalizedIdentifier },
     });
     return { reset: true, identifier: dto.identifier };
+  }
+
+  /**
+   * Bulk equivalent of resetHospitalUserPassword(): resets every ACTIVE
+   * user's password in one hospital to the same new temporary password,
+   * each hashed independently, each forced to change it on next login. Never
+   * touches a deactivated account (an admin who wants a specific deactivated
+   * user reset must reactivate it first, a deliberate extra step so this
+   * can't be used to silently bring back an intentionally disabled account)
+   * or any other hospital's schema -- the tenant client is resolved from
+   * `id` alone, never anything the caller sends about which rows to affect.
+   */
+  async resetAllHospitalUserPasswords(id: string, dto: ResetAllHospitalUserPasswordsDto, platformUserId: string) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException('New password and confirmation do not match.');
+    }
+    const hospital = await this.requireHospital(id);
+    const client = await this.tenantClients.getClient(hospital.schemaName);
+
+    const users = await client.user.findMany({ where: { active: true }, select: { id: true, identifier: true } });
+    const passwordHash = await bcrypt.hash(dto.newPassword, 10);
+
+    for (const user of users) {
+      await client.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          mustChangePassword: true,
+          passwordChangedAt: null,
+          tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_TTL_MS),
+          tokenVersion: { increment: 1 },
+        },
+      });
+    }
+
+    // One summary entry, not one per user -- matches the pattern
+    // StaffService.createDefaultRoleAccounts already uses for the same
+    // "many accounts, one administrative action" shape. Never the password.
+    await recordPlatformAuditLog(this.platformPrisma, {
+      platformUserId,
+      action: 'hospital.reset_all_user_passwords',
+      hospitalId: id,
+      resource: 'User',
+      metadata: { affectedCount: users.length, identifiers: users.map((u) => u.identifier) },
+    });
+
+    return { reset: true, affectedCount: users.length, identifiers: users.map((u) => u.identifier) };
   }
 
   /**

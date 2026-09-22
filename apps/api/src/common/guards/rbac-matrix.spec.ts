@@ -208,6 +208,11 @@ const ALLOWED_WITHOUT_GUARD: { file: string; method: string; reason: string }[] 
   },
   {
     file: 'modules/platform/hospitals.controller.ts',
+    method: 'resetAllPasswords',
+    reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
+  },
+  {
+    file: 'modules/platform/hospitals.controller.ts',
     method: 'remove',
     reason: 'Same as list() above — enforced by @UseGuards(PlatformOnlyGuard) at the controller level.',
   },

@@ -1,10 +1,6 @@
 import { IsNotEmpty, IsString, MinLength } from 'class-validator';
 
-export class ResetHospitalUserPasswordDto {
-  @IsString()
-  @IsNotEmpty()
-  identifier!: string;
-
+export class ResetAllHospitalUserPasswordsDto {
   @IsString()
   @MinLength(8)
   newPassword!: string;

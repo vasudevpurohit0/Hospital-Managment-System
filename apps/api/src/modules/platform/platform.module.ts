@@ -14,9 +14,10 @@ import { PlatformStaffAuditService } from './platform-staff-audit.service';
 import { DashboardModule } from '../dashboard/dashboard.module';
 import { AuditLogModule } from '../audit/audit-log.module';
 import { AuthModule } from '../auth/auth.module';
+import { UserModule } from '../user/user.module';
 
 @Module({
-  imports: [DashboardModule, AuditLogModule, AuthModule],
+  imports: [DashboardModule, AuditLogModule, AuthModule, UserModule],
   controllers: [
     HospitalsController,
     HospitalAdminsController,

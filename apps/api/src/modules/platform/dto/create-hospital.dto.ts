@@ -18,9 +18,20 @@ export class CreateHospitalDto {
   @IsNotEmpty()
   adminIdentifier!: string;
 
+  /**
+   * Used as the first Administrator's password AND (see
+   * HospitalsService.createHospital) as the shared onboarding password for
+   * every other auto-created role account for this hospital -- one initial
+   * credential per hospital, not one per account, but still hashed
+   * independently per User row and forced to change on first login.
+   */
   @IsString()
   @MinLength(8)
-  adminPassword!: string;
+  initialPassword!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  confirmPassword!: string;
 
   @IsOptional()
   @IsEmail()

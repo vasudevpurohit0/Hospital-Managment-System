@@ -17,10 +17,26 @@ export interface CreateHospitalPayload {
   name: string;
   slug: string;
   adminIdentifier: string;
-  adminPassword: string;
+  /** Used for the first Administrator AND shared as the onboarding password for every other auto-created role account (Nurse, Receptionist, Pharmacist, etc. -- never Doctor, which is never auto-created). */
+  initialPassword: string;
+  confirmPassword: string;
   contactEmail?: string;
   contactPhone?: string;
   address?: string;
+}
+
+export interface CreatedRoleAccount {
+  role: string;
+  identifier: string;
+}
+
+export interface CreateHospitalResult extends HospitalRecord {
+  adminIdentifier: string;
+  roleAccounts: {
+    created: CreatedRoleAccount[];
+    skipped: { role: string; identifier: string; reason: string }[];
+    failed: { role: string; identifier: string; reason: string }[];
+  };
 }
 
 export interface UpdateHospitalPayload {
@@ -129,12 +145,24 @@ export async function listHospitals(): Promise<HospitalRecord[]> {
   return unwrap(res, 'Failed to load hospitals');
 }
 
-export async function createHospital(payload: CreateHospitalPayload): Promise<HospitalRecord> {
+export async function createHospital(payload: CreateHospitalPayload): Promise<CreateHospitalResult> {
   const res = await apiFetch('/api/platform/hospitals', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
   return unwrap(res, 'Failed to create hospital');
+}
+
+export async function resetAllHospitalUserPasswords(
+  hospitalId: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<{ reset: true; affectedCount: number; identifiers: string[] }> {
+  const res = await apiFetch(`/api/platform/hospitals/${hospitalId}/reset-all-passwords`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword, confirmPassword }),
+  });
+  return unwrap(res, 'Failed to reset hospital user passwords');
 }
 
 export async function getHospital(id: string): Promise<HospitalRecord> {
@@ -162,10 +190,11 @@ export async function resetHospitalUserPassword(
   id: string,
   identifier: string,
   newPassword: string,
+  confirmPassword: string,
 ): Promise<{ reset: boolean; identifier: string }> {
   const res = await apiFetch(`/api/platform/hospitals/${id}/reset-password`, {
     method: 'POST',
-    body: JSON.stringify({ identifier, newPassword }),
+    body: JSON.stringify({ identifier, newPassword, confirmPassword }),
   });
   return unwrap(res, 'Failed to reset password');
 }

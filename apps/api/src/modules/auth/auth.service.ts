@@ -214,6 +214,11 @@ export class AuthService {
       throw err;
     }
 
+    // Captured before the lastLoginAt write below overwrites it -- this is
+    // the only point that can ever tell "never logged in before" apart from
+    // "logged in a long time ago."
+    const isFirstLogin = !user.lastLoginAt;
+
     await this.prisma.loginActivity
       .create({ data: { userId: user.id, identifier: loginDto.identifier, success: true, ipAddress: meta.ip, userAgent: meta.userAgent } })
       .catch(() => undefined);
@@ -248,6 +253,27 @@ export class AuthService {
         },
       })
       .catch(() => undefined);
+
+    if (isFirstLogin) {
+      await this.prisma.auditLog
+        .create({
+          data: {
+            actorUserId: user.id,
+            actorRole: roleName,
+            action: 'auth.first_login',
+            entityType: 'Auth',
+            entityId: user.id,
+            status: 'SUCCESS',
+            severity: 'LOW',
+            description: `First login for "${loginDto.identifier}" since account creation`,
+            ipAddress: meta.ip,
+            browser,
+            os,
+            device,
+          },
+        })
+        .catch(() => undefined);
+    }
 
     const payload: JwtPayload = {
       sub: user.id,

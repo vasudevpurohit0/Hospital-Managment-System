@@ -5,13 +5,27 @@ import {
   deleteHospital,
   updateHospital,
   resetHospitalUserPassword,
+  resetAllHospitalUserPasswords,
   HospitalRecord,
 } from '../../api/platform.api';
 import { useAuth } from '../../hooks/useAuth';
 import { ConfirmModal } from '../../components/ConfirmModal';
 import { DataTable, Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/Badge';
-import { Building2, Plus, RefreshCw, LogIn, Pencil, KeyRound, PauseCircle, PlayCircle, Trash2, X } from 'lucide-react';
+import {
+  Building2,
+  Plus,
+  RefreshCw,
+  LogIn,
+  Pencil,
+  KeyRound,
+  Users,
+  PauseCircle,
+  PlayCircle,
+  Trash2,
+  X,
+  AlertTriangle,
+} from 'lucide-react';
 import { formatDateDefault } from '../../utils/date';
 
 interface HospitalsListScreenProps {
@@ -36,9 +50,17 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
   const [resetting, setResetting] = useState<HospitalRecord | null>(null);
   const [resetIdentifier, setResetIdentifier] = useState('');
   const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetSaving, setResetSaving] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  const [resettingAll, setResettingAll] = useState<HospitalRecord | null>(null);
+  const [resetAllPassword, setResetAllPassword] = useState('');
+  const [resetAllConfirmPassword, setResetAllConfirmPassword] = useState('');
+  const [resetAllSaving, setResetAllSaving] = useState(false);
+  const [resetAllError, setResetAllError] = useState<string | null>(null);
+  const [resetAllSuccess, setResetAllSuccess] = useState<string | null>(null);
 
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -86,6 +108,7 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
     setResetting(h);
     setResetIdentifier('');
     setResetPassword('');
+    setResetConfirmPassword('');
     setResetError(null);
     setResetSuccess(null);
   };
@@ -93,17 +116,54 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
   const saveReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetting) return;
+    if (resetPassword !== resetConfirmPassword) {
+      setResetError('New password and confirmation do not match.');
+      return;
+    }
     setResetSaving(true);
     setResetError(null);
     setResetSuccess(null);
     try {
-      await resetHospitalUserPassword(resetting.id, resetIdentifier, resetPassword);
-      setResetSuccess(`Password reset for ${resetIdentifier}.`);
+      await resetHospitalUserPassword(resetting.id, resetIdentifier, resetPassword, resetConfirmPassword);
+      setResetSuccess(`Password reset for ${resetIdentifier}. They must set a new password on next login.`);
       setResetPassword('');
+      setResetConfirmPassword('');
     } catch (err: unknown) {
       setResetError((err as Error).message || 'Failed to reset password');
     } finally {
       setResetSaving(false);
+    }
+  };
+
+  const openResetAll = (h: HospitalRecord) => {
+    setResettingAll(h);
+    setResetAllPassword('');
+    setResetAllConfirmPassword('');
+    setResetAllError(null);
+    setResetAllSuccess(null);
+  };
+
+  const saveResetAll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resettingAll) return;
+    if (resetAllPassword !== resetAllConfirmPassword) {
+      setResetAllError('New password and confirmation do not match.');
+      return;
+    }
+    setResetAllSaving(true);
+    setResetAllError(null);
+    setResetAllSuccess(null);
+    try {
+      const result = await resetAllHospitalUserPasswords(resettingAll.id, resetAllPassword, resetAllConfirmPassword);
+      setResetAllSuccess(
+        `Reset ${result.affectedCount} account${result.affectedCount === 1 ? '' : 's'}. Every affected user must set a new password on next login.`,
+      );
+      setResetAllPassword('');
+      setResetAllConfirmPassword('');
+    } catch (err: unknown) {
+      setResetAllError((err as Error).message || 'Failed to reset passwords');
+    } finally {
+      setResetAllSaving(false);
     }
   };
 
@@ -209,6 +269,15 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
             >
               <KeyRound className="w-3.5 h-3.5" />
               Reset
+            </button>
+            <button
+              onClick={() => openResetAll(h)}
+              disabled={h.status === 'PROVISIONING'}
+              className="btn btn-secondary btn-sm gap-1"
+              title="Reset every active user's password in this hospital"
+            >
+              <Users className="w-3.5 h-3.5" />
+              Reset All
             </button>
             {h.status === 'ACTIVE' && (
               <button
@@ -317,12 +386,87 @@ export const HospitalsListScreen: React.FC<HospitalsListScreenProps> = ({ onCrea
                 className="input"
               />
             </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Confirm password</label>
+              <input
+                type="password"
+                value={resetConfirmPassword}
+                onChange={(e) => setResetConfirmPassword(e.target.value)}
+                required
+                minLength={8}
+                disabled={resetSaving}
+                className="input"
+              />
+            </div>
+            <p className="text-[11px] text-[var(--color-text-tertiary)]">
+              This is a temporary password -- the user must set their own on next login, and any session they currently
+              have open is immediately invalidated.
+            </p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setResetting(null)} disabled={resetSaving} className="btn btn-secondary">
                 Close
               </button>
               <button type="submit" disabled={resetSaving} className="btn btn-primary">
                 {resetSaving ? 'Resetting...' : 'Reset Password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {resettingAll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overlay-backdrop px-4">
+          <form onSubmit={saveResetAll} className="w-full max-w-sm card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Reset All User Passwords</h2>
+              <button type="button" onClick={() => setResettingAll(null)} className="btn btn-ghost btn-icon">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="alert-warning flex items-start gap-2 text-sm">
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                You are about to reset the passwords for all eligible (active) users belonging to{' '}
+                <strong>{resettingAll.name}</strong>. Deactivated, locked-out-by-admin, and other hospitals' users are
+                never affected.
+              </span>
+            </div>
+            {resetAllError && <div className="alert-danger">{resetAllError}</div>}
+            {resetAllSuccess && <div className="alert-success">{resetAllSuccess}</div>}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">New initial password</label>
+              <input
+                type="password"
+                value={resetAllPassword}
+                onChange={(e) => setResetAllPassword(e.target.value)}
+                required
+                minLength={8}
+                disabled={resetAllSaving}
+                className="input"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-[var(--color-text-secondary)]">Confirm password</label>
+              <input
+                type="password"
+                value={resetAllConfirmPassword}
+                onChange={(e) => setResetAllConfirmPassword(e.target.value)}
+                required
+                minLength={8}
+                disabled={resetAllSaving}
+                className="input"
+              />
+            </div>
+            <p className="text-[11px] text-[var(--color-text-tertiary)]">
+              Every affected account gets its own password hash and must set a personal password on next login. This
+              does not change roles, permissions, or profile information.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setResettingAll(null)} disabled={resetAllSaving} className="btn btn-secondary">
+                Close
+              </button>
+              <button type="submit" disabled={resetAllSaving} className="btn btn-danger">
+                {resetAllSaving ? 'Resetting...' : 'Confirm Reset'}
               </button>
             </div>
           </form>
