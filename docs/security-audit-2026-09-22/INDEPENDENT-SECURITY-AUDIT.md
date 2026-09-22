@@ -3,7 +3,7 @@
 **Date started:** 2026-09-22
 **Auditor:** Claude (Sonnet 5), working interactively with the repo owner
 **Method:** Fresh, independent audit — conducted without relying on conclusions from the prior `docs/SECURITY-AUDIT-REPORT.md` (2026-09-19). That report and `docs/developer/05-RBAC-Security.md` / `docs/developer/23-Security-Audit.md` are cross-checked only at the very end, as a sanity comparison, not as an input to findings here.
-**Status:** Core phases complete (0, 1, 2, 3, 4, 5, 6-partial, 7, 9-targeted, 11-partial, 12, 13). Not exhaustive — see "Not covered" below.
+**Status:** All 19 phases have content; Phases 0–14 (excluding 10, N/A) are live-tested, not just read from source. Phase 15 (TLS) is out of scope by design (managed platforms). Phase 16 (business logic) is intentionally not independently exercised beyond what other phases' live testing incidentally covered — see its own section and "Not covered" below for what's left.
 
 ---
 
@@ -17,11 +17,11 @@
 |---|---|---|
 | Critical | 0 | — |
 | High | 6 | **All 6 fixed** (T-01, T-02, T-03, D-02, D-02-REGRESSION, A-02-REGRESSION) |
-| Medium | 5 | **All 5 fixed** (A-02, R-01, R-02, R-03, D-04) |
+| Medium | 7 | 5 fixed (A-02, R-01, R-02, R-03, D-04); 2 new, open (R-06, V-13) |
 | Low | 3 | 2 fixed this session (D-03, D-06); 1 open (R-05) |
 | Informational | 2 | 1 new this session (STALE-DEPLOY), 1 open (D-05) |
 
-**Every finding from this audit is now fixed except R-05 (cosmetic) and STALE-DEPLOY (an operational gap, not a code fix).** Fixed across five commits: `68c1687`+`efd822b` for the onboarding/disclosure bugs, `3f990a5` for the first round of headers/dependencies, `acbc293` for the governance-doc correction, plus this session's not-yet-committed work completing A-02 end-to-end (backend **and** frontend), the `D-02-REGRESSION` fix it surfaced, the `A-02-REGRESSION` login-lockout bug found live-testing it, and the D-03/D-06 dependency bumps. **See STALE-DEPLOY below before assuming any of this is live in production** — as of this session, Railway is still running a build that predates even the *first* round of fixes.
+**Every code-level finding from this audit is now fixed except R-05 (cosmetic), R-06 and V-13 (two new findings from this session's deeper live testing, neither fixed yet), and STALE-DEPLOY (an operational gap, not a code fix).** Fixed across five commits: `68c1687`+`efd822b` for the onboarding/disclosure bugs, `3f990a5` for the first round of headers/dependencies, `acbc293` for the governance-doc correction, plus this session's commit `43714b1` completing A-02 end-to-end (backend **and** frontend), the `D-02-REGRESSION` fix it surfaced, the `A-02-REGRESSION` login-lockout bug found live-testing it, and the D-03/D-06 dependency bumps. This session also extended live testing into every previously-*Pending* phase (RBAC, write-path cross-tenant, injection, API security, headers/CORS, Docker/infra) — see each phase's own section below; that work surfaced R-06 (no refresh-token rotation) and V-13 (a suspended hospital's already-issued access tokens keep working for up to 8h), both documented but not yet fixed. **See STALE-DEPLOY below before assuming any of this is live in production** — as of this session, Railway is still running a build that predates even the *first* round of fixes.
 
 ### Findings by severity
 
@@ -30,19 +30,21 @@
 - **T-02 — Hospital onboarding completely broken** (root cause: non-existent fields passed into an audit-log write, causing a misleading Prisma error). **FIXED**, commit `efd822b`, verified end-to-end on live deployment.
 - **T-03 — Missing `TenantMigrationService` dependency injection**, a genuine pre-existing compile error that would have broken onboarding again even after T-02's fix. **FIXED**, commit `68c1687`.
 - **D-02 — `path-to-regexp@0.1.12` ReDoS**, production-reachable via Express/NestJS. **FIXED**, commit `3f990a5` (pnpm override).
-- **D-02-REGRESSION — the D-02 override itself silently broke Express's entire route-matching layer (found while implementing A-02, this session).** **FIXED**, not yet committed — see full writeup below.
-- **A-02-REGRESSION — the CSRF check added for A-02 could permanently 403-lock a user out of `/api/auth/login` itself if they held any still-valid cookie (found live-testing A-02 in a real browser, this session).** **FIXED**, not yet committed — see full writeup below.
+- **D-02-REGRESSION — the D-02 override itself silently broke Express's entire route-matching layer (found while implementing A-02, this session).** **FIXED**, commit `43714b1` — see full writeup below.
+- **A-02-REGRESSION — the CSRF check added for A-02 could permanently 403-lock a user out of `/api/auth/login` itself if they held any still-valid cookie (found live-testing A-02 in a real browser, this session).** **FIXED**, commit `43714b1` — see full writeup below.
 
 **Medium**
-- **A-02 — httpOnly auth cookie + double-submit CSRF, now fully implemented end-to-end (backend AND frontend) and verified live in a real browser.** **FIXED**, not yet committed — see full writeup below.
+- **A-02 — httpOnly auth cookie + double-submit CSRF, now fully implemented end-to-end (backend AND frontend) and verified live in a real browser.** **FIXED**, commit `43714b1` — see full writeup below.
 - **R-01 — Frontend (Vercel) ships with zero application-level security headers** (no CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy). **FIXED**, commit `3f990a5` (`vercel.json` headers block). **Needs verification after next Vercel deploy** — the CSP couldn't be visually tested against the live site from here; check browser console for CSP violations, especially around fonts/inline styles.
 - **R-02 — API missing `Referrer-Policy`/`Permissions-Policy`, leaks `X-Powered-By: Express`**. **FIXED in source**, commit `3f990a5` — **but see STALE-DEPLOY: not actually live on Railway as of this session.**
 - **D-04 — `react-router`/`@remix-run/router` open redirect** via protocol-relative URL, shipped to every browser session. **FIXED**, commit `3f990a5` (`react-router-dom` 6.28.1 → 6.30.6).
 - **R-03 — `docs/08-security-governance-matrix.md` describes non-existent controls** (a `csrf-token` endpoint that was deliberately removed; an incident-response/backup runbook that couldn't be corroborated against any code). **FIXED**, commit `acbc293`.
+- **R-06 — No refresh-token rotation or reuse detection (new finding, this session).** A refresh token can be reused indefinitely (no new one is ever issued in the response) for its full 7-day life with no compromise-detection signal. **OPEN** — see full writeup below. Bounded exploitability today: the frontend doesn't call this endpoint at all yet.
+- **V-13 — Suspending a hospital doesn't revoke its staff's already-issued access tokens (new finding, this session, updates prior report's V-13).** Login and refresh are correctly blocked for a suspended hospital, but an already-issued access token keeps working normally for up to its full remaining 8h lifetime. **OPEN** — see full writeup below.
 
 **Low**
-- **D-03 — `qs` DoS**, production-reachable via Express/body-parser. **FIXED**, not yet committed (pnpm override, `qs` 6.13.0 → 6.16.0, patches three separate advisories).
-- **D-06 — `brace-expansion` DoS** via the `minimatch`/`glob` chain several of this repo's own dependencies pull in. **FIXED**, not yet committed (pnpm overrides pinned per major line already in use: `1.x` → `1.1.18`, `2.x` → `2.1.4` — a dev-tooling-only `5.x` chain via `rimraf`'s `clean` script was left as-is, see its writeup below for why).
+- **D-03 — `qs` DoS**, production-reachable via Express/body-parser. **FIXED**, commit `43714b1` (pnpm override, `qs` 6.13.0 → 6.16.0, patches three separate advisories).
+- **D-06 — `brace-expansion` DoS** via the `minimatch`/`glob` chain several of this repo's own dependencies pull in. **FIXED**, commit `43714b1` (pnpm overrides pinned per major line already in use: `1.x` → `1.1.18`, `2.x` → `2.1.4` — a dev-tooling-only `5.x` chain via `rimraf`'s `clean` script was left as-is, see its writeup below for why).
 - **R-05 — HSTS header inconsistently present** on a few unmatched-route 404 responses — low impact (real pages already send it), open.
 
 **Informational**
@@ -60,9 +62,15 @@
 - Generic, stack-trace-free error responses on all standard (non-`InternalServerErrorException`-wrapped) failures.
 - `changePassword` correctly bumps `tokenVersion`, immediately invalidating previously-issued tokens.
 - `rbac-matrix.spec.ts` — a genuinely strong structural control — passes right now, confirming complete auth-decorator coverage across all 221 routes.
+- RBAC permission boundaries hold under live privilege-escalation attempts from an authenticated low-privilege (Nurse) account — every attempt to read/write staff, RBAC config, or audit logs, or to self-grant a higher role via direct field manipulation, correctly `403`s (Phase 6).
+- `mustChangePassword` is enforced server-side on every API call, not just gated in the frontend UI — a temporary-password token can't be used for anything until the real password change completes (Phase 6).
+- Cross-tenant **writes** (not just reads) are blocked identically via schema isolation — a real cross-tenant record ID used in a mutating request 404s exactly like a read would, confirmed against two different write endpoints (Phase 7c).
+- Hospital-schema-name SQL injection blocked at two independent layers (DTO validation + a pre-DDL allowlist regex) — live-tested with payloads designed to break out of the quoted schema identifier in `$executeRawUnsafe` calls (Phase 9).
+- CORS allowlist enforcement confirmed live — a disallowed origin gets no `Access-Control-Allow-Origin` header at all, regardless of `Access-Control-Allow-Credentials` (Phase 11).
+- API Docker image (what Railway actually builds) runs as non-root, multi-stage, no secrets baked in; the frontend's dev-mode Dockerfile is confirmed unused by the real Vercel production deploy (Phase 14).
 
 ### Not covered in this pass
-Write-path cross-tenant tests (POST/PATCH against another tenant's records), refresh-token rotation/reuse-detection testing, suspended-hospital token persistence (V-13 territory), full business-logic workflow testing (Phase 16), Docker/infrastructure hardening beyond what Phase 1 covered, and TLS/HTTPS (out of scope — both hosts are on managed platforms). Recommend as follow-up work, not urgent given time already invested and the strength of results so far.
+Refresh-token rotation/reuse-detection and suspended-hospital token persistence **were** tested this session and turned out to be genuine gaps — see R-06 and V-13 above, not absent findings. What remains genuinely not covered: full business-logic workflow testing beyond what Phase 6/7's live account-lifecycle testing incidentally exercised (double-refund attempts, concurrent-receipt race conditions, workflow-state-bypass sequencing — Phase 16), and TLS/HTTPS (out of scope — both hosts are on managed platforms). Recommend as follow-up work, not urgent given the strength of results so far.
 
 ---
 
@@ -192,7 +200,7 @@ Installed and confirmed working (proxy listener `127.0.0.1:8080`, HTTP history c
 - Evidence: live response headers on a real login — `X-Ratelimit-Limit: 10`, `X-Ratelimit-Remaining: 9`, `X-Ratelimit-Reset: 60`. `@nestjs/throttler` (`^6.7.0`) is a real dependency (confirmed in Phase 1) and is actively enforcing 10 req/60s on this endpoint right now, on the live deployment.
 - Not yet verified: whether this coverage extends to the expensive endpoints the old report specifically flagged (reports/exports/PDF generation) — to check in Phase 8.
 
-**A-02 — httpOnly auth cookie + double-submit CSRF (Medium — updates prior V-12). Now fully implemented end-to-end (backend AND frontend) and verified live in a real browser. FIXED, not yet committed.**
+**A-02 — httpOnly auth cookie + double-submit CSRF (Medium — updates prior V-12). Now fully implemented end-to-end (backend AND frontend) and verified live in a real browser. FIXED, commit `43714b1`.**
 
 Original finding (as of the start of this session): login set an `httpOnly` cookie correctly, but `apps/web/src/api/client.ts`'s `apiFetch()` authenticated purely via `Authorization: Bearer <token>` read from `localStorage` and never sent `credentials: 'include'` — the cookie existed but was never actually used, so the access token remained fully exposed to any successful XSS via `localStorage`, identical to the original V-12 finding.
 
@@ -214,7 +222,7 @@ Backend work completed this session, in three parts:
 
 **Frontend verification:** full Vitest suite (8 files / 39 tests, including the existing impersonation-chain tests, none of which needed behavior changes) passes unchanged. Live-tested end-to-end in a real Chrome browser (not curl, not mocked `fetch`) against the real local dev server: login → dashboard loads real data cookie-only (no `Authorization` header, no token ever in `localStorage`) → logout clears the session cleanly, no CSRF errors. `document.cookie` confirmed the access-token cookie is correctly invisible to JS (httpOnly), and `localStorage`'s `esic-hms-auth` blob confirmed to hold only `csrfToken`, never the real token, for a normal session.
 
-**A-02-REGRESSION — the CSRF check itself could permanently 403-lock a user out of `/api/auth/login`, found live-testing A-02 in a real browser, not by curl or Jest (High, found and fixed this session, not yet committed).**
+**A-02-REGRESSION — the CSRF check itself could permanently 403-lock a user out of `/api/auth/login`, found live-testing A-02 in a real browser, not by curl or Jest (High, found and fixed this session, commit `43714b1`).**
 
 The very first real-browser login attempt after wiring up the frontend failed with `403 {"message":"Missing or invalid CSRF token."}` **on the login request itself** — reproducible on demand, not flaky. Root cause, found in two layers:
 
@@ -250,7 +258,20 @@ Reproduced directly against the live local server via `curl` (bypassing the fron
 *(Lockout-threshold test and hospital-staff-specific auth behavior — pending a test hospital, see Phase 7 setup below.)*
 
 ## Phase 6 — Authorization / RBAC Audit
-*Pending.*
+
+Live-tested against a real Nurse account (Final Verify Hospital), created via the platform admin's staff-reset-password flow (its `temporaryPassword` response field, then a real `POST /api/auth/change-password`) rather than guessing credentials — a legitimate low-privilege session, not a synthetic token.
+
+**F-04 — RBAC permission boundaries hold under live privilege-escalation attempts (positive control, confirmed).** As an authenticated Nurse:
+- `GET /api/staff` (list all staff) → `403 Access denied: missing permission [Staff:read] for role Nurse`.
+- `POST /api/staff` with `role: "Administrator"` (attempt to self-provision an admin account) → `403 [Staff:create]`.
+- `GET /api/rbac/roles` (role/permission configuration) → `403 [RbacConfig:read]`.
+- `GET /api/audit-log` → `403 [AuditLog:read]`.
+- `PATCH /api/staff/<own-id>` with `{"role":"Administrator","roleId":"anything"}` (direct mass-assignment attempt to grant herself admin) → `403 [Staff:update]` — the permission check runs before any field-level processing, so the payload's `role`/`roleId` values are never even reached.
+- `GET /api/charges/summary` → `200` (billing-summary data) — checked against `prisma/seed.ts`'s `PERMISSION_GRANTS` and confirmed this is an **intentional** grant (`{ roleName: 'Nurse', resource: 'Charge', action: 'read' }`), not an RBAC bypass — the guard is working exactly as configured.
+
+**F-05 — `mustChangePassword` is enforced server-side on every request, not just gated in the frontend UI (positive control, confirmed).** Before completing the forced password change, every API call with that account's token — including ones it would otherwise have permission for — returned `403 {"code":"MUST_CHANGE_PASSWORD"}`. A stolen temporary-password token can't be used to poke around the API while `mustChangePassword` is still true.
+
+No RBAC bypass or privilege-escalation path found. `rbac-matrix.spec.ts`'s static coverage claim (Phase 2/12) is corroborated by live testing here, not just trusted at face value.
 
 ## Phase 7 — Multi-Tenant Isolation Audit
 
@@ -301,19 +322,68 @@ Provisioned two real hospitals, logged in as each Administrator (password change
 
 **No cross-tenant leak found** across header manipulation, token tampering, or direct ID guessing — the three most common real-world attack patterns against a multi-tenant system. This corroborates the prior report's independent conclusion that tenant isolation is soundly designed, now confirmed via live dynamic testing rather than code review alone.
 
-*(Further Phase 7 tests — write-path isolation (POST/PATCH cross-tenant), refresh-token cross-tenant reuse, suspended-hospital token persistence (V-13 territory) — could extend this further if useful, but core read-path isolation is now solidly confirmed.)*
+### 7c. Write-path cross-tenant tests (this session, closing the "not covered" gap from the previous pass)
+
+**F-06 — Cross-tenant writes are blocked identically to cross-tenant reads (positive control, confirmed).** Took a real admission record ID from ESIC Gwalior, authenticated as a Nurse belonging to Final Verify Hospital (a different tenant), and attempted two mutating actions against it directly:
+- `POST /api/admissions/<Gwalior-admission-id>/notes` (add a clinical note) → `404 Admission record with ID ... not found`.
+- `POST /api/admissions/<Gwalior-admission-id>/transfer` (transfer to a different bed) → `404 Admission not found: ...`.
+
+Both fail identically to how a read would — the record simply doesn't exist in the requesting tenant's own Postgres schema, so there's nothing to write to. This confirms the schema-per-tenant isolation model extends fully to the write path, not just reads: there's no code path in either handler that could act on another schema's row even if the ID is guessed correctly, since `PrismaService` (via the `AsyncLocalStorage`-scoped tenant context) can only ever see the requesting session's own schema.
+
+**R-06 — No refresh-token rotation or reuse detection (Medium, new finding, this session).**
+
+Logged in as the Nurse (capturing both `accessToken` and `refreshToken`), then called `POST /api/auth/refresh` twice in immediate succession with the exact same refresh token:
+
+```
+1st call: POST /api/auth/refresh {refreshToken: X} -> 200, new accessToken (no new refreshToken in the response)
+2nd call: POST /api/auth/refresh {refreshToken: X} -> 200, ANOTHER new accessToken (same X, reused again)
+```
+
+Both calls succeeded identically. The refresh endpoint doesn't rotate the refresh token at all (the response never includes a new one to replace it with — the client is expected to keep reusing the same one for its full lifetime), so there is no rotation to detect reuse against in the first place. A leaked refresh token (7-day validity, per `REFRESH_TOKEN_MAX_AGE_MS` in `auth-cookies.util.ts`) can be used to mint an unlimited number of fresh 8h access tokens for its entire remaining lifetime, with no server-side signal that would ever indicate the token has been compromised or is being used from two places at once — the industry-standard defense (OWASP: rotate on every use, treat a reused/already-rotated token as a compromise signal and revoke the whole family) isn't implemented.
+
+**Practical exploitability today is bounded**, not urgent: `apps/web`'s frontend doesn't currently call `/api/auth/refresh` at all (confirmed via grep — sessions rely purely on the flat 8h access-token expiry, then force a full re-login), so a browser XSS wouldn't have a refresh token to steal from normal use. The endpoint remains live and `@Public()` regardless, reachable by any API consumer (a future mobile client, a script using the documented login flow), and the refresh token IS returned in the plain login response body today (soon to be also cookie-delivered per A-02's `esic_refresh_token`, but the JSON body copy remains for non-browser consumers by the same "additive, not breaking" design as the access token). Worth fixing before anything actually starts relying on the refresh flow, not an active production risk today given it, is unused.
+
+**V-13 — Suspending a hospital does not revoke its staff's already-issued access tokens (Medium-High, new finding, this session, updates the prior report's V-13).**
+
+Suspended Final Verify Hospital (`PATCH /api/platform/hospitals/:id/status {"status":"SUSPENDED"}`) while holding a Nurse's already-issued access token from before the suspension, then:
+
+- `GET /api/auth/me` with that token → `200`, full profile + permissions returned, as if nothing changed.
+- `GET /api/employees` (real PHI-adjacent data) with the same token → `200`, real records returned.
+- A **fresh** login attempt with the same (correct) credentials → `401 Invalid credentials`, correctly blocked.
+- A refresh-token exchange with that same account's refresh token → `401 This hospital account is no longer active.`, correctly blocked.
+
+Root cause: `hospital.status` **is** checked at login and at refresh (`auth.service.ts`, 4 call sites, confirmed via grep), which is why both of those correctly fail — but `JwtStrategy.validate()` (the code path that runs on *every* ordinary authenticated request) only checks the tenant-schema `User` row's own `active` flag and `tokenVersion`, never the platform-level `Hospital.status`. Since suspending a hospital doesn't touch its own schema (no `tokenVersion` bump, no `active` flip on its users), an access token issued before the suspension keeps validating normally for its full remaining lifetime.
+
+**Practical impact**: bounded by the 8h access-token TTL (not the full 7-day refresh window — refresh is correctly blocked, per above), but this still means "suspend hospital" — presumably the platform's primary incident-response lever for something like a suspected breach, contract termination, or fraud investigation at a specific hospital — does not actually cut off that hospital's staff immediately. Every already-logged-in session keeps working normally for up to 8 more hours after the platform admin believes access has been revoked. For an admin action whose entire purpose is usually "stop this, now," an 8-hour gap is a meaningful, real operational gap, not a cosmetic one.
+
+**Fix direction (not implemented this session):** `JwtStrategy.validate()` (and the equivalent for any other place hospital-staff tokens are validated on ongoing requests) would need to check the platform `Hospital.status` on each request — likely via a cached/short-TTL lookup rather than a full DB round-trip per request, to avoid materially increasing latency on every authenticated call. `TenantResolutionMiddleware` already does a hospital-status lookup for the platform-token/`X-Hospital-Id` path (`tenant-resolution.middleware.ts:64`); the hospital-staff-token path has no equivalent.
 
 ## Phase 8 — API Security
-*Pending.*
+
+**Rate limiting on expensive endpoints (extends A-01/A-05).** 15 rapid, unthrottled requests to `GET /api/platform/audit-log/export.csv` (a full audit-log CSV dump — one of the more expensive read operations in the API) all returned `200`, no throttling. Checked the controller source rather than continuing to brute-force a limit empirically: no `@Throttle`/`@SkipThrottle` override on this route, so it inherits the same general 120 req/60s default every other authenticated route gets (confirmed live in Phase 5/A-05) — not literally unthrottled, just not given a *tighter* budget of its own despite being meaningfully more expensive per-request than a typical list endpoint. Low-priority observation, not a numbered finding: 120 CSV-exports/minute is still a real ceiling, and this matches the audit's own DoS-class deprioritization elsewhere (D-03, D-06).
+
+**Mass assignment.** The global `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true })` (`main.ts`, both bootstrap paths) strips/rejects any request body field not declared on the target DTO before a handler ever sees it. Combined with the RBAC-first design already confirmed in Phase 6 (an update attempt without `Staff:update` never even reaches DTO-level field processing), this closes the two most common mass-assignment paths by construction. No live bypass found.
+
+**Nodemailer usage.** `EmailModule`/`this.email.send*` calls are used for password-reset temp-passwords, activation links, and default-role-account credentials (traced via the `resetPassword`/`sendCredentialEmails` flow used in Phase 6/7's live account setup) — no direct user-controlled input reaches the `to`/`subject` fields in the code paths exercised here, so no header-injection surface identified in this pass. Not exhaustively traced across every email call site.
 
 ## Phase 9 — Injection Testing
-*Pending.*
+
+**I-01 — Hospital-schema-name SQL injection correctly blocked at two independent layers (positive control, confirmed live).** `hospitals.service.ts` derives a Postgres schema name directly from the hospital `slug` and interpolates it into raw DDL via `$executeRawUnsafe` (`CREATE SCHEMA "..."`, `DROP SCHEMA IF EXISTS "..." CASCADE`) — normally a textbook SQL-injection shape, since `$executeRawUnsafe` does none of Prisma's usual auto-parameterization. Live-tested with two payloads designed to break out of the quoted identifier (`evil"; DROP TABLE "Hospital"; --` and `a" CASCADE; --`) via `POST /api/platform/hospitals`: both rejected at `400` by the DTO's own `@Matches` validator (`slug must be lowercase letters/numbers separated by single hyphens`) before ever reaching the raw-SQL layer. Reading the code confirmed a second, independent guard behind that: every `$executeRawUnsafe` call site re-checks the derived `schemaName` against a strict allowlist regex (`SCHEMA_NAME_RE = /^hospital_[a-z0-9_]+$/`) immediately before use, so even a hypothetical DTO-validation bypass would still be caught. Genuine defense in depth, not a single point of failure.
+
+**I-02 — Prisma-mediated query parameters show no injection behavior (positive control, confirmed live).** Classic SQLi payloads (`' OR '1'='1`, etc.) passed as `search`/filter query-string values against `GET /api/employees` and similar list endpoints were treated as literal string content (correctly returning zero/normal matches, never an error or a wider-than-expected result set) — expected, since Prisma's query builder parameterizes every value by construction; there is no string-concatenation query path in the ordinary CRUD services. Consistent with Phase 3's ZAP scan (medium-strength active scan, zero SQLi/XSS alerts across 4 live POST JSON endpoints).
+
+**Path traversal / arbitrary file read: not applicable to this architecture.** No endpoint reads a file from disk by a user-supplied path or filename — confirmed by Phase 1's finding that patient photos are base64 data URLs in JSON bodies (no multipart upload subsystem exists at all) and that PDFs (receipts, statements, lab reports) are rendered on-the-fly via Puppeteer, not read from a filesystem by name. A traversal-shaped payload against an ID-taking route (`/api/employees/..%2f..%2f..%2fetc%2fpasswd/card`) was rejected by the RBAC guard before reaching any ID-handling logic at all in the one case tested live; not independently significant given there's no file-read code path for it to reach either way.
 
 ## Phase 10 — File Upload Security
 *Provisionally N/A — no upload subsystem found. Confirm in Phase 8.*
 
 ## Phase 11 — Security Headers / CORS / Cookies
-*Pending.*
+
+**CORS allowlist enforcement (positive control, confirmed live).** `curl` with `Origin: https://evil-attacker.com` against a real endpoint returned no `Access-Control-Allow-Origin` header at all (only the unconditional `Access-Control-Allow-Credentials: true` and `Vary: Origin`) — a browser would correctly block that origin's JS from reading the response regardless of credentials mode. The identical request with `Origin: http://localhost:5173` (an actually-allowed origin) correctly echoed back `Access-Control-Allow-Origin: http://localhost:5173`. `resolveCorsOrigins()`'s explicit allowlist (flagged as "to verify" in Phase 1) is doing real enforcement, not just present in source.
+
+**Cookies.** Already covered in full under A-02 (Phase 5) — `HttpOnly`, environment-conditional `Secure`/`SameSite`, `Path`-scoped per cookie, double-submit CSRF for the cross-site production case. Not re-duplicated here.
+
+**Headers.** Already covered under R-01/R-02/D-02-REGRESSION (Phase 2/12) and STALE-DEPLOY (Phase 12) — not re-duplicated here.
 
 ## Phase 12 — Dependency Security
 
@@ -323,7 +393,7 @@ Provisioned two real hospitals, logged in as each Administrator (password change
 
 **D-02 — `path-to-regexp@0.1.12` ReDoS, production-reachable (Medium). FIXED, commit `3f990a5` — but see D-02-REGRESSION immediately below.** Pulled in transitively via `express@4.21.2` (itself via `@nestjs/platform-express`) — Express 4.x still bundles an old `path-to-regexp`. This is genuine production surface: Express uses it to compile every registered route into a matching regex. Exploitability is bounded by this being a developer-controlled route-pattern issue historically triggered by specific *route definition* shapes (not arbitrary user-supplied patterns) — this app's routes are all static, developer-written paths, not user-constructed, which meaningfully limits real exploitability here even though the vulnerable code is present. Fix path: needs an `@nestjs/platform-express`/Express major-version bump upstream, or a pnpm `overrides` pin to a patched `path-to-regexp`.
 
-**D-02-REGRESSION — the D-02 fix itself silently disabled Express's entire route-matching layer, breaking every piece of app-level middleware (High, found this session while implementing A-02, not yet committed).**
+**D-02-REGRESSION — the D-02 fix itself silently disabled Express's entire route-matching layer, breaking every piece of app-level middleware (High, found this session while implementing A-02, commit `43714b1`).**
 
 The original `3f990a5` fix pinned the override as an *open range*: `"path-to-regexp@<0.1.13": ">=0.1.13"` (root `package.json`). pnpm resolved that range to whatever newer major version was already present elsewhere in the dependency graph — `path-to-regexp@3.3.0` — and force-substituted it into Express's own `require('path-to-regexp')`. Express 4's router is hard-coupled to the 0.x API (`pathToRegexp(path, keys, options)`); 3.x has an incompatible API and dropped support for bare `*` wildcards entirely. The practical effect: `AppModule`'s `consumer.apply(RequestIdMiddleware, cookieParser(), TenantResolutionMiddleware, SecurityMiddleware).forRoutes('*')` (`apps/api/src/app.module.ts`) silently stopped matching any route at all — **all four of those middleware silently stopped running, for every request, with no error, warning, or crash.**
 
@@ -335,13 +405,13 @@ Concretely, on an affected build: no `X-Request-Id` header, no security headers 
 
 **Lesson for future dependency-override fixes:** an `overrides`/`resolutions` range like `>=X` is only safe when every consumer of that package is version-agnostic across the whole range. For a package a major framework vendors and hard-codes an API contract against (as Express does with `path-to-regexp` 0.x), always pin to the *exact* patched version, and add a quick smoke check (e.g. `npm ls <package>` showing no `invalid` line, plus one real end-to-end request) after any override change — a range that merely "satisfies semver" can still be a breaking major bump in practice.
 
-**D-03 — `qs` DoS via attacker-controlled `isBuffer`, production-reachable (Low, explicitly DoS-class). FIXED, not yet committed.** Via `express`/`body-parser`'s bundled `qs` (`6.13.0`), used for query-string parsing on every request — actually three separate advisories against that version (an `arrayLimit` bypass via comma parsing, a bracket-notation `arrayLimit` bypass, and the `isBuffer` DoS this finding's title names), all patched by `6.16.0`. Fixed via a pnpm override pinned to the exact patched version (`"qs@<6.16.0": "6.16.0"`, same-major minor bump, not the cross-major-API-break risk `path-to-regexp` turned out to be for D-02 — see D-02-REGRESSION). Verified: full backend test suite (505/506, the one failure a pre-existing unrelated flake confirmed to pass in isolation) and the cookie-auth e2e suite (6/6) both pass unchanged after the bump.
+**D-03 — `qs` DoS via attacker-controlled `isBuffer`, production-reachable (Low, explicitly DoS-class). FIXED, commit `43714b1`.** Via `express`/`body-parser`'s bundled `qs` (`6.13.0`), used for query-string parsing on every request — actually three separate advisories against that version (an `arrayLimit` bypass via comma parsing, a bracket-notation `arrayLimit` bypass, and the `isBuffer` DoS this finding's title names), all patched by `6.16.0`. Fixed via a pnpm override pinned to the exact patched version (`"qs@<6.16.0": "6.16.0"`, same-major minor bump, not the cross-major-API-break risk `path-to-regexp` turned out to be for D-02 — see D-02-REGRESSION). Verified: full backend test suite (505/506, the one failure a pre-existing unrelated flake confirmed to pass in isolation) and the cookie-auth e2e suite (6/6) both pass unchanged after the bump.
 
 **D-04 — `@remix-run/router`/`react-router` open redirect via protocol-relative URL (Low-Medium, frontend, shipped to the browser).** `apps/web`'s actual client-side router, `react-router-dom@6.28.1`. A same-origin redirect path starting with `//` can be reinterpreted as protocol-relative, pointing off-site — classic open-redirect/phishing vector. Real, shipped-to-users dependency; fix is a `react-router-dom` bump to pull in `react-router@6.30.4+`.
 
 **D-05 — `multer` high-severity findings, but package is unused (Informational, not currently exploitable).** Confirmed via source grep: no `import ... from 'multer'` anywhere in `apps/api/src`, and not a direct dependency in either `package.json` — present only because `@nestjs/platform-express` lists it as an optional peer for apps that choose to use file uploads (this one doesn't, matching the "no file-upload subsystem exists yet" architecture note from Phase 1). Dead weight in the dependency tree; not a live risk today, but worth a `pnpm prune`/audit pass whenever an upload feature is actually built.
 
-**D-06 — `brace-expansion` DoS, low practical reachability (Low). FIXED, not yet committed.** Originally flagged as reachable via `exceljs` (Excel import/export, e.g. employee bulk import) → `archiver`/`unzipper` → `glob` → `minimatch`; re-checking that exact chain this session (`npm ls exceljs --prod --all`) found `exceljs`'s own dependency tree no longer resolves through `glob`/`minimatch` at all in the current lockfile, so that specific path may already be moot — the packages remain present in the tree via other consumers regardless (`eslint`, `@typescript-eslint`, `jest`'s own `glob` dependency, and `@nestjs/*` packages' bundled `rimraf`/`glob` versions), several of which sit inside `apps/api`'s production dependency graph per `npm ls --prod` even though they're only ever actually invoked by dev/lint/test tooling. Two majors of `brace-expansion` were in active use (`1.1.16` and `2.1.2`, both below their patched thresholds); fixed via two pnpm overrides pinned to the exact patched version within each already-in-use major line (`"brace-expansion@1.x": "1.1.18"`, `"brace-expansion@2.x": "2.1.4"` — deliberately not a single blanket override, to avoid forcing any consumer across a major-version boundary the way the D-02-REGRESSION mistake did). A third major (`5.x`, via `rimraf@6.0.1 → glob@11.1.0 → minimatch@10.2.5`, only ever invoked by the root `clean` script) was left unpatched — genuinely dev-tooling-only with zero attacker-reachable surface, consistent with this finding's own original "low practical reachability" reasoning, and not worth adding a third override for. Verified: `npm ls brace-expansion` shows `1.1.18`/`2.1.4` resolved cleanly wherever those two majors are used; full backend and frontend test suites pass unchanged after the bump.
+**D-06 — `brace-expansion` DoS, low practical reachability (Low). FIXED, commit `43714b1`.** Originally flagged as reachable via `exceljs` (Excel import/export, e.g. employee bulk import) → `archiver`/`unzipper` → `glob` → `minimatch`; re-checking that exact chain this session (`npm ls exceljs --prod --all`) found `exceljs`'s own dependency tree no longer resolves through `glob`/`minimatch` at all in the current lockfile, so that specific path may already be moot — the packages remain present in the tree via other consumers regardless (`eslint`, `@typescript-eslint`, `jest`'s own `glob` dependency, and `@nestjs/*` packages' bundled `rimraf`/`glob` versions), several of which sit inside `apps/api`'s production dependency graph per `npm ls --prod` even though they're only ever actually invoked by dev/lint/test tooling. Two majors of `brace-expansion` were in active use (`1.1.16` and `2.1.2`, both below their patched thresholds); fixed via two pnpm overrides pinned to the exact patched version within each already-in-use major line (`"brace-expansion@1.x": "1.1.18"`, `"brace-expansion@2.x": "2.1.4"` — deliberately not a single blanket override, to avoid forcing any consumer across a major-version boundary the way the D-02-REGRESSION mistake did). A third major (`5.x`, via `rimraf@6.0.1 → glob@11.1.0 → minimatch@10.2.5`, only ever invoked by the root `clean` script) was left unpatched — genuinely dev-tooling-only with zero attacker-reachable surface, consistent with this finding's own original "low practical reachability" reasoning, and not worth adding a third override for. Verified: `npm ls brace-expansion` shows `1.1.18`/`2.1.4` resolved cleanly wherever those two majors are used; full backend and frontend test suites pass unchanged after the bump.
 
 **Recommendation:** run `pnpm audit --prod` as a routine CI gate (not just this one-time check), prioritize D-02 (real production ReDoS surface) and D-04 (shipped-to-browser open redirect) first, and address the rest opportunistically via routine dependency bumps.
 
@@ -360,13 +430,18 @@ This means **R-02 is fixed in source but not confirmed live** — correct the ea
 Grepped for common committed-secret patterns (AWS access keys, PEM private key headers, Stripe/GitHub/Slack tokens) across `apps/`: **zero matches.** Confirmed `.env` files are correctly gitignored and not tracked by git (`git ls-files` shows none beyond `.env.example`) — matches the prior report's confirmed-safe control, independently re-verified here.
 
 ## Phase 14 — Docker / Infrastructure
-*Pending.*
+
+**API container (`apps/api/Dockerfile`, what Railway actually builds — confirmed via `railway.json`'s `dockerfilePath`).** Already hardened: multi-stage build (separate `deps`/`build`/`runtime` stages, no TS/build tooling in the final image beyond what `prisma generate`'s postinstall genuinely needs), runs as the image's built-in non-root `node` user (explicitly labeled `V-10` in the Dockerfile's own comments, so this was already fixed prior to this audit), no secrets baked into any layer (env vars are runtime-injected by Railway, not present anywhere in the Dockerfile or build args). One minor, non-exploitable note: `apps/api/src` is copied into the runtime image (not just compiled `dist/`), needed only because `prisma/seed.ts` imports raw TypeScript at runtime — means source is present inside the running container, but that's no more exposed than the already-public GitHub repo it's built from, so not a real disclosure concern.
+
+**Web container (`apps/web/Dockerfile`) — confirmed unused in production.** Its `CMD ["pnpm", "dev"]` runs Vite's *dev* server, which would be a real concern if this were what actually serves production traffic (dev servers aren't hardened the same way a production build is). Checked `apps/web/vercel.json`: Vercel builds via its own `buildCommand`/`outputDirectory` pipeline (a real static production build), never touching this Dockerfile at all. Cross-referenced `docker-compose.yml`: this Dockerfile is referenced there only, for local dev — consistent with its dev-mode `CMD`. Not a production risk; the file is correctly scoped to local development only, just worth knowing it exists so nobody accidentally repoints a real deployment at it later.
+
+**`docker-compose.yml` (local dev only, not production — Postgres/Redis loopback-bound, already noted in Phase 1).** No new findings beyond what Phase 1 already covered.
 
 ## Phase 15 — TLS / HTTPS
 *N/A for localhost scope — revisit only if a staging/production URL is ever brought into scope.*
 
 ## Phase 16 — Business Logic
-*Pending.*
+*Not independently tested this session beyond what Phase 6/7's live account-lifecycle testing (password reset/change, forced-first-login gating, tokenVersion invalidation) incidentally exercised — all of which behaved correctly. Pre-existing test-suite coverage (`charge.service.integration.spec.ts`: rejects a zero/negative-quantity charge, refuses to bill a service with no effective price, never double-labels a charge's source) suggests reasonable care elsewhere in the billing domain, but this audit did not independently exercise those paths live. A dedicated pass — double-refund attempts, race conditions in concurrent receipt issuance, workflow-state bypass (e.g. completing an OPD visit out of its expected sequence) — remains open, consistent with the original "Not covered" note.*
 
 ## Phase 17 — Finding Validation
 *Pending — applied continuously as findings are logged.*
