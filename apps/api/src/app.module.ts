@@ -6,6 +6,7 @@ import { UserAwareThrottlerGuard } from './common/guards/user-aware-throttler.gu
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { RedisThrottlerStorage } from './common/throttler/redis-throttler-storage.service';
 import { TenantModule } from './common/tenant/tenant.module';
 import { SequenceModule } from './common/sequence/sequence.module';
 import { EmailModule } from './common/email/email.module';
@@ -56,7 +57,21 @@ import { PinoLoggerService } from './common/logging/pino-logger.service';
     // apply ALL of them to EVERY route simultaneously (that's how
     // @nestjs/throttler's multi-profile support works), which is not what a
     // per-route override needs.
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
+    //
+    // storage: RedisThrottlerStorage shares the hit counters across
+    // instances on a horizontally-scaled deployment (the library's default
+    // in-memory storage is per-process, which would let each instance
+    // enforce its own independent budget instead of one shared ceiling --
+    // see the 2026-09-22 audit's "Rate limiting via Redis" finding). It
+    // falls back to the same in-memory behavior whenever Redis is unset or
+    // unavailable, so this is additive, not a new failure mode.
+    ThrottlerModule.forRootAsync({
+      inject: [RedisThrottlerStorage],
+      useFactory: (storage: RedisThrottlerStorage) => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: 120 }],
+        storage,
+      }),
+    }),
     TenantModule,
     PrismaModule,
     SequenceModule,

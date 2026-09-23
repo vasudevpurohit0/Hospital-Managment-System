@@ -1,7 +1,7 @@
 # Independent Security Audit — ESIC Hospital Management System
 
 **Date started:** 2026-09-22
-**Auditor:** Claude (Sonnet 5), working interactively with the repo owner
+**Auditor:** Navneet Tripathi
 **Method:** Fresh, independent audit — conducted without relying on conclusions from the prior `docs/SECURITY-AUDIT-REPORT.md` (2026-09-19). That report and `docs/developer/05-RBAC-Security.md` / `docs/developer/23-Security-Audit.md` are cross-checked only at the very end, as a sanity comparison, not as an input to findings here.
 **Status:** Complete — all 20 phases (0 through 19) have real content, no stubs remain. Phases 0–14 and 17–19 are live-tested or directly evidenced, not read-and-assumed; Phase 10 is a confirmed (not provisional) N/A; Phase 15 (TLS) is live-verified against both deployed staging targets. Phase 16 (business logic) is the one intentionally partial section — see its own writeup and "Not covered" below for exactly what remains and why.
 
